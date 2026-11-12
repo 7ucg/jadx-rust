@@ -73,7 +73,7 @@ fn loads_dex_from_assets_and_classes_from_nested_archives() {
         verify_checksum: false,
         ..LoadOptions::default()
     };
-    let set = load_inputs(&[t.0.clone()], &opts);
+    let set = load_inputs(std::slice::from_ref(&t.0), &opts);
     assert_eq!(set.dex_files.len(), 2);
     assert_eq!(set.java_classes.len(), 2);
     let (kept, warnings) = set.deduplicated();
@@ -103,7 +103,10 @@ fn loads_dex_from_assets_and_classes_from_nested_archives() {
         java_classes: false,
         ..opts
     };
-    assert_eq!(names(&load_inputs(&[t.0.clone()], &no_java)).len(), 3);
+    assert_eq!(
+        names(&load_inputs(std::slice::from_ref(&t.0), &no_java)).len(),
+        3
+    );
 }
 
 #[test]
@@ -133,7 +136,7 @@ fn loads_every_apk_of_a_split_package() {
         verify_checksum: false,
         ..LoadOptions::default()
     };
-    let set = load_inputs(&[t.0.clone()], &opts);
+    let set = load_inputs(std::slice::from_ref(&t.0), &opts);
     assert_eq!(set.containers.len(), 1);
     assert_eq!(set.dex_files.len(), 2);
     assert!(set.warnings.is_empty(), "{:?}", set.warnings);
@@ -162,7 +165,7 @@ fn bad_inputs_are_warnings_not_failures() {
     assert!(set.dex_files.is_empty());
     assert!(!set.warnings.is_empty());
     let t = write_tmp("bad2", "xapk", &zip_bytes(&[("x.txt", b"y")]));
-    let set = load_inputs(&[t.0.clone()], &LoadOptions::default());
+    let set = load_inputs(std::slice::from_ref(&t.0), &LoadOptions::default());
     assert!(set.containers.is_empty());
     assert!(set
         .warnings
