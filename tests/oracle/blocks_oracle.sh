@@ -2,6 +2,10 @@
 # Oracle: compare the block graph after AttachTryCatch, ProcessInstructions and BlockSplitter,
 # vs jadx-rs, per method (method blocks are sorted by id).
 #
+# STAGE: 0 blocks, 1 block processing, 2 SSA, 3 move inline, 4 constructors, 5 code variables,
+# 6 constant inlining, 7 type inference, 10 ModVisitor, 11 CodeShrinkVisitor. Stages 10 and 11
+# run without FixTypesVisitor and FinishTypeInference (reference and jadx-rs alike).
+#
 # Env: JADX_REF (default ../jadx), JDK_BIN (dir with javac/java), WORK (default ./work)
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"

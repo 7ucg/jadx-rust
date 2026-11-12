@@ -80,6 +80,8 @@ pub struct ExceptionHandler {
     pub try_block: Option<TryId>,
     /// Argument type of the caught exception (`getArgType`) applied to `move-exception`.
     pub arg_reg: Option<u32>,
+    /// `NamedArg` replacing the register argument (set by `ModVisitor`).
+    pub named_arg: Option<(String, super::types::ArgType)>,
 }
 
 impl ExceptionHandler {
@@ -93,6 +95,7 @@ impl ExceptionHandler {
             removed: false,
             try_block: None,
             arg_reg: None,
+            named_arg: None,
         };
         eh.add_catch_type(ty);
         eh

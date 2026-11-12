@@ -248,7 +248,7 @@ impl MethodCfg {
                     let wrapped = w.insn;
                     self.rebind_args(wrapped)?;
                 }
-                InsnArg::Literal(_) => {}
+                InsnArg::Literal(_) | InsnArg::Named(_) => {}
             }
         }
         Ok(())
@@ -499,7 +499,7 @@ impl MethodCfg {
                 // errors while unbinding a wrapped instruction cannot be reported here
                 let _ = self.unbind_insn(wrapped);
             }
-            InsnArg::Literal(_) => {}
+            InsnArg::Literal(_) | InsnArg::Named(_) => {}
         }
     }
 
@@ -718,6 +718,7 @@ impl MethodCfg {
         match arg {
             InsnArg::Register(r) => InsnArg::Register(r.clone()),
             InsnArg::Literal(l) => InsnArg::Literal(l.clone()),
+            InsnArg::Named(n) => InsnArg::Named(n.clone()),
             InsnArg::Wrapped(w) => {
                 let copy = self.copy_without_result(w.insn);
                 InsnArg::Wrapped(super::insn::WrapArg {
@@ -769,6 +770,7 @@ impl MethodCfg {
             match &self.insns[i].args[k] {
                 InsnArg::Literal(l) => return l.ty.clone(),
                 InsnArg::Wrapped(w) => return w.ty.clone(),
+                InsnArg::Named(n) => return n.ty.clone(),
                 InsnArg::Register(_) => {}
             }
         }
@@ -821,6 +823,10 @@ impl MethodCfg {
                 }
                 InsnArg::Wrapped(w) => {
                     w.ty = ty;
+                    return Ok(());
+                }
+                InsnArg::Named(n) => {
+                    n.ty = ty;
                     return Ok(());
                 }
                 InsnArg::Register(_) => {}

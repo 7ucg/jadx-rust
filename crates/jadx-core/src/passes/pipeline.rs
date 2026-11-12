@@ -91,7 +91,7 @@ impl FrameInfo {
 }
 
 /// [`build_processed_blocks`] followed by `SSATransform` and, depending on `stage`, the later
-/// SSA passes (3 = `MoveInlineVisitor`, 4 = `ConstructorVisitor`, 5 = `InitCodeVariables`, 6 = `ConstInlineVisitor`, 7 = `TypeInferenceVisitor`).
+/// SSA passes (3 = `MoveInlineVisitor`, 4 = `ConstructorVisitor`, 5 = `InitCodeVariables`, 6 = `ConstInlineVisitor`, 7 = `TypeInferenceVisitor`, 10 = `ModVisitor`, 11 = `CodeShrinkVisitor`).
 pub fn build_ssa(
     decoded: DecodedMethod,
     tries: &[TryData],
@@ -134,6 +134,13 @@ pub fn build_ssa(
     }
     if stage >= 7 {
         crate::typeinf::run_type_inference(&mut cfg, root, cls, mth)?;
+    }
+    if stage >= 10 {
+        let env = crate::passes::constructor::MethodEnv { root, cls, mth };
+        crate::passes::mod_visitor::mod_visitor(&mut cfg, &env)?;
+    }
+    if stage >= 11 {
+        crate::passes::code_shrink::code_shrink(&mut cfg)?;
     }
     Ok(cfg)
 }

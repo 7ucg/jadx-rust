@@ -254,6 +254,10 @@ pub struct RegisterArg {
     pub custom_declare: bool,
     /// `AFlag.DONT_INLINE_CONST`
     pub dont_inline_const: bool,
+    /// `AFlag.DONT_INLINE` on the argument itself.
+    pub dont_inline: bool,
+    /// `AFlag.SUPER`
+    pub is_super: bool,
     /// SSA variable this register belongs to (`RegisterArg.getSVar`).
     pub svar: Option<super::ssa::SsaId>,
 }
@@ -268,6 +272,8 @@ impl RegisterArg {
             method_arg: false,
             custom_declare: false,
             dont_inline_const: false,
+            dont_inline: false,
+            is_super: false,
             svar: None,
         }
     }
@@ -280,6 +286,8 @@ impl RegisterArg {
             method_arg: false,
             custom_declare: false,
             dont_inline_const: false,
+            dont_inline: false,
+            is_super: false,
             svar: None,
         }
     }
@@ -328,6 +336,15 @@ pub enum InsnArg {
     Literal(LiteralArg),
     /// `InsnWrapArg`: an instruction inlined as an argument.
     Wrapped(WrapArg),
+    /// `NamedArg`: a named value that is not backed by a register.
+    Named(NamedArg),
+}
+
+/// `NamedArg`
+#[derive(Debug, Clone, PartialEq)]
+pub struct NamedArg {
+    pub name: String,
+    pub ty: ArgType,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -431,6 +448,11 @@ pub enum InsnKind {
         call_mth: MethodInfo,
         call_type: CallType,
     },
+    /// `TernaryInsn`: `args` are the `then` and `else` values, `cond` is the condition as an
+    /// `if` instruction kept in the arena (outside of any block).
+    Ternary {
+        cond: InsnId,
+    },
 }
 
 /// `ConstructorInsn.CallType`
@@ -477,6 +499,8 @@ pub mod iflag {
     pub const DONT_INLINE: u64 = 1 << 8;
     pub const EXPLICIT_CAST: u64 = 1 << 9;
     pub const SOFT_CAST: u64 = 1 << 10;
+    /// Not listed in `NAMES`: only set while building regions.
+    pub const FORCE_ASSIGN_INLINE: u64 = 1 << 11;
 
     pub const NAMES: &[(u64, &str)] = &[
         (TRY_ENTER, "TRY_ENTER"),

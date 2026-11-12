@@ -89,7 +89,8 @@ public class InsnNodeDump {
 		}
 		if (a instanceof InsnWrapArg) {
 			InsnWrapArg w = (InsnWrapArg) a;
-			return "(wrap " + w.getType() + ":" + line(w.getWrapInsn()).substring(2) + ")";
+			String fl = SSA ? " fl=[" + BlockDump.flags(w.getWrapInsn(), BlockDump.INSN_FLAGS) + "]" : "";
+			return "(wrap " + w.getType() + ":" + line(w.getWrapInsn()).substring(2) + fl + ")";
 		}
 		if (a instanceof LiteralArg) {
 			LiteralArg l = (LiteralArg) a;

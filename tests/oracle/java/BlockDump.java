@@ -27,6 +27,8 @@ import jadx.core.dex.visitors.ConstructorVisitor;
 import jadx.core.dex.visitors.InitCodeVariables;
 import jadx.core.dex.visitors.ConstInlineVisitor;
 import jadx.core.dex.visitors.typeinference.TypeInferenceVisitor;
+import jadx.core.dex.visitors.ModVisitor;
+import jadx.core.dex.visitors.shrink.CodeShrinkVisitor;
 import jadx.core.dex.visitors.typeinference.ITypeBound;
 import jadx.core.dex.visitors.typeinference.ITypeBoundDynamic;
 import jadx.core.dex.instructions.args.CodeVar;
@@ -104,6 +106,13 @@ public class BlockDump {
 							ti.init(root);
 							ti.visit(mth);
 							typed = true;
+						}
+						// stages 10 and 11 run without FixTypesVisitor and FinishTypeInference
+						if (stage >= 10) {
+							new ModVisitor().visit(mth);
+						}
+						if (stage >= 11) {
+							new CodeShrinkVisitor().visit(mth);
 						}
 					} catch (Throwable e) {
 						sb.append("M ").append(mth.getMethodInfo().getRawFullId()).append(" LOAD_ERROR\n");

@@ -38,8 +38,21 @@ fn arg(a: &InsnArg, ctx: Ctx) -> String {
                 .cfg
                 .map(|c| insn_line(c.insn(w.insn), None, ctx))
                 .unwrap_or_default();
-            format!("(wrap {}:{})", w.ty, inner.trim_start_matches("I "))
+            let flags = match ctx.cfg {
+                Some(c) if ctx.versions => format!(
+                    " fl=[{}]",
+                    flag_names(c.insn(w.insn).flags, crate::model::insn::iflag::NAMES)
+                ),
+                _ => String::new(),
+            };
+            format!(
+                "(wrap {}:{}{})",
+                w.ty,
+                inner.trim_start_matches("I "),
+                flags
+            )
         }
+        InsnArg::Named(n) => format!("?({} {})", n.name, n.ty),
     }
 }
 
@@ -214,6 +227,7 @@ fn insn_line(n: &InsnNode, if_target: Option<i32>, cfg: Ctx) -> String {
         } => {
             let _ = write!(s, " ctor {call_mth} {}", call_type.name());
         }
+        InsnKind::Ternary { .. } => {}
     }
     if !n.jumps.is_empty() {
         let j: Vec<String> = n
