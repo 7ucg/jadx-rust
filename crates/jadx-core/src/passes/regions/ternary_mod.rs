@@ -140,10 +140,12 @@ fn new_ternary(
         (cond, th, els)
     };
     let mut n = InsnNode::new(InsnType::Ternary, InsnKind::TernaryCond(Box::new(cond)));
-    n.result = result;
     n.args.push(a);
     n.args.push(b);
-    cfg.add_insn(n)
+    let id = cfg.add_insn(n);
+    // `setResult` makes the node the assign of the result variable
+    cfg.set_result(id, result);
+    id
 }
 
 /// `TernaryInsn.simplifyCondition`
