@@ -427,11 +427,11 @@ fn remove_empty_methods(root: &mut Root, methods: &Methods, cls: usize, mi: usiz
     if !cfg.blocks.iter().all(|b| cfg.block(*b).insns.is_empty()) {
         return;
     }
-    if cls_init {
-        root.classes[cls].methods[mi].dont_generate = true;
-    } else if is_default_constructor(root, methods, cls, mi)
-        && !non_default_constructor_exists(root, methods, cls, mi)
-        && root.classes[cls].methods[mi].annotation_refs.is_empty()
+    // don't remove default constructor if other constructors exists or constructor has annotations
+    if cls_init
+        || (is_default_constructor(root, methods, cls, mi)
+            && !non_default_constructor_exists(root, methods, cls, mi)
+            && root.classes[cls].methods[mi].annotation_refs.is_empty())
     {
         root.classes[cls].methods[mi].dont_generate = true;
     }
