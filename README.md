@@ -18,7 +18,7 @@ crates/
   jadx-dex-input/   DEX reader (header, tables, MUTF-8, apk/zip/v41 containers)
   jadx-java-input/  JVM .class reader (planned)
   jadx-cli/         `jadx-rs` command line tool
-  jadx-mcp/         MCP server (planned)
+  jadx-mcp/         MCP server (stdio / local socket): `jadx-mcp` binary, `jadx-rs mcp`
 tests/oracle/       comparison harness against the Java jadx
 ```
 
@@ -35,6 +35,20 @@ cargo test
 jadx-rs smali       app.apk   # smali text of every class
 jadx-rs dex-info    app.apk   # table counts
 jadx-rs dex-classes app.apk   # class list
+```
+
+## MCP server
+
+`jadx-rs mcp [--socket PATH] [INPUT]` (or the `jadx-mcp` binary) runs a Model Context Protocol
+server over stdio, or over a Unix domain socket with `--socket`. `INPUT` (apk, xapk, dex, jar,
+class) is loaded at start; otherwise call the `open_project` tool. Tools cover classes and
+packages, class and method source, smali, manifest and resources, strings, hierarchy and usages.
+Class source is currently a declaration skeleton (`source_kind: skeleton`), see the crate docs.
+
+Client configuration example:
+
+```json
+{"mcpServers": {"jadx": {"command": "jadx-mcp", "args": ["/path/to/app.apk"]}}}
 ```
 
 ## Oracle checks

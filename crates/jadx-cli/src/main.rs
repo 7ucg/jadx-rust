@@ -8,6 +8,7 @@
 //!   jadx-rs dex-counts  <file>   id table counts (oracle comparison format)
 //!   jadx-rs pre-info    <file>   class level state after the pre decompile passes
 //!   jadx-rs res-dump    <apk> <outDir>   decoded text resources of an APK
+//!   jadx-rs mcp [--socket PATH] [input]   MCP server over stdio or a local socket
 //!   jadx-rs java-classes <file>  class data of .class/.jar input (oracle comparison format)
 //!   jadx-rs java-insns  <file>   decoded JVM instructions of .class/.jar input
 
@@ -25,6 +26,10 @@ fn main() -> Result<()> {
     let cmd = args.next().unwrap_or_default();
     if cmd == "res-dump" {
         return res_dump::res_dump(&args.collect::<Vec<_>>());
+    }
+    if cmd == "mcp" {
+        let rest: Vec<String> = args.collect();
+        return jadx_mcp::cli::run(&rest).map_err(|e| anyhow::anyhow!(e));
     }
     let path = args.next().map(PathBuf::from);
     if matches!(cmd.as_str(), "java-classes" | "java-insns") {
