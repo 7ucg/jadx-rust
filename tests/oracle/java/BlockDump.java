@@ -20,6 +20,14 @@ import jadx.core.dex.trycatch.TryCatchBlockAttr;
 import jadx.core.dex.visitors.AttachTryCatchVisitor;
 import jadx.core.dex.visitors.ProcessInstructionsVisitor;
 import jadx.core.dex.visitors.blocks.BlockProcessor;
+import jadx.core.dex.visitors.blocks.BlockFinisher;
+import jadx.core.dex.visitors.ssa.SSATransform;
+import jadx.core.dex.instructions.PhiInsn;
+import jadx.core.dex.instructions.args.RegisterArg;
+import jadx.core.dex.instructions.args.SSAVar;
+import jadx.core.dex.attributes.nodes.PhiListAttr;
+import java.util.IdentityHashMap;
+import java.util.Map;
 import jadx.core.dex.visitors.blocks.BlockSplitter;
 import jadx.core.dex.attributes.nodes.LoopInfo;
 
@@ -56,13 +64,18 @@ public class BlockDump {
 						if (stage >= 1) {
 							new BlockProcessor().visit(mth);
 						}
+						if (stage >= 2) {
+							new BlockFinisher().visit(mth);
+							new SSATransform().visit(mth);
+							InsnNodeDump.SSA = true;
+						}
 					} catch (Throwable e) {
 						sb.append("M ").append(mth.getMethodInfo().getRawFullId()).append(" LOAD_ERROR\n");
 						System.out.print(sb);
 						sb.setLength(0);
 						continue;
 					}
-					dump(sb, mth, stage >= 1);
+					dump(sb, mth, stage >= 1, stage >= 2);
 					System.out.print(sb);
 					sb.setLength(0);
 					mth.unload();
@@ -90,7 +103,60 @@ public class BlockDump {
 		return b == null ? "-" : Integer.toString(b.getCId());
 	}
 
-	static void dump(StringBuilder sb, MethodNode mth, boolean analysis) {
+	static Map<InsnNode, String> locations(MethodNode mth) {
+		Map<InsnNode, String> map = new IdentityHashMap<>();
+		for (BlockNode b : mth.getBasicBlocks()) {
+			int i = 0;
+			for (InsnNode insn : b.getInstructions()) {
+				map.put(insn, "b" + b.getCId() + "i" + i++);
+			}
+			PhiListAttr pl = b.get(AType.PHI_LIST);
+			if (pl != null) {
+				for (PhiInsn phi : pl.getList()) {
+					map.put(phi, "p" + b.getCId() + "r" + phi.getResult().getRegNum());
+				}
+			}
+		}
+		return map;
+	}
+
+	static String argLoc(MethodNode mth, Map<InsnNode, String> locs, RegisterArg arg) {
+		InsnNode parent = arg.getParentInsn();
+		if (parent == null) {
+			if (arg == mth.getThisArg()) {
+				return "this";
+			}
+			return "m" + mth.getArgRegs().indexOf(arg);
+		}
+		String l = locs.getOrDefault(parent, "gone");
+		if (parent.getResult() == arg) {
+			return l + ":res";
+		}
+		for (int k = 0; k < parent.getArgsCount(); k++) {
+			if (parent.getArg(k) == arg) {
+				return l + ":" + k;
+			}
+		}
+		return l + ":?";
+	}
+
+	static void dumpSsa(StringBuilder sb, MethodNode mth) {
+		Map<InsnNode, String> locs = locations(mth);
+		for (SSAVar v : mth.getSVars()) {
+			sb.append("V r").append(v.getRegNum()).append("/v").append(v.getVersion()).append(" assign=")
+					.append(argLoc(mth, locs, v.getAssign())).append(" uses=[")
+					.append(v.getUseList().stream().map(a -> argLoc(mth, locs, a)).collect(Collectors.joining(",")))
+					.append("] phis=[");
+			if (v.getUsedInPhi().isEmpty()) {
+				sb.append('-');
+			} else {
+				sb.append(v.getUsedInPhi().stream().map(p -> locs.getOrDefault(p, "gone")).collect(Collectors.joining(",")));
+			}
+			sb.append("]\n");
+		}
+	}
+
+	static void dump(StringBuilder sb, MethodNode mth, boolean analysis, boolean ssa) {
 		sb.append("M ").append(mth.getMethodInfo().getRawFullId()).append('\n');
 		for (ExceptionHandler h : mth.getExceptionHandlers()) {
 			sb.append("H ").append(h.getHandlerOffset()).append(" types=[")
@@ -133,6 +199,18 @@ public class BlockDump {
 						.append(']');
 			}
 			sb.append('\n');
+			if (ssa) {
+				PhiListAttr pl = b.get(AType.PHI_LIST);
+				if (pl != null) {
+					for (PhiInsn phi : pl.getList()) {
+						sb.append("  P ").append(InsnNodeDump.line(phi).substring(2)).append(" binds=[");
+						for (int i = 0; i < phi.getArgsCount(); i++) {
+							sb.append(i == 0 ? "" : ",").append(phi.getBlockByArgIndex(i).getCId());
+						}
+						sb.append("]\n");
+					}
+				}
+			}
 			for (InsnNode insn : b.getInstructions()) {
 				sb.append("  ").append(InsnNodeDump.line(insn));
 				sb.append(" fl=[").append(flags(insn, INSN_FLAGS)).append(']');
@@ -158,6 +236,9 @@ public class BlockDump {
 				}
 				sb.append('\n');
 			}
+		}
+		if (ssa) {
+			dumpSsa(sb, mth);
 		}
 	}
 }

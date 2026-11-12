@@ -192,9 +192,8 @@ fn merge_move_result(insns: &mut [Option<InsnNode>], offset: usize, res_type: Ar
         return;
     };
     let new_res = RegisterArg {
-        reg_num: move_res.reg_num,
-        init_type: res_type,
         immutable_type: move_res.immutable_type,
+        ..RegisterArg::new(move_res.reg_num, res_type)
     };
     let next_insn = insns[next].take();
     if let (Some(insn), Some(next_insn)) = (insns[offset].as_mut(), next_insn) {

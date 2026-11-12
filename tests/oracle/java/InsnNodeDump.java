@@ -70,8 +70,15 @@ public class InsnNodeDump {
 		}
 	}
 
+	/** Print SSA versions (`r1:int/v0`) when set. */
+	static boolean SSA = false;
+
 	private static String reg(RegisterArg r) {
-		return "r" + r.getRegNum() + ":" + r.getInitType() + (r.contains(AFlag.IMMUTABLE_TYPE) ? "!" : "");
+		String s = "r" + r.getRegNum() + ":" + r.getInitType() + (r.contains(AFlag.IMMUTABLE_TYPE) ? "!" : "");
+		if (SSA && r.getSVar() != null) {
+			s += "/v" + r.getSVar().getVersion();
+		}
+		return s;
 	}
 
 	private static String arg(InsnArg a) {

@@ -4,6 +4,7 @@ pub mod cfg;
 pub mod info;
 pub mod insn;
 pub mod node;
+pub mod ssa;
 pub mod types;
 
 pub use info::{ClassInfo, FieldInfo, MethodInfo};

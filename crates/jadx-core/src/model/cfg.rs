@@ -2,7 +2,8 @@
 
 use super::bitset::{BitSet, JavaIntSet};
 use super::info::ClassInfo;
-use super::insn::{BlockId, HandlerId, InsnId, InsnNode};
+use super::insn::{BlockId, HandlerId, InsnId, InsnNode, RegisterArg};
+use super::ssa::{SsaId, SsaVar};
 
 pub type LoopId = usize;
 pub type TryId = usize;
@@ -169,6 +170,8 @@ pub struct BlockNode {
     pub try_block: Option<TryId>,
     /// `AType.EXC_SPLIT_CROSS`: original path cross block.
     pub split_cross: Option<BlockId>,
+    /// `AType.PHI_LIST`: phi instructions of this block (also present in `insns` until hidden).
+    pub phi_list: Option<Vec<InsnId>>,
 }
 
 impl BlockNode {
@@ -194,6 +197,7 @@ impl BlockNode {
             catch: None,
             try_block: None,
             split_cross: None,
+            phi_list: None,
         }
     }
     /// Clean successors (`None` if never computed).
@@ -219,6 +223,7 @@ impl BlockNode {
             && self.catch.is_none()
             && self.try_block.is_none()
             && self.split_cross.is_none()
+            && self.phi_list.is_none()
     }
 }
 
@@ -248,6 +253,17 @@ pub struct MethodCfg {
     /// Arena of try/catch blocks; `try_list` holds the final list (`AType.TRY_BLOCKS_LIST`).
     pub try_blocks: Vec<TryBlock>,
     pub try_list: Vec<TryId>,
+    /// Register count of the method code (`getRegsCount`).
+    pub regs_count: usize,
+    /// `getThisArg`
+    pub this_arg: Option<RegisterArg>,
+    /// `getArgRegs`
+    pub arg_regs: Vec<RegisterArg>,
+    /// SSA variable arena; `svar_list` is `mth.getSVars()` (live variables in creation order).
+    pub svars: Vec<SsaVar>,
+    pub svar_list: Vec<SsaId>,
+    /// Warning comments attached to the method (`addWarnComment`).
+    pub warnings: Vec<String>,
 }
 
 impl MethodCfg {

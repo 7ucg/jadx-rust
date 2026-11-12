@@ -721,17 +721,15 @@ impl<'a> InsnDecoder<'a> {
             let start = *insn.regs.first().unwrap_or(&0);
             for r in start..start + count as u32 {
                 n.args.push(InsnArg::Register(RegisterArg {
-                    reg_num: r,
-                    init_type: elem_type.clone(),
                     immutable_type: immutable,
+                    ..RegisterArg::new(r, elem_type.clone())
                 }));
             }
         } else {
             for &r in &insn.regs {
                 n.args.push(InsnArg::Register(RegisterArg {
-                    reg_num: r,
-                    init_type: elem_type.clone(),
                     immutable_type: immutable,
+                    ..RegisterArg::new(r, elem_type.clone())
                 }));
             }
         }

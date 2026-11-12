@@ -18,8 +18,8 @@ fn main() -> Result<()> {
     let path = args.next().map(PathBuf::from);
     let no_verify = args.any(|a| a == "--no-verify-checksum");
     let path = match (cmd.as_str(), path) {
-        ("dex-info" | "dex-classes" | "dex-map" | "dex-counts" | "smali" | "dex-opcodes" | "insn-dump" | "insn-nodes" | "insn-blocks" | "insn-cfg", Some(p)) => p,
-        _ => bail!("usage: jadx-rs <dex-info|dex-classes|dex-map|dex-counts|smali|dex-opcodes|insn-dump|insn-nodes|insn-blocks|insn-cfg> <file.dex|.apk|.jar> [--no-verify-checksum]"),
+        ("dex-info" | "dex-classes" | "dex-map" | "dex-counts" | "smali" | "dex-opcodes" | "insn-dump" | "insn-nodes" | "insn-blocks" | "insn-cfg" | "insn-ssa", Some(p)) => p,
+        _ => bail!("usage: jadx-rs <dex-info|dex-classes|dex-map|dex-counts|smali|dex-opcodes|insn-dump|insn-nodes|insn-blocks|insn-cfg|insn-ssa> <file.dex|.apk|.jar> [--no-verify-checksum]"),
     };
     let opts = LoadOptions {
         verify_checksum: !no_verify,
@@ -28,8 +28,16 @@ fn main() -> Result<()> {
     for w in &res.warnings {
         eprintln!("warning: {w}");
     }
-    if cmd == "insn-nodes" || cmd == "insn-blocks" || cmd == "insn-cfg" {
-        return insn_nodes(&res.dex_files, cmd == "insn-blocks", cmd == "insn-cfg");
+    if matches!(
+        cmd.as_str(),
+        "insn-nodes" | "insn-blocks" | "insn-cfg" | "insn-ssa"
+    ) {
+        return insn_nodes(
+            &res.dex_files,
+            cmd == "insn-blocks",
+            cmd == "insn-cfg",
+            cmd == "insn-ssa",
+        );
     }
     for dex in &res.dex_files {
         match cmd.as_str() {
@@ -247,7 +255,7 @@ fn insn_dump(dex: &DexFile) -> Result<()> {
 
 /// Decode every method with the core decoder + `ProcessInstructions` and dump the nodes
 /// (oracle comparison format, see `jadx_core::dump`).
-fn insn_nodes(dexes: &[DexFile], blocks: bool, analysis: bool) -> Result<()> {
+fn insn_nodes(dexes: &[DexFile], blocks: bool, analysis: bool, ssa: bool) -> Result<()> {
     use jadx_core::decode::{InsnDecoder, MethodCtx};
     use jadx_core::dump::dump_insn;
     use jadx_core::passes::process_insns::process_instructions;
@@ -283,7 +291,7 @@ fn insn_nodes(dexes: &[DexFile], blocks: bool, analysis: bool) -> Result<()> {
                 root: root.clone(),
             };
             let decoded = InsnDecoder::new(dex, &ctx).process(&raw, code.insns.len());
-            if blocks || analysis {
+            if blocks || analysis || ssa {
                 let decoded = match decoded {
                     Ok(d) => d,
                     Err(_) => {
@@ -293,7 +301,17 @@ fn insn_nodes(dexes: &[DexFile], blocks: bool, analysis: bool) -> Result<()> {
                 };
                 let tries = dex.tries_api(&code)?;
                 let void = m.info.return_type.is_void();
-                let built = if analysis {
+                let built = if ssa {
+                    let frame = jadx_core::passes::pipeline::FrameInfo {
+                        regs_count: code.registers_size as usize,
+                        is_static: m.access & jadx_core::model::node::ACC_STATIC != 0,
+                        this_type: cls.info.arg_type().clone(),
+                        arg_types: m.arg_types.clone(),
+                    };
+                    jadx_core::passes::pipeline::build_ssa(
+                        decoded, &tries, &root.ctx, &root.clsp, void, &frame,
+                    )
+                } else if analysis {
                     jadx_core::passes::pipeline::build_processed_blocks(
                         decoded, &tries, &root.ctx, &root.clsp, void,
                     )
@@ -301,11 +319,17 @@ fn insn_nodes(dexes: &[DexFile], blocks: bool, analysis: bool) -> Result<()> {
                     jadx_core::passes::pipeline::build_blocks(decoded, &tries, &root.ctx, void)
                 };
                 match built {
-                    Ok(cfg) => write!(
-                        out,
-                        "{}",
-                        jadx_core::dump::dump_cfg_ext(&id, &cfg, analysis)
-                    )?,
+                    Ok(cfg) => {
+                        if ssa {
+                            write!(out, "{}", jadx_core::dump::dump_cfg_ssa(&id, &cfg))?
+                        } else {
+                            write!(
+                                out,
+                                "{}",
+                                jadx_core::dump::dump_cfg_ext(&id, &cfg, analysis)
+                            )?
+                        }
+                    }
                     Err(_) => writeln!(out, "M {id} LOAD_ERROR")?,
                 }
                 continue;

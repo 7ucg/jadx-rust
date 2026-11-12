@@ -5,20 +5,25 @@ use std::fmt::Write as _;
 
 use jadx_input_api::ArrayData;
 
+use crate::model::cfg::MethodCfg;
 use crate::model::insn::{FillArrayData, IndexValue, InsnArg, InsnKind, InsnNode, RegisterArg};
 
-fn reg(r: &RegisterArg) -> String {
-    format!(
+fn reg(r: &RegisterArg, cfg: Option<&MethodCfg>) -> String {
+    let mut s = format!(
         "r{}:{}{}",
         r.reg_num,
         r.init_type,
         if r.immutable_type { "!" } else { "" }
-    )
+    );
+    if let (Some(cfg), Some(v)) = (cfg, r.svar) {
+        let _ = write!(s, "/v{}", cfg.svars[v].version);
+    }
+    s
 }
 
-fn arg(a: &InsnArg) -> String {
+fn arg(a: &InsnArg, cfg: Option<&MethodCfg>) -> String {
     match a {
-        InsnArg::Register(r) => reg(r),
+        InsnArg::Register(r) => reg(r, cfg),
         InsnArg::Literal(l) => format!("#{}:{}", l.literal, l.ty),
     }
 }
@@ -73,17 +78,29 @@ pub fn dump_insn(n: &InsnNode) -> String {
 /// Like [`dump_insn`]; `if_target` replaces the printed `if` target (the reference reports the start
 /// offset of the `then` block once blocks are initialised).
 pub fn dump_insn_with(n: &InsnNode, if_target: Option<i32>) -> String {
+    dump_insn_ssa(n, if_target, None)
+}
+
+/// Like [`dump_insn_with`]; with `cfg` registers carry their SSA version (`r1:int/v0`).
+pub fn dump_insn_ssa(n: &InsnNode, if_target: Option<i32>, cfg: Option<&MethodCfg>) -> String {
     let mut s = String::new();
     let _ = write!(s, "I {:x} {}", n.offset, n.ty.name());
     let _ = write!(
         s,
         " res={}",
-        n.result.as_ref().map(reg).unwrap_or_else(|| "-".into())
+        n.result
+            .as_ref()
+            .map(|r| reg(r, cfg))
+            .unwrap_or_else(|| "-".into())
     );
     let _ = write!(
         s,
         " args=[{}]",
-        n.args.iter().map(arg).collect::<Vec<_>>().join(",")
+        n.args
+            .iter()
+            .map(|a| arg(a, cfg))
+            .collect::<Vec<_>>()
+            .join(",")
     );
     match &n.kind {
         InsnKind::None => {}
@@ -154,6 +171,9 @@ pub fn dump_insn_with(n: &InsnNode, if_target: Option<i32>) -> String {
         InsnKind::FillArrayData(d) => {
             let _ = write!(s, " fdata={}", fill_string(d));
         }
+        InsnKind::Phi { binds } => {
+            let _ = write!(s, " binds=[{}]", cids(binds));
+        }
     }
     if !n.jumps.is_empty() {
         let j: Vec<String> = n
@@ -208,6 +228,54 @@ fn opt(b: Option<usize>) -> String {
 
 /// With `analysis`, dominators, loops and clean successors are included.
 pub fn dump_cfg_ext(id: &str, cfg: &crate::model::cfg::MethodCfg, analysis: bool) -> String {
+    dump_cfg_impl(id, cfg, analysis, false)
+}
+
+/// Like [`dump_cfg_ext`] with analysis, plus SSA variables, phi nodes and register versions.
+pub fn dump_cfg_ssa(id: &str, cfg: &crate::model::cfg::MethodCfg) -> String {
+    dump_cfg_impl(id, cfg, true, true)
+}
+
+fn insn_locations(cfg: &MethodCfg) -> std::collections::HashMap<usize, String> {
+    let mut map = std::collections::HashMap::new();
+    for bid in &cfg.blocks {
+        let b = cfg.block(*bid);
+        for (i, iid) in b.insns.iter().enumerate() {
+            map.insert(*iid, format!("b{}i{}", b.cid, i));
+        }
+        for iid in b.phi_list.iter().flatten() {
+            let reg = cfg
+                .insn(*iid)
+                .result
+                .as_ref()
+                .map(|r| r.reg_num)
+                .unwrap_or(0);
+            map.insert(*iid, format!("p{}r{}", b.cid, reg));
+        }
+    }
+    map
+}
+
+fn arg_location(
+    r: crate::model::ssa::ArgRef,
+    locs: &std::collections::HashMap<usize, String>,
+) -> String {
+    use crate::model::ssa::ArgRef;
+    let l = |i: &usize| locs.get(i).cloned().unwrap_or_else(|| "gone".into());
+    match r {
+        ArgRef::This => "this".into(),
+        ArgRef::Method(k) => format!("m{k}"),
+        ArgRef::Result(i) => format!("{}:res", l(&i)),
+        ArgRef::Arg(i, k) => format!("{}:{k}", l(&i)),
+    }
+}
+
+fn dump_cfg_impl(
+    id: &str,
+    cfg: &crate::model::cfg::MethodCfg,
+    analysis: bool,
+    ssa: bool,
+) -> String {
     use crate::model::cfg::bflag;
     use crate::model::insn::iflag;
     let mut out = format!("M {id}\n");
@@ -310,6 +378,16 @@ pub fn dump_cfg_ext(id: &str, cfg: &crate::model::cfg::MethodCfg, analysis: bool
             );
         }
         out.push('\n');
+        if ssa {
+            for phi in b.phi_list.iter().flatten() {
+                let insn = cfg.insn(*phi);
+                let _ = writeln!(
+                    out,
+                    "  P {}",
+                    dump_insn_ssa(insn, None, Some(cfg)).trim_start_matches("I ")
+                );
+            }
+        }
         for iid in &b.insns {
             let insn = cfg.insn(*iid);
             let if_target = match &insn.kind {
@@ -319,7 +397,11 @@ pub fn dump_cfg_ext(id: &str, cfg: &crate::model::cfg::MethodCfg, analysis: bool
                 } => Some(cfg.block(*t).start_offset),
                 _ => None,
             };
-            let _ = write!(out, "  {}", dump_insn_with(insn, if_target));
+            let _ = write!(
+                out,
+                "  {}",
+                dump_insn_ssa(insn, if_target, if ssa { Some(cfg) } else { None })
+            );
             let _ = write!(out, " fl=[{}]", flag_names(insn.flags, iflag::NAMES));
             if let Some(c) = &insn.catch {
                 let offs: Vec<String> = c
@@ -362,6 +444,30 @@ pub fn dump_cfg_ext(id: &str, cfg: &crate::model::cfg::MethodCfg, analysis: bool
                 _ => {}
             }
             out.push('\n');
+        }
+    }
+    if ssa {
+        let locs = insn_locations(cfg);
+        for v in &cfg.svar_list {
+            let var = &cfg.svars[*v];
+            let uses: Vec<String> = var.uses.iter().map(|u| arg_location(*u, &locs)).collect();
+            let phis = match &var.used_in_phi {
+                None => "-".to_string(),
+                Some(l) => l
+                    .iter()
+                    .map(|i| locs.get(i).cloned().unwrap_or_else(|| "gone".into()))
+                    .collect::<Vec<_>>()
+                    .join(","),
+            };
+            let _ = writeln!(
+                out,
+                "V r{}/v{} assign={} uses=[{}] phis=[{}]",
+                var.reg_num,
+                var.version,
+                arg_location(var.assign, &locs),
+                uses.join(","),
+                phis
+            );
         }
     }
     out

@@ -246,6 +246,12 @@ pub struct RegisterArg {
     pub init_type: ArgType,
     /// `AFlag.IMMUTABLE_TYPE`: type must not be changed by type inference.
     pub immutable_type: bool,
+    /// `AFlag.THIS`
+    pub is_this: bool,
+    /// `AFlag.METHOD_ARGUMENT`
+    pub method_arg: bool,
+    /// SSA variable this register belongs to (`RegisterArg.getSVar`).
+    pub svar: Option<super::ssa::SsaId>,
 }
 
 impl RegisterArg {
@@ -254,6 +260,9 @@ impl RegisterArg {
             reg_num,
             init_type,
             immutable_type: false,
+            is_this: false,
+            method_arg: false,
+            svar: None,
         }
     }
     pub fn immutable(reg_num: u32, init_type: ArgType) -> Self {
@@ -261,6 +270,9 @@ impl RegisterArg {
             reg_num,
             init_type,
             immutable_type: true,
+            is_this: false,
+            method_arg: false,
+            svar: None,
         }
     }
 }
@@ -388,6 +400,10 @@ pub enum InsnKind {
         data: Option<FillArrayData>,
     },
     FillArrayData(FillArrayData),
+    /// `PhiInsn`: `binds[i]` is the predecessor block of argument `i`.
+    Phi {
+        binds: Vec<BlockId>,
+    },
 }
 
 /// Block identifier: index into the method's block arena (the block's `cid`).

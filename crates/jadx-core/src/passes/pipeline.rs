@@ -56,3 +56,32 @@ pub fn build_processed_blocks(
     process_blocks(&mut cfg, clsp)?;
     Ok(cfg)
 }
+
+/// Method frame description needed by SSA construction.
+pub struct FrameInfo {
+    pub regs_count: usize,
+    pub is_static: bool,
+    pub this_type: crate::model::types::ArgType,
+    pub arg_types: Vec<crate::model::types::ArgType>,
+}
+
+/// [`build_processed_blocks`] followed by `SSATransform`.
+pub fn build_ssa(
+    decoded: DecodedMethod,
+    tries: &[TryData],
+    root: &RootCtx,
+    clsp: &crate::clsp::ClspGraph,
+    void_return: bool,
+    frame: &FrameInfo,
+) -> Result<MethodCfg, String> {
+    let mut cfg = build_processed_blocks(decoded, tries, root, clsp, void_return)?;
+    crate::passes::ssa::init_arguments(
+        &mut cfg,
+        frame.regs_count,
+        frame.is_static,
+        &frame.this_type,
+        &frame.arg_types,
+    );
+    crate::passes::ssa::ssa_transform(&mut cfg)?;
+    Ok(cfg)
+}
