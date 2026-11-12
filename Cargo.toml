@@ -1,0 +1,32 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/jadx-core",
+    "crates/jadx-api",
+    "crates/jadx-input-api",
+    "crates/jadx-dex-input",
+    "crates/jadx-java-input",
+    "crates/jadx-cli",
+    "crates/jadx-mcp",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+rust-version = "1.80"
+
+[workspace.dependencies]
+thiserror = "=2.0.21"
+anyhow = "=1.0.100"
+zip = { version = "=9.5.1", default-features = false, features = ["deflate"] }
+adler2 = "=2.0.1"
+
+jadx-core = { path = "crates/jadx-core" }
+jadx-api = { path = "crates/jadx-api" }
+jadx-input-api = { path = "crates/jadx-input-api" }
+jadx-dex-input = { path = "crates/jadx-dex-input" }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

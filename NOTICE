@@ -1,0 +1,10 @@
+jadx-rs
+Copyright 2026 the jadx-rs contributors
+
+This project is a Rust reimplementation of the decompiler engine of jadx
+(https://github.com/skylot/jadx), Copyright 2015 Skylot and contributors,
+licensed under the Apache License, Version 2.0.
+
+The algorithms, pass ordering and data-model structure follow the original
+jadx design; the original Java sources are used as a behavioural reference
+(oracle) and are not part of this repository.
