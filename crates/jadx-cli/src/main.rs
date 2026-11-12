@@ -342,8 +342,16 @@ fn insn_nodes(dexes: &[DexFile], blocks: bool, analysis: bool, ssa: bool) -> Res
                         mi,
                         code.registers_size as usize,
                     );
+                    let extract_finally = std::env::var("JADX_RS_FINALLY").is_ok_and(|v| v == "1");
                     jadx_core::passes::pipeline::build_ssa(
-                        decoded, &tries, &root, ci, mi, &frame, stage,
+                        decoded,
+                        &tries,
+                        &root,
+                        ci,
+                        mi,
+                        &frame,
+                        stage,
+                        extract_finally,
                     )
                 } else if analysis {
                     jadx_core::passes::pipeline::build_processed_blocks(

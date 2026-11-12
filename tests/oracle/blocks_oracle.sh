@@ -6,7 +6,8 @@
 # 6 constant inlining, 7 type inference, 10 ModVisitor, 11 CodeShrinkVisitor. Stages 10 and 11
 # run without FixTypesVisitor and FinishTypeInference (reference and jadx-rs alike).
 #
-# Env: JADX_REF (default ../jadx), JDK_BIN (dir with javac/java), WORK (default ./work)
+# Env: JADX_REF (default ../jadx), JDK_BIN (dir with javac/java), WORK (default ./work),
+# JADX_RS_FINALLY=1 (run MarkFinallyVisitor after InitCodeVariables on both sides)
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 JADX_REF="${JADX_REF:-$ROOT/../jadx}"
@@ -14,6 +15,10 @@ WORK="${WORK:-$ROOT/work}"
 JAVAC="${JDK_BIN:+$JDK_BIN/}javac"; JAVA="${JDK_BIN:+$JDK_BIN/}java"
 LIB="$JADX_REF/jadx-cli/build/install/jadx/lib/*"
 JOPTS="-Duser.language=en -Duser.country=US -Xss16m"
+# The finally extraction iterates hash maps whose keys contain an enum (identity hash code), so its
+# result changes with unrelated changes of the running program. A constant identity hash makes the
+# reference reproducible; the port emulates it.
+if [ "${JADX_RS_FINALLY:-0}" = "1" ]; then JOPTS="$JOPTS -XX:+UnlockExperimentalVMOptions -XX:hashCode=2"; fi
 STAGE="${STAGE:-0}"
 SUB="insn-blocks"; [ "$STAGE" = "1" ] && SUB="insn-cfg"; [ "$STAGE" -ge 2 ] && SUB="insn-ssa"; export JADX_RS_STAGE="$STAGE"
 mkdir -p "$WORK/cls"

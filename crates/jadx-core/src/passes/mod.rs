@@ -13,6 +13,7 @@ pub mod dominators;
 pub mod exception_handler;
 pub mod init_code_vars;
 pub mod insn_utils;
+pub mod mark_finally;
 pub mod mod_visitor;
 pub mod move_inline;
 pub mod override_methods;

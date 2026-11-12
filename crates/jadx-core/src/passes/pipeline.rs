@@ -91,7 +91,12 @@ impl FrameInfo {
 }
 
 /// [`build_processed_blocks`] followed by `SSATransform` and, depending on `stage`, the later
-/// SSA passes (3 = `MoveInlineVisitor`, 4 = `ConstructorVisitor`, 5 = `InitCodeVariables`, 6 = `ConstInlineVisitor`, 7 = `TypeInferenceVisitor`, 10 = `ModVisitor`, 11 = `CodeShrinkVisitor`).
+/// SSA passes (3 = `MoveInlineVisitor`, 4 = `ConstructorVisitor`, 5 = `InitCodeVariables`,
+/// 6 = `ConstInlineVisitor`, 7 = `TypeInferenceVisitor`, 10 = `ModVisitor`,
+/// 11 = `CodeShrinkVisitor`).
+///
+/// With `extract_finally`, `MarkFinallyVisitor` runs after `InitCodeVariables` (stage 5 and up).
+#[allow(clippy::too_many_arguments)]
 pub fn build_ssa(
     decoded: DecodedMethod,
     tries: &[TryData],
@@ -100,6 +105,7 @@ pub fn build_ssa(
     mth: usize,
     frame: &FrameInfo,
     stage: u32,
+    extract_finally: bool,
 ) -> Result<MethodCfg, String> {
     let void_return = root.classes[cls].methods[mth].info.return_type.is_void();
     let mut cfg = build_processed_blocks(decoded, tries, &root.ctx, &root.clsp, void_return)?;
@@ -123,6 +129,9 @@ pub fn build_ssa(
     }
     if stage >= 5 {
         crate::passes::init_code_vars::init_code_vars(&mut cfg)?;
+        if extract_finally {
+            crate::passes::mark_finally::mark_finally(&mut cfg);
+        }
     }
     if stage >= 6 {
         crate::passes::const_inline::const_inline(&mut cfg)?;

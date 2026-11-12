@@ -48,6 +48,7 @@ pub mod bflag {
     pub const IGNORE_THROW_SPLIT: u64 = 1 << 13;
     pub const TRY_ENTER: u64 = 1 << 14;
     pub const TRY_LEAVE: u64 = 1 << 15;
+    pub const FINALLY_INSNS: u64 = 1 << 16;
 
     pub const NAMES: &[(u64, &str)] = &[
         (MTH_ENTER_BLOCK, "MTH_ENTER_BLOCK"),
@@ -66,6 +67,7 @@ pub mod bflag {
         (IGNORE_THROW_SPLIT, "IGNORE_THROW_SPLIT"),
         (TRY_ENTER, "TRY_ENTER"),
         (TRY_LEAVE, "TRY_LEAVE"),
+        (FINALLY_INSNS, "FINALLY_INSNS"),
     ];
 }
 
@@ -231,7 +233,7 @@ impl BlockNode {
 }
 
 /// Per-method code state: instructions, exception handlers and the block graph.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct MethodCfg {
     /// Block arena indexed by `cid`; blocks are never removed from the arena.
     pub arena: Vec<BlockNode>,
