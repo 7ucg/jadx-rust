@@ -259,6 +259,9 @@ pub struct Root {
     pub shadow_fields: std::sync::OnceLock<HashMap<usize, HashMap<FieldInfo, ShadowFix>>>,
     /// Kotlin intrinsic methods that carry variable names (`ProcessKotlinInternals.init`).
     pub kotlin_name_methods: std::sync::OnceLock<Option<std::collections::HashSet<MethodInfo>>>,
+    /// `EnumMapAttr`: ordinal to enum constant of the switch map fields, by map field
+    /// (`FixSwitchOverEnum`).
+    pub enum_maps: HashMap<(usize, usize), HashMap<i32, FieldInfo>>,
 }
 
 /// `ShadowFieldVisitor.FieldFixType`
@@ -403,6 +406,7 @@ impl Root {
             override_sets: Vec::new(),
             pkg_aliases: HashMap::new(),
             inner_cache: std::sync::OnceLock::new(),
+            enum_maps: HashMap::new(),
             shadow_fields: std::sync::OnceLock::new(),
             kotlin_name_methods: std::sync::OnceLock::new(),
         };

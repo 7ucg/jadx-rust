@@ -6,7 +6,7 @@ use std::fmt::Write as _;
 use crate::dump::{dump_arg, dump_insn_ssa, flag_names};
 use crate::model::cfg::{bflag, MethodCfg};
 use crate::model::condition::{if_op, CondMode, IfCondition};
-use crate::model::insn::{iflag, InsnId, InsnKind};
+use crate::model::insn::{iflag, InsnId, InsnKind, InsnType};
 use crate::model::region::{Container, LoopType, RegionId, RegionKind};
 
 fn block_flags(flags: u64) -> String {
@@ -278,6 +278,14 @@ fn dump_region(cfg: &MethodCfg, r: RegionId, ind: usize, out: &mut String) {
         }
         RegionKind::Switch { header, cases } => {
             let _ = writeln!(out, "SWITCH header={header} flags=[{flags}]{exh}");
+            if SWITCH_INSN.with(std::cell::Cell::get) {
+                if let Some(last) = cfg.block(*header).insns.last() {
+                    if cfg.insn(*last).ty == InsnType::Switch {
+                        indent(out, ind + 1);
+                        let _ = writeln!(out, "SWINSN {}", insn_line(cfg, *last));
+                    }
+                }
+            }
             for c in cases {
                 indent(out, ind + 1);
                 let keys: Vec<String> = c.keys.iter().map(|k| k.text()).collect();
@@ -386,9 +394,16 @@ fn dump_vars(cfg: &MethodCfg, out: &mut String) {
     }
 }
 
+thread_local! {
+    /// Also print the switch instruction of switch regions.
+    static SWITCH_INSN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 /// [`dump_regions`] followed by the variable information when `with_vars` is set.
 pub fn dump_regions_stage(id: &str, cfg: &MethodCfg, with_vars: bool) -> String {
+    SWITCH_INSN.with(|c| c.set(with_vars));
     let mut out = dump_regions(id, cfg);
+    SWITCH_INSN.with(|c| c.set(false));
     if with_vars {
         dump_vars(cfg, &mut out);
     }

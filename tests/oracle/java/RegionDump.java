@@ -195,6 +195,13 @@ public class RegionDump {
 			SwitchRegion r = (SwitchRegion) c;
 			sb.append("SWITCH header=").append(r.getHeader().getCId()).append(" flags=[").append(flags).append(']').append(exh)
 					.append('\n');
+			if (WITH_VARS && !r.getHeader().getInstructions().isEmpty()) {
+				InsnNode last = r.getHeader().getInstructions().get(r.getHeader().getInstructions().size() - 1);
+				if (last instanceof SwitchInsn) {
+					indent(sb, ind + 1);
+					sb.append("SWINSN ").append(insnLine(last)).append('\n');
+				}
+			}
 			// keys replaced by constant fields (ModVisitor) are printed as their int values
 			java.util.IdentityHashMap<Object, Integer> keyValues = new java.util.IdentityHashMap<>();
 			InsnNode swLast = r.getHeader().getInstructions().isEmpty() ? null

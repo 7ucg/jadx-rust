@@ -18,6 +18,7 @@ pub mod enum_visitor;
 pub mod exception_handler;
 pub mod extract_field_init;
 pub mod fix_instructions;
+pub mod fix_switch_over_enum;
 pub mod generic_types;
 pub mod init_code_vars;
 pub mod insn_utils;

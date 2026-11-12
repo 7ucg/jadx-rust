@@ -39,7 +39,7 @@ public class PipelineDump {
 				{ "MethodThrowsVisitor", "26" }, { "MethodInvokeVisitor", "27" }, { "SimplifyVisitor", "28" },
 				{ "FixInstructionsVisitor", "29" }, { "ProcessVariables", "30" }, { "ApplyVariableNames", "31" },
 				{ "PrepareForCodeGen", "32" }, { "AnonymousClassVisitor", "33" }, { "ExtractFieldInit", "34" },
-				{ "ClassModifier", "35" }, { "EnumVisitor", "36" }, { "InlineMethods", "37" }, { "FixSwitchOverEnum", "38" },
+				{ "ClassModifier", "35" }, { "EnumVisitor", "36" }, { "FixSwitchOverEnum", "37" }, { "InlineMethods", "38" },
 				{ "NonFinalResIdsVisitor", "39" }, { "FixAccessModifiers", "40" },
 				{ "MarkMethodsForInline", "41" }
 		};

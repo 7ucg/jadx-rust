@@ -224,34 +224,37 @@ impl<'s> ClassDriver<'s> {
     /// Run `f` for every loaded method of the traversal.
     fn method_pass(&mut self, visits: &[Visit], f: &MethodPassFn) {
         for v in visits {
-            let Visit::Method(c, m) = *v else {
-                continue;
-            };
-            let Some(st) = self.methods.get_mut(&(c, m)) else {
-                continue;
-            };
-            if st.failed.is_some() {
-                continue;
+            if let Visit::Method(c, m) = *v {
+                self.method_pass_one(c, m, f);
             }
-            let Some(mut cfg) = st.cfg.take() else {
-                continue;
-            };
-            let env = MethodEnv {
-                root: &self.root,
-                cls: c,
-                mth: m,
-            };
-            let methods = &self.methods;
-            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                f(&mut cfg, &env, methods)
-            }));
-            let st = self.methods.get_mut(&(c, m)).expect("method state");
-            st.cfg = Some(cfg);
-            match r {
-                Ok(Ok(())) => {}
-                Ok(Err(e)) => st.failed = Some(e),
-                Err(_) => st.failed = Some("panic in pass".to_string()),
-            }
+        }
+    }
+
+    /// Run `f` for one method if it is loaded and did not fail.
+    fn method_pass_one(&mut self, c: usize, m: usize, f: &MethodPassFn) {
+        let Some(st) = self.methods.get_mut(&(c, m)) else {
+            return;
+        };
+        if st.failed.is_some() {
+            return;
+        }
+        let Some(mut cfg) = st.cfg.take() else {
+            return;
+        };
+        let env = MethodEnv {
+            root: &self.root,
+            cls: c,
+            mth: m,
+        };
+        let methods = &self.methods;
+        let r =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(&mut cfg, &env, methods)));
+        let st = self.methods.get_mut(&(c, m)).expect("method state");
+        st.cfg = Some(cfg);
+        match r {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => st.failed = Some(e),
+            Err(_) => st.failed = Some("panic in pass".to_string()),
         }
     }
 
@@ -261,6 +264,25 @@ impl<'s> ClassDriver<'s> {
             if let Visit::Class(c) = *v {
                 // errors of class passes are reported as class warnings in the reference
                 let _ = f(&mut self.root, &mut self.methods, c);
+            }
+        }
+    }
+
+    /// `FixSwitchOverEnum`: a pass with a class and a method part, in traversal order.
+    fn fix_switch_over_enum(&mut self, visits: &[Visit]) {
+        use crate::passes::fix_switch_over_enum as fse;
+        for v in visits {
+            match *v {
+                Visit::Class(c) => fse::init_cls_enum_map(&mut self.root, &self.methods, c),
+                Visit::Method(c, m) => {
+                    let pending = std::cell::RefCell::new(Vec::new());
+                    self.method_pass_one(c, m, &|cfg, env, _| {
+                        fse::fix_switch_over_enum(cfg, env, &mut pending.borrow_mut())
+                    });
+                    for field in pending.into_inner() {
+                        fse::hide_enum_map_field(&mut self.root, field);
+                    }
+                }
             }
         }
     }
@@ -381,6 +403,9 @@ impl<'s> ClassDriver<'s> {
                 crate::passes::enum_visitor::enum_visitor(root, methods, c)
             });
         }
+        if on(pass_stage::FIX_SWITCH_OVER_ENUM) {
+            self.fix_switch_over_enum(visits);
+        }
         if on(pass_stage::EXTRACT_FIELD_INIT) {
             if let Some(Visit::Class(top)) = visits.first().copied() {
                 self.class_pass_post(top, &|root, methods, c| {
@@ -454,4 +479,5 @@ pub mod pass_stage {
     pub const EXTRACT_FIELD_INIT: u32 = 34;
     pub const CLASS_MODIFIER: u32 = 35;
     pub const ENUM_VISITOR: u32 = 36;
+    pub const FIX_SWITCH_OVER_ENUM: u32 = 37;
 }

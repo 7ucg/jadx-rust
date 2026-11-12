@@ -11,8 +11,8 @@ use crate::model::insn::{
     iflag, BlockId, CallType, IndexValue, InsnArg, InsnId, InsnKind, InsnNode, InsnType, InvokeType,
 };
 use crate::model::node::{
-    EnumClassAttr, EnumFieldAttr, FieldNode, MethodId, Root, ACC_CONSTRUCTOR, ACC_ENUM, ACC_FINAL,
-    ACC_PUBLIC, ACC_STATIC, ACC_SYNTHETIC,
+    EnumClassAttr, EnumFieldAttr, MethodId, Root, ACC_CONSTRUCTOR, ACC_ENUM, ACC_FINAL, ACC_STATIC,
+    ACC_SYNTHETIC,
 };
 use crate::model::region::Container;
 use crate::model::ssa::ArgRef;
