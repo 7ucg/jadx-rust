@@ -11,7 +11,9 @@
 //!   jadx-rs java-classes <file>  class data of .class/.jar input (oracle comparison format)
 //!   jadx-rs java-insns  <file>   decoded JVM instructions of .class/.jar input
 //!   jadx-rs input-classes <file>... all classes of all code inputs (dex, nested archives, splits)
+//!   jadx-rs xref <file> <query>...  cross reference queries (see index_dump.rs)
 
+mod index_dump;
 mod input_dump;
 mod java_dump;
 
@@ -27,6 +29,9 @@ fn main() -> Result<()> {
     let cmd = args.next().unwrap_or_default();
     if cmd == "res-dump" {
         return res_dump::res_dump(&args.collect::<Vec<_>>());
+    }
+    if cmd == "xref" {
+        return index_dump::run(&args.collect::<Vec<_>>());
     }
     if cmd == "input-classes" {
         return input_dump::run(&args.collect::<Vec<_>>());

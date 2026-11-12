@@ -18,6 +18,7 @@ crates/
   jadx-dex-input/   DEX reader (header, tables, MUTF-8, apk/zip/v41 containers)
   jadx-java-input/  JVM .class reader
   jadx-package/     package containers (xapk/apks/apkm), multi-source input loading
+  jadx-index/       cross reference index: callers, field access, literals, call graph, name search
   jadx-cli/         `jadx-rs` command line tool
   jadx-mcp/         MCP server (planned)
 tests/oracle/       comparison harness against the Java jadx

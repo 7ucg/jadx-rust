@@ -11,7 +11,6 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use jadx_core::model::node::{MethodId, Root, ACC_STATIC};
-use jadx_input_api::MethodRefData;
 
 use crate::error::{IndexError, Result};
 use crate::resolve::{display_method, method_ref_text, parse_method_ref};

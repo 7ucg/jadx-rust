@@ -111,6 +111,7 @@ dependencies = [
  "anyhow",
  "jadx-core",
  "jadx-dex-input",
+ "jadx-index",
  "jadx-input-api",
  "jadx-java-input",
  "jadx-package",

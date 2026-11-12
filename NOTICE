@@ -12,7 +12,7 @@ jadx design; the original Java sources are used as a behavioural reference
 crates/jadx-core/resources/core.jcst is the class hierarchy data of the Android and Java
 framework classes shipped with jadx (Apache License 2.0, Copyright 2015 Skylot and contributors).
 
-RDX (https://github.com/Ch0pin/RDX), Copyright 2026 Ch0pin and RDX contributors, licensed under
+RDX, Copyright 2026 Ch0pin and RDX contributors, licensed under
 the Apache License, Version 2.0. The following parts of this repository are adapted from RDX
 sources (Rust, non-GUI engine code); each adapted file names its origin and the modifications in
 its module documentation:
@@ -22,5 +22,14 @@ its module documentation:
   APK handling) is adapted from RDX `src/package_container.rs`. Modifications: the selection
   policy of the reference jadx plugins as default, `.apkm` support, manifest decoding with
   `jadx-resources`, a dependency free JSON reader, no dependency on the RDX engine.
+- crates/jadx-index: the posting store (fingerprint keyed fixed size records, sorted runs on disk
+  merged into one file that lookups binary-search) is adapted from RDX `src/invoke_index.rs`; the
+  package scope filter from `src/package_scope.rs`; the bounded call graph (depth, node and edge
+  caps, component classification, dispatch targets) from `src/call_graph.rs`; the call site, field
+  access and integer literal scans from `src/native_xrefs.rs`, `src/field_references.rs` and
+  `src/integer_references.rs`; the name and literal search ideas from `src/identifier_search.rs`
+  and `src/search.rs`. Modifications: the index works on the `jadx-core` root and on instructions
+  decoded by `jadx-dex-input` instead of the RDX engine, uses a dependency free fingerprint, a
+  memory budget with external merge, and verifies every hit against the decoded code.
 
 No fonts, icons, themes or GUI code of RDX are part of this repository.
