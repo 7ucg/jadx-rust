@@ -48,6 +48,10 @@ pub fn res_dump(args: &[String]) -> Result<()> {
     for f in &res.files {
         let mut text = f.text.clone();
         text.push('\n');
+        if !jadx_resources::apk::is_safe_output_path(&f.path) {
+            eprintln!("skipping resource with unsafe path: {}", f.path);
+            continue;
+        }
         write_file(&out.join(&f.path), text.as_bytes())?;
     }
     let mut names: Vec<(u32, &String)> = res

@@ -251,7 +251,21 @@ fn file_alias(re: &crate::table::ResourceEntry, name: &str) -> String {
     s.push('/');
     s.push_str(&re.key_name);
     s.push_str(&ext_from_name(name));
+    if !is_safe_output_path(&s) {
+        // never produce a path leaving the output directory (names come from the input file)
+        return name.to_string();
+    }
     s
+}
+
+/// Relative output path without parent components, absolute roots, backslashes or NUL.
+pub fn is_safe_output_path(path: &str) -> bool {
+    !path.is_empty()
+        && !path.contains('\0')
+        && !path.contains('\\')
+        && std::path::Path::new(path)
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)))
 }
 
 fn ext_from_name(name: &str) -> String {
