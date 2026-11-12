@@ -136,6 +136,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "jadx-index"
+version = "0.1.0"
+dependencies = [
+ "jadx-core",
+ "jadx-dex-input",
+ "jadx-input-api",
+ "thiserror",
+]
+
+[[package]]
 name = "jadx-input-api"
 version = "0.1.0"
 

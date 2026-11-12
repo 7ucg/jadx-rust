@@ -1,0 +1,13 @@
+[package]
+name = "jadx-index"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Cross reference index over a loaded input: callers, callees, field readers and writers, string and integer literals, name search"
+
+[dependencies]
+thiserror.workspace = true
+jadx-core.workspace = true
+jadx-input-api.workspace = true
+jadx-dex-input.workspace = true

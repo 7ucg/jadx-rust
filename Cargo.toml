@@ -8,6 +8,7 @@ members = [
     "crates/jadx-resources",
     "crates/jadx-java-input",
     "crates/jadx-package",
+    "crates/jadx-index",
     "crates/jadx-cli",
     "crates/jadx-mcp",
 ]
@@ -31,6 +32,7 @@ jadx-dex-input = { path = "crates/jadx-dex-input" }
 jadx-resources = { path = "crates/jadx-resources" }
 jadx-java-input = { path = "crates/jadx-java-input" }
 jadx-package = { path = "crates/jadx-package" }
+jadx-index = { path = "crates/jadx-index" }
 
 [profile.release]
 lto = "thin"
