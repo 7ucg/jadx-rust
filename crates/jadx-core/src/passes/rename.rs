@@ -128,7 +128,7 @@ fn set_class_short_name(root: &mut Root, ci: usize, name: &str) {
 }
 
 /// `RenameReasonAttr.append`
-fn append_reason(reason: &mut Option<String>, text: &str) {
+pub(crate) fn append_reason(reason: &mut Option<String>, text: &str) {
     match reason {
         Some(r) if !r.is_empty() => {
             r.push_str(" and ");

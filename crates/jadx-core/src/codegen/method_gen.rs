@@ -145,7 +145,8 @@ impl<'a> MethodGen<'a> {
             ai = ai.remove(ACC_PUBLIC);
         }
         if mth.alias.as_deref().is_some_and(|a| a != mth.info.name) && !ai.is_constructor() {
-            self.cls_gen.add_renamed_comment(code, &mth.info.name, None);
+            self.cls_gen
+                .add_renamed_comment(code, &mth.info.name, mth.alias_reason.as_deref());
         }
         if self.cfg.is_inconsistent() && env.check_comments_level(CommentsLevel::Error) {
             code.start_line_str("/*");

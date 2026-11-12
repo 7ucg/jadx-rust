@@ -70,8 +70,15 @@ impl<'m, 'a> RegionGen<'m, 'a> {
     }
 
     fn declare_vars(&self, code: &mut CodeWriter, cont: Container) -> Res {
-        let Some(vars) = self.cfg().regions.declare_vars.get(&cont) else {
-            return Ok(());
+        let cfg = self.cfg();
+        let vars = match cont {
+            Container::Region(r) if !cfg.regions.arena[r].declare_vars.is_empty() => {
+                &cfg.regions.arena[r].declare_vars
+            }
+            _ => match cfg.regions.declare_vars.get(&cont) {
+                Some(v) => v,
+                None => return Ok(()),
+            },
         };
         for &v in vars {
             code.start_line();

@@ -581,9 +581,16 @@ fn check_method_signature_collisions(root: &mut Root, cx: &Cx, cidx: usize, midx
     if let Some(o) = other {
         let skip =
             cx.dont_rename.contains(&(cidx, o)) || cx.attrs.contains_key(&MthRef::App(cidx, o));
-        if !skip {
+        if skip {
+            root.classes[cidx].methods[o].comments.push((
+                crate::codegen::CommentsLevel::Warn,
+                "Can't rename method to resolve collision".to_string(),
+            ));
+        } else {
             let new_name = make_new_name(root, cidx, o);
-            root.classes[cidx].methods[o].alias = Some(new_name);
+            let node = &mut root.classes[cidx].methods[o];
+            node.alias = Some(new_name);
+            node.alias_reason = Some("avoid collision after fix types in other method".to_string());
         }
         root.classes[cidx].methods[o].bridged_by = Some(midx);
     }

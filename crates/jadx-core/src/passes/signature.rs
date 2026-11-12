@@ -133,8 +133,15 @@ fn parse_class_signature(root: &mut Root, idx: usize) {
                 })
                 .collect()
         };
-        let generics = fix_type_param_declarations(root, idx, generics, &super_class, &interfaces);
+        let (generics, missing) =
+            fix_type_param_declarations(root, idx, generics, &super_class, &interfaces);
         let cls = &mut root.classes[idx];
+        if let Some(m) = missing {
+            cls.comments.push((
+                crate::codegen::CommentsLevel::Info,
+                format!("Add missing generic type declarations: {m}"),
+            ));
+        }
         cls.generics = generics;
         cls.super_class = super_class;
         cls.interfaces = interfaces;
@@ -149,13 +156,13 @@ fn fix_type_param_declarations(
     generics: Vec<ArgType>,
     super_class: &Option<ArgType>,
     interfaces: &[ArgType],
-) -> Vec<ArgType> {
+) -> (Vec<ArgType>, Option<String>) {
     let super_is_object = super_class
         .as_ref()
         .map(|s| *s == ArgType::object_type())
         .unwrap_or(true);
     if interfaces.is_empty() && super_is_object {
-        return generics;
+        return (generics, None);
     }
     let mut used: BTreeSet<String> = BTreeSet::new();
     let mut collect = |t: &ArgType| {
@@ -173,7 +180,7 @@ fn fix_type_param_declarations(
         collect(i);
     }
     if used.is_empty() {
-        return generics;
+        return (generics, None);
     }
     let mut known = generics.clone();
     if root.classes[idx].is_inner() {
@@ -192,11 +199,25 @@ fn fix_type_param_declarations(
         }
     }
     if used.is_empty() {
-        return generics;
+        return (generics, None);
     }
+    // `Set.toString` of the reference hash set
+    let mut shown: Vec<&String> = used.iter().collect();
+    shown.sort_by_key(|s| {
+        let h = crate::model::bitset::java_string_hash(s) as u32;
+        ((h ^ (h >> 16)) as usize) & 15
+    });
+    let text = format!(
+        "[{}]",
+        shown
+            .iter()
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
     let mut fixed = generics;
     fixed.extend(used.into_iter().map(|n| ArgType::generic_type(&n)));
-    fixed
+    (fixed, Some(text))
 }
 
 fn validate_inner_type(root: &Root, ty: &ArgType) -> bool {

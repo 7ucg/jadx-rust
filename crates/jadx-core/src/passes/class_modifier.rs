@@ -11,9 +11,6 @@ use crate::model::types::ArgType;
 use crate::passes::driver::MethodState;
 use crate::passes::insn_utils::{same_reg_and_svar, wrap_instruction};
 
-const ACC_PRIVATE: u32 = 0x2;
-const ACC_PROTECTED: u32 = 0x4;
-
 type Methods = HashMap<MethodId, MethodState>;
 
 fn cfg_of(methods: &Methods, id: MethodId) -> Option<&MethodCfg> {
@@ -372,15 +369,20 @@ fn check_synthetic_wrapper(
     // remove confirmed, change visibility and name if needed
     if wrapped_acc & ACC_PUBLIC == 0 {
         // must be public
-        let m = &mut root.classes[wc].methods[wm];
-        m.access = (m.access & !(ACC_PRIVATE | ACC_PROTECTED | ACC_PUBLIC)) | ACC_PUBLIC;
+        crate::passes::fix_access_modifiers::change_method_visibility(root, (wc, wm), ACC_PUBLIC);
     }
     let bridge = &root.classes[cls].methods[mi];
     let alias = bridge
         .alias
         .clone()
         .unwrap_or_else(|| bridge.info.name.clone());
+    let bridge_short_id = bridge.info.short_id();
     let (override_set, override_base) = (bridge.override_set, bridge.override_base_decl.clone());
+    let (override_decls, override_first, override_is_base) = (
+        bridge.override_decls.clone(),
+        bridge.override_first,
+        bridge.override_is_base,
+    );
     let wrapped_m = &mut root.classes[wc].methods[wm];
     let wrapped_alias = wrapped_m
         .alias
@@ -388,10 +390,21 @@ fn check_synthetic_wrapper(
         .unwrap_or_else(|| wrapped_m.info.name.clone());
     if wrapped_alias != alias {
         wrapped_m.alias = Some(alias);
+        crate::passes::rename::append_reason(
+            &mut wrapped_m.alias_reason,
+            "merged with bridge method [inline-methods]",
+        );
     }
     wrapped_m.replace = Some((cls, mi));
     wrapped_m.override_set = override_set;
     wrapped_m.override_base_decl = override_base;
+    wrapped_m.override_decls = override_decls;
+    wrapped_m.override_first = override_first;
+    wrapped_m.override_is_base = override_is_base;
+    wrapped_m.comments.push((
+        crate::codegen::CommentsLevel::Debug,
+        format!("Method merged with bridge method: {bridge_short_id}"),
+    ));
     true
 }
 
