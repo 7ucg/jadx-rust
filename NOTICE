@@ -11,3 +11,36 @@ jadx design; the original Java sources are used as a behavioural reference
 
 crates/jadx-core/resources/core.jcst is the class hierarchy data of the Android and Java
 framework classes shipped with jadx (Apache License 2.0, Copyright 2015 Skylot and contributors).
+
+crates/jadx-mcp (the MCP server) contains code adapted from RDX, Copyright 2026 Ch0pin and RDX
+contributors, licensed under the Apache License, Version 2.0 (https://www.apache.org/licenses/LICENSE-2.0).
+RDX itself includes code adapted from JADX (Skylot and contributors) and Android Open Source Project
+material under their respective licenses. The adapted parts of RDX are its MCP (Model Context
+Protocol) server design; no GUI, plugin window, screenshot, Frida or bundled font, icon or theme
+material was taken. Modifications relative to RDX:
+
+  - crates/jadx-mcp/src/protocol.rs: newline delimited JSON-RPC framing, the frame size limit with
+    the RESPONSE_TOO_LARGE fallback and the request validation and serve loop of the RDX stdio
+    gateway. Rewritten to be generic over any reader and writer, with a separate request reader so
+    that cancellation notifications are seen during a running tool call; the GUI worker, loopback
+    TCP service, instance registry and discovery code were not carried over.
+  - crates/jadx-mcp/src/server.rs: lifecycle handling (initialize, ping, tools/list, tools/call) and
+    the shape of tool results (text content plus structuredContent, coded errors). Reworked for a
+    single shared project per process instead of GUI instances.
+  - crates/jadx-mcp/src/registry.rs: the declarative tool table, JSON schema generation, parameter
+    aliases and argument validation (unknown arguments reported with the accepted names, selector
+    alternatives). Reduced to the parameter model this server needs and re-expressed as a typed
+    ToolSpec.
+  - crates/jadx-mcp/src/args.rs: list paging (items, total, next_offset), text paging by Unicode
+    scalar offset with a source hash for change detection, and alias conflict rules. A different hash
+    function and error type are used.
+  - crates/jadx-mcp/src/index.rs: class selector resolution (exact id, descriptor form, unique short
+    name, ambiguity and "did you mean" candidates). Reimplemented over the project class table of
+    this repository.
+  - The tool surface (class listing and search, class source, method source, disassembly, manifest
+    and resource access, string search, hierarchy and usage queries) follows the tool names and
+    conventions documented by RDX; every tool is implemented anew on top of the engine crates of this
+    repository.
+
+RDX is distributed without per-file license headers; the attribution above and the header comments
+of the adapted modules take their place.

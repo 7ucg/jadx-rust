@@ -7,6 +7,7 @@
 //!   jadx-rs pre-info    <file>   class level state after the pre decompile passes
 //!   jadx-rs java-classes <file>  class data of .class/.jar input (oracle comparison format)
 //!   jadx-rs java-insns  <file>   decoded JVM instructions of .class/.jar input
+//!   jadx-rs mcp [--socket PATH] [input]   MCP server over stdio or a local socket
 //!   jadx-rs res-dump    <apk> <outDir>   decoded text resources of an APK
 
 use std::path::PathBuf;
@@ -31,11 +32,16 @@ pub const COMMANDS: &[&str] = &[
     "res-dump",
     "java-classes",
     "java-insns",
+    "mcp",
 ];
 
 pub fn run() -> Result<()> {
     let mut args = std::env::args().skip(1);
     let cmd = args.next().unwrap_or_default();
+    if cmd == "mcp" {
+        let rest: Vec<String> = args.collect();
+        return jadx_mcp::cli::run(&rest).map_err(|e| anyhow::anyhow!(e));
+    }
     if cmd == "res-dump" {
         return crate::res_dump::res_dump(&args.collect::<Vec<_>>());
     }
