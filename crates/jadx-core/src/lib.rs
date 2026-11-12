@@ -12,6 +12,7 @@ pub mod model;
 pub mod name_mapper;
 pub mod passes;
 pub mod region_dump;
+pub mod resources;
 pub mod root;
 pub mod signature;
 pub mod type_compare;

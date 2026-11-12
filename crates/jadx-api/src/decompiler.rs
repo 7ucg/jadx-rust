@@ -6,9 +6,12 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use jadx_core::model::const_storage::FieldRef;
 use jadx_core::model::node::Root;
 use jadx_core::passes::pre_decompile::{run_pre_decompile, PreDecompileOptions};
+use jadx_core::resources::{add_resource_classes, ResourceField, ResourceInput};
 use jadx_dex_input::DexFile;
+use jadx_input_api::ConstValue;
 use jadx_java_input::JavaClass as JavaInputClass;
 use jadx_package::{load_inputs, InputSet, LoadOptions};
 
@@ -24,8 +27,8 @@ use crate::log::{Level, LogSink, NullLog};
 use crate::parallel::run_indexed;
 use crate::paths::{class_alias_file_path, safe_join, save_text};
 use crate::resources::{
-    load_resources, save_resources, AndroidResourceDecoder, ResourceDecoder, ResourceFile,
-    SaveResources,
+    load_resources, resource_options, save_resources, AndroidResourceDecoder, ResourceContext,
+    ResourceDecoder, ResourceFile, ResourceType, SaveResources,
 };
 
 /// Progress callback: `(done, total)`.
@@ -60,6 +63,7 @@ struct Loaded {
     /// Package of every top level class.
     class_package: HashMap<usize, usize>,
     resources: Vec<ResourceFile>,
+    resource_context: ResourceContext,
 }
 
 /// Decompiler facade. Create with [`JadxArgs`], call [`load`](JadxDecompiler::load), then list
@@ -241,8 +245,51 @@ impl JadxDecompiler {
             }
         }
 
+        let (mut resources, res_warnings) = load_resources(&self.args.input_files);
+        for w in &res_warnings {
+            self.log(Level::Warn, w);
+        }
+        // the resource table gives the `R` class its fields and the ids their names
+        let table_data = resources
+            .iter()
+            .find(|r| r.resource_type() == ResourceType::Arsc)
+            .and_then(|r| r.load_bytes().ok());
+        let table = table_data.as_deref().and_then(|data| {
+            match jadx_resources::ResTable::parse(data, &resource_options(&self.args)) {
+                Ok(t) => Some(t),
+                Err(e) => {
+                    self.log(
+                        Level::Error,
+                        &format!("Failed to parse 'resources.pb'/'.arsc' file: {e}"),
+                    );
+                    None
+                }
+            }
+        });
+        let res_plan = table.as_ref().map(|t| {
+            let input = ResourceInput {
+                app_package: t.storage().app_package().map(str::to_string),
+                names: t.resource_names(),
+                fields: t
+                    .r_fields()
+                    .into_iter()
+                    .map(|f| ResourceField {
+                        id: f.id,
+                        type_name: f.type_name,
+                        name: f.name,
+                    })
+                    .collect(),
+            };
+            add_resource_classes(&mut class_data, &input, self.args.move_inner_classes)
+        });
+        class_dex.resize(class_data.len(), usize::MAX);
+        class_origin.resize(class_data.len(), ClassOrigin::Synthetic);
+
         let mut root = Root::build(class_data, self.args.move_inner_classes)
             .map_err(|e| JadxError::Load(format!("Failed to build class tree: {e}")))?;
+        if let Some(plan) = res_plan {
+            root.apply_resource_plan(plan);
+        }
         let pre = PreDecompileOptions {
             respect_bytecode_acc_modifiers: self.args.respect_bytecode_acc_modifiers,
             replace_consts: self.args.replace_consts,
@@ -260,9 +307,18 @@ impl JadxDecompiler {
             run_pre_decompile(&mut root, &refs, &pre);
         }
 
-        let (resources, res_warnings) = load_resources(&self.args.input_files);
-        for w in &res_warnings {
-            self.log(Level::Warn, w);
+        let mut resource_context = ResourceContext::default();
+        if !self.args.skip_resources {
+            if let Some(t) = &table {
+                // files that the table names (obfuscated or shrunk resource file names)
+                let aliases = jadx_resources::file_alias_map(t);
+                for r in &mut resources {
+                    if let Some(alias) = aliases.get(r.original_name()) {
+                        r.set_alias(alias);
+                    }
+                }
+                resource_context = self.resource_context(&mut root, table_data.as_deref());
+            }
         }
 
         let sorted = root.sorted_class_order();
@@ -290,8 +346,45 @@ impl JadxDecompiler {
             packages,
             class_package,
             resources,
+            resource_context,
         });
         Ok(())
+    }
+
+    /// Tables of the decompiled code for the resource decoder: the names of the constants that
+    /// carry resource ids and the renamed classes. Resource ids whose constant gets another name
+    /// from the table rename the field (`ResTableBinaryParser.getResName`).
+    fn resource_context(&self, root: &mut Root, table_data: Option<&[u8]>) -> ResourceContext {
+        let mut ctx = ResourceContext::default();
+        let mut fields: HashMap<i32, (usize, usize)> = HashMap::new();
+        for (value, fld) in root.const_storage.global_const_fields() {
+            if let (ConstValue::Int(id), FieldRef::Node(c, f)) = (value, fld) {
+                if !root.classes[root.top_parent_index(*c)].synthetic {
+                    ctx.code_names
+                        .insert(*id, root.classes[*c].fields[*f].info.name.clone());
+                    fields.insert(*id, (*c, *f));
+                }
+            }
+        }
+        for c in &root.classes {
+            let alias = root.class_full_name(&c.info);
+            let raw = c.info.raw_name();
+            if alias != raw {
+                ctx.class_aliases.insert(raw, alias);
+            }
+        }
+        let mut opts = resource_options(&self.args);
+        opts.code_names = ctx.code_names.clone();
+        if let Some(data) = table_data {
+            if let Ok(t) = jadx_resources::ResTable::parse(data, &opts) {
+                for (id, name) in t.field_renames() {
+                    if let Some(&(c, f)) = fields.get(id) {
+                        root.classes[c].fields[f].alias = Some(name.clone());
+                    }
+                }
+            }
+        }
+        ctx
     }
 
     /// `JadxArgsValidator`: input files, output directories.
@@ -620,6 +713,7 @@ impl JadxDecompiler {
                     args: &self.args,
                     out_dir: &res_dir,
                     decoder: self.resource_decoder.as_deref(),
+                    context: &l.resource_context,
                     log: &*self.log,
                     errors: &self.errors,
                     progress: None,

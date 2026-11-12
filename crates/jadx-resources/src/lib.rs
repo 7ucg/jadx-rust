@@ -23,7 +23,8 @@ pub mod values;
 mod xml_chars;
 
 pub use apk::{
-    decode_apk, read_resource_table, ApkOptions, ApkResources, DecodedFile, ResourceType,
+    decode_apk, file_alias_map, read_resource_table, ApkOptions, ApkResources, DecodedFile,
+    ResourceType,
 };
 pub use axml::{BinaryXmlParser, ClassAliasFn, XmlContext};
 pub use error::{ResError, Result};

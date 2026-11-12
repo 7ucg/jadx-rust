@@ -47,6 +47,6 @@ pub use input_code::{ClassOrigin, CombinedCodeRefs, MethodCode};
 pub use java::{JavaClass, JavaField, JavaMethod, JavaPackage};
 pub use log::{Level, LogSink, NullLog};
 pub use resources::{
-    AndroidResourceDecoder, DecodedResFile, DecodedResources, ResourceDecoder, ResourceFile,
-    ResourceType,
+    AndroidResourceDecoder, DecodedResFile, DecodedResources, ResourceContext, ResourceDecoder,
+    ResourceFile, ResourceType,
 };

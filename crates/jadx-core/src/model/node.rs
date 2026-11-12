@@ -47,6 +47,8 @@ pub struct FieldNode {
     pub replace: Option<FieldReplace>,
     /// Why the field was renamed (`RenameReasonAttr`).
     pub alias_reason: Option<String>,
+    /// Info comments added by the decompiler (`addInfoComment`).
+    pub info_comments: Vec<String>,
     /// `AType.FIELD_INIT_INSN`: instruction that initializes the field.
     pub init_insn: Option<FieldInitInsn>,
     /// Explicit zero initialization (`EncodedValue.NULL` constant value): the bytecode can omit
@@ -294,6 +296,10 @@ pub struct ClassNode {
     pub package_info: bool,
     /// Why the class was renamed (`RenameReasonAttr`).
     pub alias_reason: Option<String>,
+    /// Info comments added by the decompiler (`addInfoComment`).
+    pub info_comments: Vec<String>,
+    /// Class created by the decompiler (`AFlag.SYNTHETIC` of `addSyntheticClass`).
+    pub synthetic: bool,
 }
 
 /// `EnumClassAttr.EnumField`: an enum constant with the constructor call that creates it. The
@@ -355,6 +361,10 @@ pub struct Root {
     /// `EnumMapAttr`: ordinal to enum constant of the switch map fields, by map field
     /// (`FixSwitchOverEnum`).
     pub enum_maps: HashMap<(usize, usize), HashMap<i32, FieldInfo>>,
+    /// Package of the resource table (`RootNode.appPackage`).
+    pub app_package: Option<String>,
+    /// The app `R` class (`RootNode.appResClass`).
+    pub app_res_class: Option<usize>,
 }
 
 /// `ShadowFieldVisitor.FieldFixType`
@@ -403,6 +413,7 @@ impl Root {
                     dont_generate: false,
                     replace: None,
                     alias_reason: None,
+                    info_comments: Vec::new(),
                     init_insn: None,
                     zero_init: false,
                 });
@@ -481,6 +492,8 @@ impl Root {
                 remove_super_class: false,
                 package_info: false,
                 alias_reason: None,
+                info_comments: Vec::new(),
+                synthetic: false,
             });
         }
         for c in &mut classes {
@@ -505,6 +518,8 @@ impl Root {
             enum_maps: HashMap::new(),
             shadow_fields: std::sync::OnceLock::new(),
             kotlin_name_methods: std::sync::OnceLock::new(),
+            app_package: None,
+            app_res_class: None,
         };
         let mut clsp = crate::clsp::ClspGraph::load_core()?;
         clsp.add_app(&root);
