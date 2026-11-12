@@ -47,7 +47,7 @@ pub(crate) struct StackFrame {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct RawLocalVar {
     pub start: u32,
-    pub end: u32,
+    pub end: i32,
     pub name: Option<String>,
     pub ty: Option<String>,
     pub reg: u32,
@@ -251,7 +251,7 @@ fn read_local_vars(cls: &JavaClass, r: &mut Reader<'_>) -> Result<Vec<RawLocalVa
         let reg = r.u2()?;
         out.push(RawLocalVar {
             start,
-            end: (start + length).wrapping_sub(1),
+            end: (start + length) as i32 - 1,
             name,
             ty,
             reg,

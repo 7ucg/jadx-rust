@@ -933,7 +933,8 @@ impl<'a> Decoder<'a> {
         }
         if ret != "V" {
             let p = self.stack.push(Self::slot_for_type(&ret));
-            self.cur.result = Some(p as u32);
+            // the reference treats register -1 as "no result"
+            self.cur.result = (p != -1).then_some(p as u32);
         }
         Ok(())
     }

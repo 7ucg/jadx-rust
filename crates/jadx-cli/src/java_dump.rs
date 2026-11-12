@@ -366,7 +366,7 @@ fn insn_line(
         it
     );
     if d.opcode.name().starts_with("INVOKE_") {
-        let _ = write!(out, " res={}", d.result_reg.map(i64::from).unwrap_or(-1));
+        let _ = write!(out, " res={}", d.result_reg.map(|r| r as i32).unwrap_or(-1));
     }
     match &d.payload {
         Some(Payload::Switch(sp)) => {

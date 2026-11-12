@@ -12,6 +12,7 @@ mod class;
 mod code;
 mod error;
 mod insns;
+mod javahash;
 mod loader;
 mod mutf8;
 mod reader;

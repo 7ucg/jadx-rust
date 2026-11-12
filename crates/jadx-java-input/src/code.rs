@@ -8,6 +8,7 @@ use crate::attrs::{parse_attrs, AttrFilter};
 use crate::class::JavaClass;
 use crate::error::Result;
 use crate::insns::Decoder;
+use crate::javahash::computeifabsent_order;
 use crate::types::{CodeInfo, DebugInfo, LocalVar};
 
 /// Entries of the exception table: `(start, end, handler, catch type index)`.
@@ -80,7 +81,7 @@ impl JavaClass {
             }
         }
         let entries: Vec<(u32, u32)> = table.iter().map(|e| (e.0, e.1)).collect();
-        let order = hash_map_order(&entries);
+        let order = computeifabsent_order(&entries);
         let mut out = Vec::with_capacity(groups.len());
         for gi in order {
             let ((start, end), list) = &groups[gi];
@@ -168,72 +169,5 @@ impl JavaClass {
             vars = list;
         }
         Ok(Some(DebugInfo { lines, vars }))
-    }
-}
-
-/// Iteration order of the reference `HashMap<JavaTryData, ...>` that is filled with
-/// `computeIfAbsent` for every exception table entry (`entries`, the map is created with
-/// `entries.len()` as initial capacity). Returns the indices of the distinct keys (in order of
-/// first appearance).
-///
-/// `computeIfAbsent` resizes lazily (before an insertion when the size exceeds the threshold)
-/// and inserts a new node at the head of its bucket, so within a bucket later keys come first.
-fn hash_map_order(entries: &[(u32, u32)]) -> Vec<usize> {
-    let hash = |k: &(u32, u32)| -> u32 {
-        let h = k.0.wrapping_add(31u32.wrapping_mul(k.1));
-        h ^ (h >> 16)
-    };
-    let mut cap = 0usize;
-    let mut thr = entries.len().max(1).next_power_of_two();
-    let resize = |cap: &mut usize, thr: &mut usize| {
-        let old_cap = *cap;
-        let old_thr = *thr;
-        let (new_cap, mut new_thr) = if old_cap > 0 {
-            (old_cap << 1, if old_cap >= 16 { old_thr << 1 } else { 0 })
-        } else if old_thr > 0 {
-            (old_thr, 0)
-        } else {
-            (16, 12)
-        };
-        if new_thr == 0 {
-            new_thr = (new_cap as f32 * 0.75) as usize;
-        }
-        *cap = new_cap;
-        *thr = new_thr;
-    };
-    let mut keys: Vec<(u32, u32)> = Vec::new();
-    for e in entries {
-        if keys.len() > thr || cap == 0 {
-            resize(&mut cap, &mut thr);
-        }
-        if keys.contains(e) {
-            continue;
-        }
-        let bucket = hash(e) as usize & (cap - 1);
-        let chain = keys
-            .iter()
-            .filter(|k| hash(k) as usize & (cap - 1) == bucket)
-            .count();
-        keys.push(*e);
-        if chain >= 8 && cap < 64 {
-            resize(&mut cap, &mut thr);
-        }
-    }
-    let cap = cap.max(1);
-    let mut order: Vec<usize> = (0..keys.len()).collect();
-    order.sort_by_key(|i| (hash(&keys[*i]) as usize & (cap - 1), std::cmp::Reverse(*i)));
-    order
-}
-
-#[cfg(test)]
-mod tests {
-    use super::hash_map_order;
-
-    #[test]
-    fn hash_order_matches_reference() {
-        // exception table of a method with nested try/finally: expected order taken from the
-        // reference reader
-        let entries = [(0, 4), (0, 12), (22, 33), (0, 12), (22, 37), (47, 49)];
-        assert_eq!(hash_map_order(&entries), vec![3, 1, 0, 2, 4]);
     }
 }

@@ -149,8 +149,8 @@ pub struct LocalVar {
     pub ty: Option<String>,
     pub signature: Option<String>,
     pub start: u32,
-    /// Inclusive end offset.
-    pub end: u32,
+    /// Inclusive end offset (`-1` for an empty range starting at 0).
+    pub end: i32,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
