@@ -63,7 +63,7 @@ pub fn no_code_cfg(root: &crate::model::node::Root, cls: usize, mth: usize) -> M
         &frame.arg_types,
     );
     let _ = crate::passes::init_code_vars::init_code_vars(&mut cfg);
-    super::prepare::apply_method_parameters(&mut cfg, root, cls, mth);
+    crate::passes::debug_info::apply_method_parameters(&mut cfg, root, cls, mth);
     super::var_names::apply_variable_names(&mut cfg, root);
     cfg
 }
@@ -200,8 +200,15 @@ impl<'a> MethodGen<'a> {
 
     /// `MethodNode.getThrows`
     fn throws(&self) -> Vec<ArgType> {
-        self.method_node()
-            .attrs
+        let node = self.method_node();
+        if let Some(attr) = &node.throws_attr {
+            return attr
+                .java_order()
+                .iter()
+                .map(|n| ArgType::object(n))
+                .collect();
+        }
+        node.attrs
             .throws
             .iter()
             .map(|d| ArgType::parse(d).unwrap_or_else(|_| ArgType::object(d)))

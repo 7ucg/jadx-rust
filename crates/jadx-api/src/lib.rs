@@ -27,6 +27,7 @@ pub mod log;
 pub mod parallel;
 pub mod paths;
 pub mod resources;
+pub mod scheduler;
 
 pub use access::{AccessInfo, AccessKind};
 pub use args::{

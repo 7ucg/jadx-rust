@@ -28,6 +28,12 @@ pub trait CodeSource {
     fn load_code(&self, root: &Root, cls: usize, mth: usize) -> Result<LoadedCode, String>;
 }
 
+impl<T: CodeSource + ?Sized> CodeSource for &T {
+    fn load_code(&self, root: &Root, cls: usize, mth: usize) -> Result<LoadedCode, String> {
+        (**self).load_code(root, cls, mth)
+    }
+}
+
 /// Pass pipeline selection. Every pass has a stage number (see [`pass_stage`]); a pass runs when its
 /// stage is not above `stage`. Passes keep the order of the reference pass list.
 #[derive(Debug, Clone)]
@@ -83,7 +89,7 @@ enum Visit {
 
 pub struct ClassDriver<'s> {
     pub root: Root,
-    src: &'s dyn CodeSource,
+    src: Box<dyn CodeSource + Send + 's>,
     opts: DriverOptions,
     pub methods: HashMap<MethodId, MethodState>,
     phase: Vec<ClassPhase>,
@@ -91,7 +97,11 @@ pub struct ClassDriver<'s> {
 }
 
 impl<'s> ClassDriver<'s> {
-    pub fn new(root: Root, src: &'s dyn CodeSource, opts: DriverOptions) -> ClassDriver<'s> {
+    pub fn new<S: CodeSource + Send + 's>(
+        root: Root,
+        src: S,
+        opts: DriverOptions,
+    ) -> ClassDriver<'s> {
         let n = root.classes.len();
         let mut sorted: Vec<usize> = (0..n).collect();
         sorted.sort_by_cached_key(|i| root.classes[*i].info.raw_name());
@@ -105,12 +115,17 @@ impl<'s> ClassDriver<'s> {
         }
         ClassDriver {
             root,
-            src,
+            src: Box::new(src),
             opts,
             methods: HashMap::new(),
             phase: vec![ClassPhase::NotLoaded; n],
             children,
         }
+    }
+
+    /// `ProcessState.isProcessComplete` of a top level class.
+    pub fn is_process_complete(&self, top: usize) -> bool {
+        self.phase[top] == ClassPhase::Complete
     }
 
     pub fn into_root(self) -> Root {
@@ -546,6 +561,12 @@ impl<'s> ClassDriver<'s> {
         let stage = self.opts.stage;
         let on = |s: u32| stage >= s;
 
+        if on(pass_stage::MOD_VISITOR) {
+            self.method_pass(visits, &|cfg, env, _| {
+                crate::passes::debug_info::apply_method_parameters(cfg, env.root, env.cls, env.mth);
+                Ok(())
+            });
+        }
         if on(pass_stage::KOTLIN_INTERNALS) {
             self.method_pass(visits, &|cfg, env, _| {
                 crate::passes::kotlin_internals::process_kotlin_internals(cfg, env.root)

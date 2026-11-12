@@ -14,7 +14,6 @@ pub mod condition_gen;
 pub mod insn_gen;
 pub mod method_gen;
 pub mod name_gen;
-pub mod prepare;
 pub mod region_gen;
 pub mod string_utils;
 pub mod type_gen;
@@ -122,6 +121,11 @@ pub trait MethodLoader {
     /// instruction array by offset and the exception handlers.
     fn fallback_code(&self, _cls: usize, _mth: usize) -> Result<FallbackCode, String> {
         Err("instructions are not available".to_string())
+    }
+
+    /// Whether the top level class has finished the pass pipeline (`ProcessState.isProcessComplete`).
+    fn class_process_complete(&self, _cls: usize) -> bool {
+        true
     }
 
     /// Line of the source code the method starts at (`0` if unknown).

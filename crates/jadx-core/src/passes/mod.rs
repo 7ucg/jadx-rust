@@ -12,6 +12,7 @@ pub mod collect_const_values;
 pub mod const_inline;
 pub mod constructor;
 pub mod deboxing;
+pub mod debug_info;
 pub mod dominators;
 pub mod driver;
 pub mod enum_visitor;

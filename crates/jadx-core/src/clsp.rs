@@ -202,7 +202,7 @@ fn read_method(r: &mut ByteReader<'_>, names: &[String]) -> Result<ClspMethod, S
 }
 
 /// Classes known to the decompiler: framework set + input classes.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct ClspGraph {
     name_map: HashMap<String, ClspClass>,
     super_types: HashMap<String, HashSet<String>>,

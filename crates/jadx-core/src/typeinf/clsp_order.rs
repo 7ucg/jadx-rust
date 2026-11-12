@@ -13,7 +13,7 @@ use crate::clsp::ClspGraph;
 use crate::model::bitset::java_string_hash;
 
 /// Cached hierarchy of the class path.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct OrderedClsp {
     super_types: HashMap<String, Vec<String>>,
     implementations: HashMap<String, Vec<String>>,

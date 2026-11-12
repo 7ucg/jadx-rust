@@ -153,6 +153,9 @@ impl<'a> ClassGen<'a> {
     fn add_class_comments(&self, code: &mut CodeWriter) {
         let env = self.env();
         let cls = self.node();
+        let own: Vec<(CommentsLevel, &String)> =
+            cls.comments.iter().map(|(l, s)| (*l, s)).collect();
+        self.add_node_comments(code, &own);
         if self.has_alias(&cls.info) {
             self.add_renamed_comment(code, &cls.info.raw_name(), cls.alias_reason.as_deref());
         }
@@ -445,8 +448,38 @@ impl<'a> ClassGen<'a> {
     }
 
     /// `addMethod`
+    /// `ClassGen.skipMethod`: methods that are inlined at all their use sites are not generated.
+    fn skip_method(&self, mth: usize) -> bool {
+        let env = self.env();
+        if matches!(
+            env.decompilation_mode,
+            super::DecompilationMode::Fallback | super::DecompilationMode::Simple
+        ) {
+            return false;
+        }
+        let node = &self.node().methods[mth];
+        match &node.inline {
+            Some(a) if !a.is_not_needed() => {}
+            _ => return false,
+        }
+        if node.use_in.is_empty() {
+            return true;
+        }
+        let Some(loader) = env.loader else {
+            return false;
+        };
+        let any_completed = node
+            .use_in
+            .iter()
+            .any(|&(c, _)| loader.class_process_complete(env.root.top_parent_index(c)));
+        !any_completed
+    }
+
     fn add_method(&self, code: &mut CodeWriter, mth: usize) {
         let env = self.env();
+        if self.skip_method(mth) {
+            return;
+        }
         if code.len() != self.cls_decl_offset.get() {
             code.new_line();
         }
@@ -486,7 +519,7 @@ impl<'a> ClassGen<'a> {
                 &fallback_cfg
             }
         };
-        self.add_errors_and_comments(code, cfg, load_err.as_deref());
+        self.add_errors_and_comments(code, mth, cfg, load_err.as_deref());
         let mth_id = format!("{}.{}", self.class_info().full_name(), node.info.short_id());
         if let Some(e) = &load_err {
             env.add_error(format!("Method load error in {}: {e}", mth_id));
@@ -538,29 +571,55 @@ impl<'a> ClassGen<'a> {
         Ok(())
     }
 
+    /// `JadxCommentsAttr.formatAndFilter` and `CodeGenUtils.addComments`: the comments of a node
+    /// that pass the comments level, sorted, one per line.
+    fn add_node_comments(&self, code: &mut CodeWriter, comments: &[(CommentsLevel, &String)]) {
+        let level = self.env().comments_level;
+        if matches!(level, CommentsLevel::None | CommentsLevel::UserOnly) {
+            return;
+        }
+        let mut lines: Vec<String> = comments
+            .iter()
+            .filter(|(l, _)| l.filter(level))
+            .map(|(l, s)| {
+                let name = match l {
+                    CommentsLevel::Warn => "WARN",
+                    CommentsLevel::Info => "INFO",
+                    CommentsLevel::Debug => "DEBUG",
+                    CommentsLevel::Error => "ERROR",
+                    CommentsLevel::UserOnly => "USER_ONLY",
+                    CommentsLevel::None => "NONE",
+                };
+                format!("JADX {name}: {s}")
+            })
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+        lines.sort();
+        for c in lines {
+            code.start_line_str("/* ");
+            code.add_multi_line(&c);
+            code.add(" */");
+        }
+    }
+
     /// `CodeGenUtils.addErrorsAndComments` for a method.
     fn add_errors_and_comments(
         &self,
         code: &mut CodeWriter,
+        mth: usize,
         cfg: &crate::model::cfg::MethodCfg,
         load_err: Option<&str>,
     ) {
         let env = self.env();
-        let mut comments: Vec<String> = cfg
+        let node = &self.node().methods[mth];
+        let mut all: Vec<(CommentsLevel, &String)> = cfg
             .warnings
             .iter()
-            .map(|w| format!("JADX WARN: {w}"))
-            .collect::<std::collections::HashSet<_>>()
-            .into_iter()
+            .map(|w| (CommentsLevel::Warn, w))
             .collect();
-        comments.sort();
-        if env.check_comments_level(CommentsLevel::Warn) {
-            for c in comments {
-                code.start_line_str("/* ");
-                code.add_multi_line(&c);
-                code.add(" */");
-            }
-        }
+        all.extend(node.comments.iter().map(|(l, s)| (*l, s)));
+        self.add_node_comments(code, &all);
         if env.check_comments_level(CommentsLevel::Error) {
             if let Some(e) = load_err {
                 code.start_line_str("/*  JADX ERROR: Method load error");

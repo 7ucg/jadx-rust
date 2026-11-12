@@ -583,7 +583,7 @@ impl JadxDecompiler {
     }
 
     fn save_sources_to(&self, l: &Loaded, src_dir: &Path, progress: Option<ProgressFn<'_>>) {
-        let list = self.classes_to_save(l);
+        let list = crate::scheduler::schedule(&l.root, &self.classes_to_save(l));
         let total = list.len();
         let done = std::sync::atomic::AtomicUsize::new(0);
         if let Some(p) = progress {

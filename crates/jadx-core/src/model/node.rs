@@ -128,6 +128,8 @@ pub struct MethodNode {
     pub override_first: Option<OverrideFirst>,
     /// `AType.METHOD_THROWS`: exceptions the method throws (set by `MethodThrowsVisitor`).
     pub throws_attr: Option<ThrowsAttr>,
+    /// `JadxCommentsAttr`: comments added by the passes, by level.
+    pub comments: Vec<(crate::codegen::CommentsLevel, String)>,
     /// `AType.METHOD_INLINE`: how calls of the method are inlined (set by `MarkMethodsForInline`).
     pub inline: Option<InlineAttr>,
 }
@@ -272,6 +274,8 @@ pub struct ClassNode {
     pub use_in: Vec<usize>,
     /// Methods using this class (definition excluded).
     pub use_in_mth: Vec<MethodId>,
+    /// `JadxCommentsAttr`: comments added by the passes, by level.
+    pub comments: Vec<(crate::codegen::CommentsLevel, String)>,
     pub anonymous: Option<AnonymousClassAttr>,
     /// Anonymous classes inlined into this class.
     pub inlined_classes: Vec<usize>,
@@ -336,7 +340,7 @@ impl ClassNode {
 }
 
 /// All classes of the input.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Root {
     pub ctx: Arc<RootCtx>,
     pub classes: Vec<ClassNode>,
@@ -451,6 +455,7 @@ impl Root {
                     replace: None,
                     inline: None,
                     throws_attr: None,
+                    comments: Vec::new(),
                     override_first: None,
                 });
             }
@@ -470,6 +475,7 @@ impl Root {
                 codegen_deps: Vec::new(),
                 use_in: Vec::new(),
                 use_in_mth: Vec::new(),
+                comments: Vec::new(),
                 anonymous: None,
                 inlined_classes: Vec::new(),
                 inlined_into: None,

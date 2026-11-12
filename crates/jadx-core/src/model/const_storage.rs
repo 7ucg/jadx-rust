@@ -17,7 +17,7 @@ pub enum FieldRef {
     Info(FieldInfo),
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 struct ValueStorage {
     values: HashMap<ConstValue, FieldRef>,
     duplicates: HashSet<ConstValue>,
@@ -49,7 +49,7 @@ impl ValueStorage {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ConstStorage {
     replace_enabled: bool,
     global_values: ValueStorage,

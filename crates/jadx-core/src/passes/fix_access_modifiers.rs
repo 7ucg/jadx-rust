@@ -3,6 +3,7 @@
 
 use std::collections::HashSet;
 
+use crate::codegen::CommentsLevel;
 use crate::model::node::{MethodId, OverrideFirst, Root, ACC_PUBLIC};
 
 const ACC_PRIVATE: u32 = 0x2;
@@ -28,13 +29,38 @@ fn changed_visibility(flags: u32, new_vis: u32) -> u32 {
 /// `FixAccessModifiers.changeVisibility` of a method.
 pub fn change_method_visibility(root: &mut Root, id: MethodId, new_vis: u32) {
     let m = &mut root.classes[id.0].methods[id.1];
-    m.access = changed_visibility(m.access, new_vis);
+    let new = changed_visibility(m.access, new_vis);
+    if new != m.access {
+        add_visibility_comment(&mut m.comments, m.access);
+        m.access = new;
+    }
+}
+
+/// `addInfoComment("Access modifiers changed from: ...")`
+fn add_visibility_comment(comments: &mut Vec<(CommentsLevel, String)>, old_flags: u32) {
+    let name = match old_flags & VISIBILITY_FLAGS {
+        0 => "package-private",
+        ACC_PUBLIC => "public",
+        ACC_PRIVATE => "private",
+        _ => "protected",
+    };
+    let c = (
+        CommentsLevel::Info,
+        format!("Access modifiers changed from: {name}"),
+    );
+    if !comments.contains(&c) {
+        comments.push(c);
+    }
 }
 
 /// `FixAccessModifiers.changeVisibility` of a class.
 pub fn change_class_visibility(root: &mut Root, cls: usize, new_vis: u32) {
     let c = &mut root.classes[cls];
-    c.access = changed_visibility(c.access, new_vis);
+    let new = changed_visibility(c.access, new_vis);
+    if new != c.access {
+        add_visibility_comment(&mut c.comments, c.access);
+        c.access = new;
+    }
 }
 
 fn change_node_visibility(root: &mut Root, node: Node, new_vis: u32) {
