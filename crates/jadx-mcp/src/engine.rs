@@ -2,8 +2,9 @@
 //! reading, `jadx-core` for the class model and the pre-decompile usage information,
 //! `jadx-resources` for the manifest and resources.
 //!
-//! Class source is currently the declaration skeleton of [`crate::skeleton`]; usages come from
-//! the pre-decompile passes (`MethodNode::use_in`, `FieldNode::use_in`, `ClassNode::use_in`).
+//! Class source is decompiled code of `jadx-api` (`CoreClassGenerator`), produced on first use
+//! from a second load of the input; the declaration skeleton of [`crate::skeleton`] is the
+//! fallback when the input cannot be decompiled. Usages come from the pre-decompile passes (`MethodNode::use_in`, `FieldNode::use_in`, `ClassNode::use_in`).
 
 use std::collections::{HashMap, HashSet};
 use std::io::{Cursor, Read, Write};
@@ -74,6 +75,9 @@ pub struct EngineProject {
     locations: Vec<(usize, u32)>,
     resources: ResourceSource,
     decoded: OnceLock<Result<Arc<ApkResources>, String>>,
+    /// Decompiler for the class source, loaded on first use.
+    decompiler: OnceLock<Result<jadx_api::JadxDecompiler, String>>,
+    input_path: PathBuf,
     strings: Mutex<HashMap<usize, Arc<Vec<String>>>>,
 }
 
@@ -162,7 +166,7 @@ impl EngineProject {
             has_resources: !matches!(resources, ResourceSource::None),
             has_smali: java.is_empty(),
             has_strings: java.is_empty(),
-            source_kind: SourceKind::Skeleton,
+            source_kind: SourceKind::Decompiled,
             warnings,
         };
         Ok(EngineProject {
@@ -173,8 +177,38 @@ impl EngineProject {
             locations,
             resources,
             decoded: OnceLock::new(),
+            decompiler: OnceLock::new(),
+            input_path: path.to_path_buf(),
             strings: Mutex::new(HashMap::new()),
         })
+    }
+
+    /// The decompiler of the input (loaded on first use, without resources).
+    fn decompiler(&self) -> Result<&jadx_api::JadxDecompiler, &str> {
+        self.decompiler
+            .get_or_init(|| {
+                let mut args = jadx_api::JadxArgs::default();
+                args.add_input_file(&self.input_path);
+                args.skip_resources = true;
+                args.skip_files_save = true;
+                args.threads_count = 1;
+                let mut jadx = jadx_api::JadxDecompiler::new(args);
+                jadx.set_class_generator(Arc::new(jadx_api::CoreClassGenerator::new()));
+                std::panic::catch_unwind(AssertUnwindSafe(|| jadx.load()))
+                    .map_err(|_| "the decompiler failed while loading the input".to_string())?
+                    .map_err(|e| e.to_string())?;
+                Ok(jadx)
+            })
+            .as_ref()
+            .map_err(String::as_str)
+    }
+
+    /// Decompiled code of the top level class that contains `class_id`.
+    fn decompiled_class(&self, class_id: &str) -> Option<String> {
+        let jadx = self.decompiler().ok()?;
+        let cls = jadx.search_class(class_id)?;
+        let top = cls.top_parent_class();
+        std::panic::catch_unwind(AssertUnwindSafe(|| top.code())).ok()
     }
 
     fn class_node(&self, class_id: &str) -> Result<(usize, &ClassNode), ToolError> {
@@ -361,6 +395,12 @@ impl Project for EngineProject {
 
     fn class_source(&self, class_id: &str) -> Result<SourceText, ToolError> {
         let (index, class) = self.class_node(class_id)?;
+        if let Some(text) = self.decompiled_class(class_id) {
+            return Ok(SourceText {
+                text,
+                kind: SourceKind::Decompiled,
+            });
+        }
         let fields: Vec<FieldEntry> = class.fields.iter().map(|f| field_entry(class, f)).collect();
         let methods: Vec<MethodEntry> = class
             .methods

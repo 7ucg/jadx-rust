@@ -125,7 +125,7 @@ fn project_lifecycle() {
     let info = data(&results[2]);
     assert_eq!(info["kind"], json!("dex"));
     assert_eq!(info["class_count"], json!(3));
-    assert_eq!(info["capabilities"]["class_source"], json!("skeleton"));
+    assert_eq!(info["capabilities"]["class_source"], json!("decompiled"));
     assert_eq!(info["capabilities"]["smali"], json!(true));
     assert_eq!(data(&results[3])["class_count"], json!(3));
     assert_eq!(data(&results[4])["closed"], json!(true));
@@ -258,12 +258,12 @@ fn source_and_disassembly() {
         ),
     ]);
     let src = data(&r[0]);
-    assert_eq!(src["source_kind"], json!("skeleton"));
+    assert_eq!(src["source_kind"], json!("decompiled"));
     assert_eq!(src["format"], json!("java"));
     let text = src["text"].as_str().unwrap();
     assert!(text.contains("package corpus;"));
     assert!(text.contains("public class Finally {"));
-    assert!(text.contains("public static int g(int p0)"));
+    assert!(text.contains("public static int g(int i) {\n        return i;"));
 
     // paging with a stable hash
     let first = data(&r[1]);
@@ -449,9 +449,9 @@ fn strings_and_string_references() {
     assert_eq!(data(&r[3])["total"], json!(1));
     assert_eq!(data(&r[4])["items"], json!([]));
     let code = data(&r[5]);
-    assert_eq!(code["source_kind"], json!("skeleton"));
+    assert_eq!(code["source_kind"], json!("decompiled"));
     assert_eq!(code["items"][0]["class_id"], json!("corpus.Finally"));
-    assert_eq!(code["items"][0]["line"], json!(8));
+    assert_eq!(code["items"][0]["line"], json!(14));
     assert_eq!(data(&r[6])["items"].as_array().unwrap().len(), 1);
     assert_eq!(data(&r[7])["items"], json!([]));
 }

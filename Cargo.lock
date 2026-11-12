@@ -180,6 +180,7 @@ dependencies = [
 name = "jadx-mcp"
 version = "0.1.0"
 dependencies = [
+ "jadx-api",
  "jadx-core",
  "jadx-dex-input",
  "jadx-input-api",
