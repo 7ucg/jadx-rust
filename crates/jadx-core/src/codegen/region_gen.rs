@@ -8,7 +8,7 @@ use super::type_gen::literal_to_string;
 use super::CodegenError;
 use crate::model::cfg::{bflag, MethodCfg};
 use crate::model::info::FieldInfo;
-use crate::model::insn::{iflag, HandlerId, InsnArg, InsnKind, InsnType, NamedArg};
+use crate::model::insn::{iflag, HandlerId, InsnArg, InsnKind, InsnType};
 use crate::model::region::{CaseKey, Container, LoopType, RegionId, RegionKind};
 use crate::model::types::ArgType;
 use crate::passes::block_utils::get_last_insn;
@@ -470,19 +470,11 @@ impl<'m, 'a> RegionGen<'m, 'a> {
                 }
             }
         }
-        for (i, insn) in cfg.insns.iter().enumerate() {
-            let _ = i;
-            if insn.exc_handler == Some(h) && insn.ty == InsnType::MoveException {
-                return insn
-                    .result
-                    .as_ref()
-                    .and_then(|r| r.svar)
-                    .and_then(|v| cfg.svars[v].code_var);
-            }
-        }
-        None
+        cfg.insns
+            .iter()
+            .find(|i| i.exc_handler == Some(h) && i.ty == InsnType::MoveException)
+            .and_then(|i| i.result.as_ref())
+            .and_then(|r| r.svar)
+            .and_then(|v| cfg.svars[v].code_var)
     }
 }
-
-#[allow(dead_code)]
-fn unused(_: NamedArg) {}

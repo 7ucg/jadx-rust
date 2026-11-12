@@ -14,6 +14,9 @@ use crate::model::info::ClassInfo;
 use crate::model::node::Root;
 use crate::model::types::{ArgType, PrimitiveType, WildcardBound};
 
+/// Processed code of a method or the reason it could not be loaded.
+type LoadedCfg = Rc<Result<MethodCfg, String>>;
+
 /// Data shared by all generators of one root.
 pub struct GenEnv<'a> {
     pub root: &'a Root,
@@ -38,8 +41,9 @@ pub struct GenEnv<'a> {
     pub code_indent_str: String,
     /// Source of the processed code of the methods.
     pub loader: Option<&'a dyn MethodLoader>,
-    cfgs: RefCell<HashMap<(usize, usize), Rc<Result<MethodCfg, String>>>>,
+    cfgs: RefCell<HashMap<(usize, usize), LoadedCfg>>,
     errors: RefCell<Vec<String>>,
+    warnings: RefCell<Vec<String>>,
 }
 
 impl<'a> GenEnv<'a> {
@@ -91,12 +95,23 @@ impl<'a> GenEnv<'a> {
             loader: None,
             cfgs: RefCell::new(HashMap::new()),
             errors: RefCell::new(Vec::new()),
+            warnings: RefCell::new(Vec::new()),
         }
     }
 
     /// Record an error of the code generation (reported with the class).
     pub fn add_error(&self, msg: String) {
         self.errors.borrow_mut().push(msg);
+    }
+
+    /// Record a warning of the code generation (reported with the class).
+    pub fn add_warning(&self, msg: String) {
+        self.warnings.borrow_mut().push(msg);
+    }
+
+    /// Warnings recorded so far.
+    pub fn warnings(&self) -> Vec<String> {
+        self.warnings.borrow().clone()
     }
 
     /// Errors recorded so far.
@@ -110,7 +125,7 @@ impl<'a> GenEnv<'a> {
     }
 
     /// Processed code of a method (loaded once).
-    pub fn method_cfg(&self, cls: usize, mth: usize) -> Rc<Result<MethodCfg, String>> {
+    pub fn method_cfg(&self, cls: usize, mth: usize) -> LoadedCfg {
         if let Some(c) = self.cfgs.borrow().get(&(cls, mth)) {
             return c.clone();
         }

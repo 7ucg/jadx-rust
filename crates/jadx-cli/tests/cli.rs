@@ -55,10 +55,11 @@ fn list_files(dir: &Path) -> Vec<String> {
 fn decompiles_corpus_into_reference_layout() {
     let out = tmp("layout");
     let o = run(&[s("-d"), out.as_os_str(), corpus().as_os_str()]);
-    assert_eq!(o.status.code(), Some(0), "{}", stdout(&o));
+    // the corpus has a method that can not be decoded
+    assert_eq!(o.status.code(), Some(3), "{}", stdout(&o));
     let text = stdout(&o);
     assert!(text.contains("INFO  - loading ..."), "{text}");
-    assert!(text.contains("INFO  - done"), "{text}");
+    assert!(text.contains("finished with errors"), "{text}");
     assert_eq!(
         list_files(&out),
         [
@@ -70,7 +71,7 @@ fn decompiles_corpus_into_reference_layout() {
     assert!(out.join("resources").is_dir());
     let annot = std::fs::read_to_string(out.join("sources/corpus/Annot.java")).unwrap();
     assert!(annot.starts_with("package corpus;\n"));
-    assert!(annot.contains("/* not yet decompiled */"));
+    assert!(annot.contains("public static final int B = 5;"), "{annot}");
 }
 
 #[test]
@@ -89,8 +90,8 @@ fn separate_source_and_resource_dirs_and_threads() {
         s("error"),
         corpus().as_os_str(),
     ]);
-    assert_eq!(o.status.code(), Some(0));
-    assert_eq!(stdout(&o), "");
+    assert_eq!(o.status.code(), Some(3));
+    assert!(!stdout(&o).contains("INFO"), "{}", stdout(&o));
     assert!(src.join("corpus/Ops.java").is_file());
     assert!(res.is_dir());
 }
@@ -214,7 +215,7 @@ fn placeholders_are_accepted() {
         out.as_os_str(),
         corpus().as_os_str(),
     ]);
-    assert_eq!(o.status.code(), Some(0), "{}", stdout(&o));
+    assert_eq!(o.status.code(), Some(3), "{}", stdout(&o));
     assert!(stdout(&o).contains("not implemented yet"));
     assert!(out.join("sources/corpus/Annot.java").is_file());
 }

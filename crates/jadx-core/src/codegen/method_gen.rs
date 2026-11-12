@@ -10,8 +10,7 @@ use super::name_gen::NameGen;
 use super::region_gen::RegionGen;
 use super::{CodegenError, CommentsLevel, DecompilationMode};
 use crate::access::{
-    AccessInfo, AccessKind, ACC_ABSTRACT, ACC_ANNOTATION, ACC_INTERFACE, ACC_PUBLIC, ACC_STATIC,
-    ACC_VARARGS,
+    AccessInfo, AccessKind, ACC_ABSTRACT, ACC_ANNOTATION, ACC_PUBLIC, ACC_VARARGS,
 };
 use crate::model::cfg::MethodCfg;
 use crate::model::node::MethodNode;
@@ -172,7 +171,6 @@ impl<'a> MethodGen<'a> {
                 annotation_gen::encode_value(self.cls_gen, code, Some(def))?;
             }
         }
-        let _ = (ACC_INTERFACE, ACC_STATIC);
         Ok(true)
     }
 

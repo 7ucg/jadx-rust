@@ -83,6 +83,7 @@ fn execute(cli: Cli) -> i32 {
     }
     let mut jadx = JadxDecompiler::new(cli.args.clone());
     jadx.set_log_sink(log.clone());
+    jadx.set_class_generator(std::sync::Arc::new(jadx_api::CoreClassGenerator::new()));
     if let Err(e) = jadx.load() {
         return report_failure(&*log, e);
     }

@@ -12,9 +12,10 @@ use jadx_dex_input::{load_path, DexFile, LoadOptions};
 
 use crate::args::{JadxArgs, OutputFormat, DEFAULT_OUT_DIR, DEFAULT_RES_DIR, DEFAULT_SRC_DIR};
 use crate::code::{ICodeInfo, SimpleCodeInfo};
-use crate::core_gen::CoreClassGenerator;
 use crate::error::{ErrorsCounter, JadxError, Result};
-use crate::generator::{generate_declarations, ClassCodeGenerator, ClassDiagnostics, GenContext};
+use crate::generator::{
+    generate_declarations, ClassCodeGenerator, ClassDiagnostics, DeclarationGenerator, GenContext,
+};
 use crate::java::{JavaClass, JavaMethod, JavaPackage};
 use crate::log::{Level, LogSink, NullLog};
 use crate::parallel::run_indexed;
@@ -74,7 +75,7 @@ impl JadxDecompiler {
             args,
             loaded: None,
             errors: ErrorsCounter::new(),
-            generator: Arc::new(CoreClassGenerator::new()),
+            generator: Arc::new(DeclarationGenerator),
             resource_decoder: Some(Arc::new(AndroidResourceDecoder)),
             log: Arc::new(NullLog),
             code_cache: Mutex::new(HashMap::new()),

@@ -649,14 +649,10 @@ impl DexFile {
             for params in anns.parameters.get(&m.method_idx).into_iter().flatten() {
                 param_annotations.push(pack_annotations(self.annotation_list_data(params)?));
             }
-            let annotation_default = match defaults
+            let annotation_default = defaults
                 .iter()
                 .find(|(n, _)| *n == mr.name)
-                .map(|(_, v)| v.clone())
-            {
-                Some(v) => Some(v),
-                None => None,
-            };
+                .map(|(_, v)| v.clone());
             let attrs = MethodAttrs {
                 annotations: pack_annotations(self.annotation_list_data(own)?),
                 param_annotations,

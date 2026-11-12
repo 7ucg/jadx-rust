@@ -10,9 +10,7 @@ use super::insn_gen::InsnGen;
 use super::method_gen::{no_code_cfg, MethodGen};
 use super::type_gen::{literal_to_string, signature};
 use super::{CodegenError, CommentsLevel};
-use crate::access::{
-    AccessInfo, AccessKind, ACC_ABSTRACT, ACC_INTERFACE, ACC_PRIVATE, ACC_STATIC, ACC_SYNTHETIC,
-};
+use crate::access::{AccessInfo, AccessKind, ACC_ABSTRACT, ACC_PRIVATE, ACC_STATIC};
 use crate::model::info::ClassInfo;
 use crate::model::insn::{IndexValue, InsnKind, InsnType};
 use crate::model::node::{ClassNode, FieldNode};
@@ -308,7 +306,7 @@ impl<'a> ClassGen<'a> {
                 continue;
             }
             items.push(Item {
-                line: 0,
+                line: self.class_source_line(ic),
                 is_method: 0,
                 alias: env.short_name(&env.root.classes[ic].info),
                 node: Node::Class(ic),
@@ -339,6 +337,37 @@ impl<'a> ClassGen<'a> {
             }
         }
         Ok(())
+    }
+
+    /// `PrepareForCodeGen.setClassSourceLine`: the line of a class is the smallest line of its
+    /// members minus one.
+    fn class_source_line(&self, cls: usize) -> u32 {
+        let env = self.env();
+        let node = &env.root.classes[cls];
+        let mut min_line = u32::MAX;
+        for (mi, m) in node.methods.iter().enumerate() {
+            if m.dont_generate {
+                continue;
+            }
+            let line = env.loader.map_or(0, |l| l.source_line(cls, mi));
+            if line != 0 {
+                min_line = min_line.min(line);
+            }
+        }
+        for &ic in &env.inner_classes[cls] {
+            if env.root.classes[ic].dont_generate {
+                continue;
+            }
+            let line = self.class_source_line(ic);
+            if line != 0 {
+                min_line = min_line.min(line);
+            }
+        }
+        if min_line == u32::MAX {
+            0
+        } else {
+            min_line - 1
+        }
     }
 
     /// Empty constructors of inlined anonymous classes are hidden.
@@ -458,6 +487,20 @@ impl<'a> ClassGen<'a> {
             }
         };
         self.add_errors_and_comments(code, cfg, load_err.as_deref());
+        let mth_id = format!("{}.{}", self.class_info().full_name(), node.info.short_id());
+        if let Some(e) = &load_err {
+            env.add_error(format!("Method load error in {}: {e}", mth_id));
+        }
+        for e in &cfg.errors {
+            env.add_error(format!("Method {}: {e}", mth_id));
+        }
+        for w in cfg
+            .warnings
+            .iter()
+            .filter(|w| crate::model::cfg::is_inconsistent_warning(w))
+        {
+            env.add_warning(format!("Method {}: {w}", mth_id));
+        }
         if node.code_offset.is_none() {
             let mgen = MethodGen::new(self, cfg, mth);
             mgen.add_definition(code)?;
@@ -582,13 +625,8 @@ impl<'a> ClassGen<'a> {
             self.add_const_value(code, v, &f.ty)?;
         } else if f.zero_init && !self.assigned_in_class_init(f) {
             code.add(" = ");
-            let lit = literal_to_string(
-                0,
-                &f.ty,
-                &env.string_utils,
-                self.is_fallback_mode(),
-                false,
-            )?;
+            let lit =
+                literal_to_string(0, &f.ty, &env.string_utils, self.is_fallback_mode(), false)?;
             code.add(&lit);
         }
         code.add_char(';');
@@ -600,7 +638,12 @@ impl<'a> ClassGen<'a> {
     fn assigned_in_class_init(&self, f: &FieldNode) -> bool {
         let env = self.env();
         let cidx = self.class_index();
-        let Some(mi) = self.node().methods.iter().position(|m| m.info.is_class_init()) else {
+        let Some(mi) = self
+            .node()
+            .methods
+            .iter()
+            .position(|m| m.info.is_class_init())
+        else {
             return false;
         };
         let cfg = env.method_cfg(cidx, mi);
@@ -740,6 +783,3 @@ pub fn checked_source_file(cls: &ClassNode) -> Option<String> {
     }
     Some(original.to_string())
 }
-
-#[allow(dead_code)]
-const _: u32 = ACC_INTERFACE | ACC_SYNTHETIC;

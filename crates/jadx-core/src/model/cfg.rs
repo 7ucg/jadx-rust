@@ -319,12 +319,15 @@ const INCONSISTENT_WARN_PREFIXES: &[&str] = &[
     "Failed to move",
 ];
 
+/// The warning was added by `addWarn` (it marks the method code as inconsistent).
+pub fn is_inconsistent_warning(w: &str) -> bool {
+    INCONSISTENT_WARN_PREFIXES.iter().any(|p| w.starts_with(p))
+}
+
 impl MethodCfg {
     /// `AFlag.INCONSISTENT_CODE`
     pub fn is_inconsistent(&self) -> bool {
-        self.warnings
-            .iter()
-            .any(|w| INCONSISTENT_WARN_PREFIXES.iter().any(|p| w.starts_with(p)))
+        self.warnings.iter().any(|w| is_inconsistent_warning(w))
     }
 
     pub fn block(&self, id: BlockId) -> &BlockNode {
