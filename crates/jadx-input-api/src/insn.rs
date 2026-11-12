@@ -61,6 +61,9 @@ pub struct InsnData {
     pub literal: i64,
     pub target: i64,
     pub index: u32,
+    /// Register that receives the result of an invoke instruction without a following
+    /// `move-result` (set by stack based readers, `None` for void calls and everything else).
+    pub result_reg: Option<u32>,
     pub payload: Option<Payload>,
 }
 

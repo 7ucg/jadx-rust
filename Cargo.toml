@@ -28,6 +28,7 @@ jadx-api = { path = "crates/jadx-api" }
 jadx-input-api = { path = "crates/jadx-input-api" }
 jadx-dex-input = { path = "crates/jadx-dex-input" }
 jadx-resources = { path = "crates/jadx-resources" }
+jadx-java-input = { path = "crates/jadx-java-input" }
 
 [profile.release]
 lto = "thin"
