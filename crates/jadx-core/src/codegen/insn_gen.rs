@@ -4,6 +4,7 @@
 use super::class_gen::ClassGen;
 use super::code_writer::CodeWriter;
 use super::method_gen::MethodGen;
+use super::name_gen::{SUPER_ARG_NAME, THIS_ARG_NAME};
 use super::type_gen::literal_to_string;
 use super::{CodegenError, GenEnv};
 use crate::model::cfg::MethodCfg;
@@ -221,17 +222,40 @@ impl<'m, 'a> InsnGen<'m, 'a> {
     /// captured variable or `Outer.this` instead of the (removed) field itself.
     fn instance_field(&self, code: &mut CodeWriter, field: &FieldInfo, arg: &InsnArg) -> Res {
         if let Some((cls, fi)) = self.root().resolve_field_id(field) {
-            match &self.root().classes[cls].fields[fi].replace {
+            // `FieldReplace` is only ever set on a field by its own declaring class; never honour
+            // it when `resolve_field_id` fell back to an inherited field of the same name/type
+            // (`deep_resolve_field`), which is a different field than the one actually accessed.
+            let f = &self.root().classes[cls].fields[fi];
+            let replace = if f.info == *field {
+                f.replace.as_ref()
+            } else {
+                None
+            };
+            match replace {
                 Some(FieldReplace::ClassInstance(info)) => {
                     self.use_class_info(code, info)?;
                     code.add(".this");
                     return Ok(());
                 }
                 Some(FieldReplace::Var { ctor, arg: arg_idx }) => {
+                    // Reads the name straight off the constructor's own `CodeVar` (already
+                    // finalized by `ApplyVariableNames` on that method) instead of going through
+                    // the current method's `NameGen`: `CodeVarId` is a per-method-local index,
+                    // so looking it up in a NameGen built for a different method could collide
+                    // with an unrelated variable that happens to share the same index there.
                     let loaded = self.env().method_cfg(cls, *ctor);
                     if let Ok(ctor_cfg) = loaded.as_ref() {
                         if let Some(reg) = ctor_cfg.arg_regs.get(*arg_idx) {
-                            let name = self.mgen.name_gen().borrow().use_arg(ctor_cfg, reg);
+                            let name = if reg.is_super {
+                                SUPER_ARG_NAME.to_string()
+                            } else if reg.is_this {
+                                THIS_ARG_NAME.to_string()
+                            } else {
+                                reg.svar
+                                    .and_then(|sv| ctor_cfg.svars[sv].code_var)
+                                    .and_then(|cv| ctor_cfg.code_vars[cv].name.clone())
+                                    .unwrap_or_else(|| format!("r{}", reg.reg_num))
+                            };
                             code.add(&name);
                             return Ok(());
                         }
