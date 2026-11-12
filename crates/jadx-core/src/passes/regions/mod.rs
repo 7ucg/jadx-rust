@@ -17,7 +17,8 @@ use crate::model::insn::iflag;
 use crate::passes::constructor::MethodEnv;
 use crate::passes::regions::maker::{RegionMaker, Res};
 
-const ACC_SYNCHRONIZED: u32 = 0x20;
+/// `ACC_SYNCHRONIZED | ACC_DECLARED_SYNCHRONIZED`
+const ACC_SYNCHRONIZED: u32 = 0x20 | 0x20000;
 
 /// The region passes of the default pipeline up to `stage` (12 = `RegionMakerVisitor`).
 pub fn run_region_stages(cfg: &mut MethodCfg, env: &MethodEnv, stage: u32) -> Res<()> {
