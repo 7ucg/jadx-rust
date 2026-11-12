@@ -1,7 +1,7 @@
 //! `OverrideMethodVisitor`: find overridden methods and revert type erasure of return and
 //! argument types using the generic types of the base method.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use crate::model::node::Root;
 use crate::model::types::ArgType;
@@ -24,6 +24,18 @@ enum MthRef {
 struct OverrideAttr {
     override_list: Vec<MthRef>,
     base_methods: Vec<MthRef>,
+    /// Index of the set of related methods (`getRelatedMthNodes`); the set is shared between
+    /// the methods of one override hierarchy.
+    related: usize,
+}
+
+/// State of the pass: override attributes and the sets of related methods.
+#[derive(Default)]
+struct Cx {
+    attrs: HashMap<MthRef, OverrideAttr>,
+    sets: Vec<BTreeSet<(usize, usize)>>,
+    /// `AFlag.DONT_RENAME`
+    dont_rename: HashSet<(usize, usize)>,
 }
 
 struct SuperTypes {
@@ -60,13 +72,13 @@ fn details(root: &Root, m: &MthRef) -> Option<Details> {
 }
 
 pub fn process_overrides(root: &mut Root) {
-    let mut attrs: HashMap<MthRef, OverrideAttr> = HashMap::new();
+    let mut cx = Cx::default();
     for cidx in root.traversal_order() {
         let Some(sd) = collect_super_types(root, cidx) else {
             continue;
         };
         for midx in 0..root.classes[cidx].methods.len() {
-            let upd = process_mth(root, &mut attrs, cidx, midx, &sd);
+            let upd = process_mth(root, &mut cx, cidx, midx, &sd);
             if let Some((ret, args)) = upd {
                 let m = &mut root.classes[cidx].methods[midx];
                 if let Some(r) = ret {
@@ -75,7 +87,7 @@ pub fn process_overrides(root: &mut Root) {
                 if let Some(a) = args {
                     m.arg_types = a;
                 }
-                check_method_signature_collisions(root, cidx, midx);
+                check_method_signature_collisions(root, &cx, cidx, midx);
             }
         }
     }
@@ -89,7 +101,7 @@ pub fn process_overrides(root: &mut Root) {
             MthRef::Clsp(c, id) => format!("{c}.{id}"),
         };
         let mut lines: Vec<String> = Vec::new();
-        for (m, attr) in &attrs {
+        for (m, attr) in &cx.attrs {
             if let MthRef::App(..) = m {
                 let mut b: Vec<String> = attr.base_methods.iter().map(&name).collect();
                 b.sort();
@@ -101,13 +113,24 @@ pub fn process_overrides(root: &mut Root) {
             eprintln!("{l}");
         }
     }
-    for (m, attr) in &attrs {
-        if let (MthRef::App(c, i), [base]) = (m, attr.base_methods.as_slice()) {
-            if let Some(d) = details(root, base) {
-                root.classes[*c].methods[*i].override_base_decl = Some(d.decl_class);
+    for (m, attr) in &cx.attrs {
+        if let MthRef::App(c, i) = m {
+            root.classes[*c].methods[*i].override_set = Some(attr.related);
+            if let [base] = attr.base_methods.as_slice() {
+                if let Some(d) = details(root, base) {
+                    root.classes[*c].methods[*i].override_base_decl = Some(d.decl_class);
+                }
             }
         }
     }
+    for (c, i) in &cx.dont_rename {
+        root.classes[*c].methods[*i].dont_rename = true;
+    }
+    root.override_sets = cx
+        .sets
+        .iter()
+        .map(|s| s.iter().copied().collect())
+        .collect();
 }
 
 fn collect_super_types(root: &Root, cidx: usize) -> Option<SuperTypes> {
@@ -174,20 +197,14 @@ fn add_super_type(
 
 type TypeUpdate = Option<(Option<ArgType>, Option<Vec<ArgType>>)>;
 
-fn process_mth(
-    root: &Root,
-    attrs: &mut HashMap<MthRef, OverrideAttr>,
-    cidx: usize,
-    midx: usize,
-    sd: &SuperTypes,
-) -> TypeUpdate {
+fn process_mth(root: &Root, cx: &mut Cx, cidx: usize, midx: usize, sd: &SuperTypes) -> TypeUpdate {
     let mth = &root.classes[cidx].methods[midx];
     if mth.info.is_constructor() || mth.access & (ACC_STATIC | ACC_PRIVATE) != 0 {
         return None;
     }
     let me = MthRef::App(cidx, midx);
-    let attr = process_override_methods(root, attrs, cidx, midx, sd)?;
-    attrs.insert(me, attr.clone());
+    let attr = process_override_methods(root, cx, cidx, midx, sd)?;
+    cx.attrs.insert(me, attr.clone());
     if attr.base_methods.len() != 1 {
         return None;
     }
@@ -202,13 +219,13 @@ fn process_mth(
 
 fn process_override_methods(
     root: &Root,
-    attrs: &mut HashMap<MthRef, OverrideAttr>,
+    cx: &mut Cx,
     cidx: usize,
     midx: usize,
     sd: &SuperTypes,
 ) -> Option<OverrideAttr> {
     let me = MthRef::App(cidx, midx);
-    if let Some(a) = attrs.get(&me) {
+    if let Some(a) = cx.attrs.get(&me) {
         return Some(a.clone());
     }
     let cls = &root.classes[cidx];
@@ -226,11 +243,11 @@ fn process_override_methods(
                 if is_method_visible_in_cls(root, sidx, smidx, cidx) {
                     let sref = MthRef::App(sidx, smidx);
                     override_list.push(sref.clone());
-                    if let Some(a) = attrs.get(&sref).cloned() {
+                    if let Some(a) = cx.attrs.get(&sref).cloned() {
                         add_base_method(sd, &override_list, &mut base_methods, st);
                         return build_override_attr(
                             root,
-                            attrs,
+                            cx,
                             cidx,
                             midx,
                             override_list,
@@ -249,7 +266,7 @@ fn process_override_methods(
         }
         add_base_method(sd, &override_list, &mut base_methods, st);
     }
-    build_override_attr(root, attrs, cidx, midx, override_list, base_methods, None)
+    build_override_attr(root, cx, cidx, midx, override_list, base_methods, None)
 }
 
 fn add_base_method(
@@ -307,7 +324,7 @@ fn is_method_visible_in_cls(root: &Root, sidx: usize, smidx: usize, cidx: usize)
 
 fn build_override_attr(
     root: &Root,
-    attrs: &mut HashMap<MthRef, OverrideAttr>,
+    cx: &mut Cx,
     cidx: usize,
     midx: usize,
     override_list: Vec<MthRef>,
@@ -322,7 +339,7 @@ fn build_override_attr(
             let clean = distinct(override_list);
             Some(apply_override_attr(
                 root,
-                attrs,
+                cx,
                 cidx,
                 midx,
                 clean,
@@ -342,7 +359,7 @@ fn build_override_attr(
             }
             Some(apply_override_attr(
                 root,
-                attrs,
+                cx,
                 cidx,
                 midx,
                 clean,
@@ -365,13 +382,15 @@ fn distinct(list: Vec<MthRef>) -> Vec<MthRef> {
 
 fn apply_override_attr(
     _root: &Root,
-    attrs: &mut HashMap<MthRef, OverrideAttr>,
+    cx: &mut Cx,
     cidx: usize,
     midx: usize,
     override_list: Vec<MthRef>,
     base_methods: Vec<MthRef>,
     update: bool,
 ) -> OverrideAttr {
+    // don't rename method if override list contains not resolved method
+    let dont_rename = override_list.iter().any(|m| !matches!(m, MthRef::App(..)));
     let mut nodes: Vec<MthRef> = vec![MthRef::App(cidx, midx)];
     nodes.extend(
         override_list
@@ -379,21 +398,66 @@ fn apply_override_attr(
             .filter(|m| matches!(m, MthRef::App(..)))
             .cloned(),
     );
+    let node_ids: Vec<(usize, usize)> = nodes
+        .iter()
+        .filter_map(|n| match n {
+            MthRef::App(c, i) => Some((*c, *i)),
+            MthRef::Clsp(..) => None,
+        })
+        .collect();
+    let related = if update {
+        // merge related methods from all override attributes: use one of already allocated sets
+        let existing = nodes
+            .iter()
+            .find_map(|n| cx.attrs.get(n).map(|a| a.related));
+        let set = match existing {
+            Some(s) => {
+                cx.sets[s].extend(node_ids.iter().copied());
+                s
+            }
+            None => {
+                cx.sets.push(node_ids.iter().copied().collect());
+                cx.sets.len() - 1
+            }
+        };
+        for n in &nodes {
+            if let Some(a) = cx.attrs.get(n) {
+                let other = a.related;
+                if other != set {
+                    let items = cx.sets[other].clone();
+                    cx.sets[set].extend(items);
+                }
+            }
+        }
+        set
+    } else {
+        cx.sets.push(node_ids.iter().copied().collect());
+        cx.sets.len() - 1
+    };
     let mut depth = 0usize;
     for node in &nodes {
+        if dont_rename {
+            if let MthRef::App(c, i) = node {
+                cx.dont_rename.insert((*c, *i));
+            }
+        }
         if depth == 0 {
             depth = 1;
             continue;
         }
-        if update && attrs.contains_key(node) {
-            continue;
+        if update {
+            if let Some(a) = cx.attrs.get_mut(node) {
+                a.related = related;
+                continue;
+            }
         }
         let tail = override_list.get(depth..).unwrap_or(&[]).to_vec();
-        attrs.insert(
+        cx.attrs.insert(
             node.clone(),
             OverrideAttr {
                 override_list: tail,
                 base_methods: base_methods.clone(),
+                related,
             },
         );
         depth += 1;
@@ -401,6 +465,7 @@ fn apply_override_attr(
     OverrideAttr {
         override_list,
         base_methods,
+        related,
     }
 }
 
@@ -472,21 +537,49 @@ fn fix_arg_types(
     changed.then_some(out)
 }
 
-/// `checkMethodSignatureCollisions` (without the alias rename).
-fn check_method_signature_collisions(root: &mut Root, cidx: usize, midx: usize) {
+/// `checkMethodSignatureCollisions`: the method whose signature collides with the changed
+/// signature of `mth` is renamed (when it is not part of an override hierarchy).
+fn check_method_signature_collisions(root: &mut Root, cx: &Cx, cidx: usize, midx: usize) {
     let (name, new_sig) = {
         let m = &root.classes[cidx].methods[midx];
-        (
-            m.info.name.clone(),
-            crate::model::info::make_short_id(&m.info.name, &m.arg_types, None),
-        )
+        let name = m.alias.clone().unwrap_or_else(|| m.info.name.clone());
+        let sig = crate::model::info::make_short_id(&name, &m.arg_types, None);
+        (name, sig)
     };
-    let other = root.classes[cidx].methods.iter().position(|o| {
-        o.info.name == name
-            && !std::ptr::eq(o, &root.classes[cidx].methods[midx])
-            && crate::model::info::make_short_id(&o.info.name, &o.info.arg_types, None) == new_sig
-    });
+    let other = root.classes[cidx]
+        .methods
+        .iter()
+        .enumerate()
+        .position(|(i, o)| {
+            let o_name = o.alias.as_deref().unwrap_or(&o.info.name);
+            o_name == name
+                && i != midx
+                && crate::model::info::make_short_id(o_name, &o.info.arg_types, None) == new_sig
+        });
     if let Some(o) = other {
+        let skip =
+            cx.dont_rename.contains(&(cidx, o)) || cx.attrs.contains_key(&MthRef::App(cidx, o));
+        if !skip {
+            let new_name = make_new_name(root, cidx, o);
+            root.classes[cidx].methods[o].alias = Some(new_name);
+        }
         root.classes[cidx].methods[o].bridged_by = Some(midx);
+    }
+}
+
+fn make_new_name(root: &Root, cidx: usize, midx: usize) -> String {
+    let m = &root.classes[cidx].methods[midx];
+    let base = m.alias.clone().unwrap_or_else(|| m.info.name.clone());
+    let mut k = 2;
+    loop {
+        let name = format!("{base}{k}");
+        if !root.classes[cidx]
+            .methods
+            .iter()
+            .any(|x| x.info.name == name)
+        {
+            return name;
+        }
+        k += 1;
     }
 }

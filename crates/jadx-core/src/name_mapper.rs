@@ -70,7 +70,7 @@ fn is_mark(c: char) -> bool {
         | 0x1DC0..=0x1DFF | 0x20D0..=0x20FF | 0xFE00..=0xFE0F | 0xFE20..=0xFE2F)
 }
 
-fn is_ident_start(c: char) -> bool {
+pub fn is_ident_start(c: char) -> bool {
     !is_mark(c) && (c.is_alphabetic() || c == '_' || c == '$' || is_currency(c))
 }
 
@@ -78,7 +78,7 @@ fn is_currency(c: char) -> bool {
     matches!(c as u32, 0x00A2..=0x00A5 | 0x058F | 0x060B | 0x09F2..=0x09F3 | 0x0E3F | 0x20A0..=0x20C0 | 0xFDFC | 0xFE69 | 0xFF04 | 0xFFE0..=0xFFE1 | 0xFFE5..=0xFFE6)
 }
 
-fn is_ident_part(c: char) -> bool {
+pub fn is_ident_part(c: char) -> bool {
     is_ident_start(c) || is_mark(c) || c.is_numeric() && c.is_alphanumeric() || c.is_ascii_digit()
 }
 
@@ -96,4 +96,40 @@ pub fn is_valid_identifier(s: &str) -> bool {
 
 pub fn is_valid_full_identifier(s: &str) -> bool {
     !s.is_empty() && !is_reserved(s) && s.split('.').all(valid_ident_chars)
+}
+
+/// `NameMapper.isAllCharsPrintable`: only printable ASCII characters.
+pub fn is_all_chars_printable(s: &str) -> bool {
+    s.chars().all(|c| (' '..='~').contains(&c))
+}
+
+/// `NameMapper.isValidAndPrintable`
+pub fn is_valid_and_printable(s: &str) -> bool {
+    is_valid_identifier(s) && is_all_chars_printable(s)
+}
+
+/// `NameMapper.removeInvalidCharsMiddle`: printable ASCII identifier characters only. The result
+/// may start with a digit and is not checked for reserved words.
+pub fn remove_invalid_chars_middle(name: &str) -> String {
+    if is_valid_and_printable(name) {
+        return name.to_string();
+    }
+    name.chars()
+        .filter(|c| (' '..='~').contains(c) && is_ident_part(*c))
+        .collect()
+}
+
+/// `NameMapper.removeInvalidChars`: like [`remove_invalid_chars_middle`], with `prefix` prepended
+/// when the result does not start with an identifier start character.
+pub fn remove_invalid_chars(name: &str, prefix: &str) -> String {
+    let result = remove_invalid_chars_middle(name);
+    match result.chars().next() {
+        Some(c) if !is_ident_start(c) => format!("{prefix}{result}"),
+        _ => result,
+    }
+}
+
+/// `NameMapper.removeNonPrintableCharacters`
+pub fn remove_non_printable_characters(name: &str) -> String {
+    name.chars().filter(|c| (' '..='~').contains(c)).collect()
 }

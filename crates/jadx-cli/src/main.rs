@@ -5,6 +5,7 @@
 //! runs an inspection helper instead.
 
 mod cli;
+mod code_dump;
 mod dev;
 mod java_dump;
 mod res_dump;

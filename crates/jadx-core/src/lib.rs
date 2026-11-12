@@ -2,6 +2,7 @@
 
 pub mod class_dump;
 pub mod clsp;
+pub mod codegen;
 pub mod decode;
 pub mod dump;
 pub mod method_utils;

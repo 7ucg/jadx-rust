@@ -4,6 +4,7 @@ pub mod cfg;
 pub mod const_storage;
 pub mod info;
 pub mod insn;
+pub mod names;
 pub mod node;
 pub mod ssa;
 pub mod types;

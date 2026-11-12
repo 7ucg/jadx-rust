@@ -1,0 +1,102 @@
+M corpus.Annot.<clinit>()V
+S b2i0 SPUT L = 1;
+S b2i1 SPUT M = 1;
+S b2i2 SPUT N = null;
+S b3i0 RETURN return;
+M corpus.Annot.annotated(Ljava/lang/String;IJ[I)V
+S b2i0 RETURN return;
+M corpus.Finally.cleanup()V
+S b2i0 RETURN return;
+M corpus.Finally.g(I)I
+S b2i0 RETURN return r0;
+M corpus.Finally.h()V
+S b2i0 RETURN return;
+M corpus.Finally.twoExits(I)I
+S b2i0 IF <ERR>
+S b3i0 INVOKE r0 = g(r2);
+S b4i0 INVOKE cleanup();
+S b5i0 RETURN return r0;
+S b6i0 INVOKE h();
+S b7i0 INVOKE cleanup();
+S b8i0 RETURN return 1;
+S b9i0 MOVE_EXCEPTION <ERR>
+S b10i0 INVOKE cleanup();
+S b11i0 THROW throw th;
+M corpus.Finally.withCatch(I)V
+S b2i0 INVOKE g(r2);
+S b3i0 INVOKE cleanup();
+S b4i0 RETURN return;
+S b6i0 INVOKE h();
+S b7i0 INVOKE cleanup();
+S b8i0 RETURN return;
+S b9i0 MOVE_EXCEPTION <ERR>
+S b10i0 INVOKE cleanup();
+S b11i0 THROW throw th;
+M corpus.Ops.arith(II)V
+S b2i0 ARITH r0 = r4 + (-128);
+S b2i1 ARITH r0 = 127 - r4;
+S b2i2 ARITH r0 = r4 + (-32768);
+S b2i3 ARITH r0 = 32767 - r4;
+S b2i4 ARITH r0 = r4 << 31;
+S b2i5 ARITH r0 = (r4 >>> 1) + r5;
+W b2i5.0 ARITH (r4 >>> 1)
+S b2i6 NEG r0 = -r4;
+S b2i7 CAST r0 = (long) r4;
+S b2i8 CAST r0 = (double) r2;
+S b2i9 CMP_L r0 = (r1 > r2 ? 1 : (r1 == r2 ? 0 : -1));
+S b2i10 CMP_L r0 = (r2 > r3 ? 1 : (r2 == r3 ? 0 : -1));
+S b3i0 RETURN return;
+M corpus.Ops.arrays()V
+S b2i0 FILL_ARRAY // fill-array-data instruction<NL>new byte[4][0] = -1;<NL>new byte[4][1] = 127;<NL>new byte[4][2] = 0;
+W b2i0.0 NEW_ARRAY new byte[4]
+S b2i1 FILL_ARRAY // fill-array-data instruction<NL>new short[4][0] = Short.MIN_VALUE;<NL>new short[4][1] = Short.MAX_VALUE;
+W b2i1.0 NEW_ARRAY new short[4]
+S b2i2 FILL_ARRAY // fill-array-data instruction<NL>new long[4][0] = Long.MAX_VALUE;<NL>new long[4][1] = -1;<NL>new long[4][2] = 4607182418800017408L;
+W b2i2.0 NEW_ARRAY new long[4]
+S b2i3 FILL_ARRAY // fill-array-data instruction<NL>new float[4][0] = 1.0f;<NL>new float[4][1] = 0.0f;<NL>new float[4][2] = Float.NaN;
+W b2i3.0 NEW_ARRAY new float[4]
+S b2i4 NEW_ARRAY r1 = new boolean[4];
+S b2i5 FILL_ARRAY // fill-array-data instruction<NL>r1[0] = 1;
+S b2i6 FILLED_NEW_ARRAY new int[]{4, 4};
+S b2i7 FILLED_NEW_ARRAY new int[]{4, r1};
+S b2i8 FILLED_NEW_ARRAY new int[]{};
+S b3i0 RETURN return;
+M corpus.Ops.consts()V
+S b3i0 RETURN return;
+M corpus.Ops.fields()V
+S b2i0 SPUT s = s;
+W b2i0.0 SGET s
+S b2i1 SPUT sb = sb;
+W b2i1.0 SGET sb
+S b2i2 SPUT c = c;
+W b2i2.0 SGET c
+S b2i3 SPUT z = z;
+W b2i3.0 SGET z
+S b2i4 SPUT j = j;
+W b2i4.0 SGET j
+S b2i5 SPUT o = o;
+W b2i5.0 SGET o
+S b3i0 RETURN return;
+M corpus.Ops.jumps(I)I
+S b5i0 IF <ERR>
+S b3i0 RETURN return r2;
+S b6i0 IF <ERR>
+M corpus.Ops.moves(IJLjava/lang/Object;)V
+S b3i0 RETURN return;
+M corpus.Ops.newer()V LOAD_ERROR
+M corpus.Ops.switches(I)I
+S b2i0 SWITCH <ERR>
+S b3i0 SWITCH <ERR>
+S b4i0 RETURN return 0;
+S b10i0 RETURN return 1;
+S b11i0 RETURN return 2;
+S b6i0 RETURN return 1;
+S b8i0 RETURN return 2;
+M corpus.Ops.tries()V
+S b2i0 INVOKE tries();
+S b3i0 RETURN return;
+S b9i0 MOVE_EXCEPTION <ERR>
+S b10i0 THROW throw th;
+S b5i0 RETURN return;
+S b7i0 INVOKE tries();
+S b8i0 RETURN return;

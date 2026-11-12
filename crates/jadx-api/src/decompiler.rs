@@ -192,6 +192,7 @@ impl JadxDecompiler {
             inline_anonymous_classes: self.args.inline_anonymous_classes,
             inline_methods: self.args.inline_methods,
             allow_inline_kotlin_lambda: self.args.allow_inline_kotlin_lambda,
+            ..PreDecompileOptions::default()
         };
         {
             let refs = jadx_dex_input::DexCodeRefs {
