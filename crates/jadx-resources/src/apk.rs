@@ -105,12 +105,17 @@ pub fn decode_apk(path: &Path, opts: &ApkOptions) -> Result<ApkResources> {
     // resource table first: names of resources and of obfuscated files, app attributes
     let mut attrs = ManifestAttributes::new();
     let mut table_entry: Option<usize> = None;
+    let mut table_data: Vec<u8> = Vec::new();
     if let Some(pos) = entries
         .iter()
         .position(|e| ResourceType::from_name(&e.name) == ResourceType::Arsc)
     {
-        let data = read_entry(&mut zip, entries[pos].index)?;
-        match ResTable::parse(&data, &opts.res) {
+        table_data = read_entry(&mut zip, entries[pos].index)?;
+        // The names used for references are assigned before the constants of the app code are
+        // known, so the code field names only apply to the tables decoded to values files.
+        let mut names_opts = opts.res.clone();
+        names_opts.code_names.clear();
+        match ResTable::parse(&table_data, &names_opts) {
             Ok(table) => {
                 result.resource_names = table.resource_names();
                 attrs.set_app_attrs(table.app_attrs());
@@ -180,10 +185,15 @@ pub fn decode_apk(path: &Path, opts: &ApkOptions) -> Result<ApkResources> {
             }
             ResourceType::Arsc => {
                 let parsed;
-                let table: &ResTable = if table_entry == Some(i) {
+                let reuse = table_entry == Some(i) && opts.res.code_names.is_empty();
+                let table: &ResTable = if reuse {
                     result.table.as_ref().expect("table parsed")
                 } else {
-                    let data = read_entry(&mut zip, entries[i].index)?;
+                    let data = if table_entry == Some(i) {
+                        table_data.clone()
+                    } else {
+                        read_entry(&mut zip, entries[i].index)?
+                    };
                     match ResTable::parse(&data, &opts.res) {
                         Ok(t) => {
                             parsed = t;
@@ -209,6 +219,27 @@ pub fn decode_apk(path: &Path, opts: &ApkOptions) -> Result<ApkResources> {
     result.files = files;
     result.warnings.extend(warnings);
     Ok(result)
+}
+
+/// Reads and parses the first resource table (`*.arsc`) of an APK without decoding anything else.
+///
+/// This is the entry point for the resource id to name map:
+/// `table.resource_names()` gives `id -> "type/name"` (as used for references in decoded XML) and
+/// `table.r_fields()` the `R.<type>.<name> = id` constants to add to the app `R` class.
+/// Returns `Ok(None)` if the archive has no resource table.
+pub fn read_resource_table(path: &Path, opts: &ResOptions) -> Result<Option<ResTable>> {
+    let file = std::fs::File::open(path)?;
+    let mut zip = zip::ZipArchive::new(file)?;
+    for index in 0..zip.len() {
+        let name = String::from_utf8_lossy(zip.by_index_raw(index)?.name_raw()).into_owned();
+        if is_valid_entry_name(&name) && ResourceType::from_name(&name) == ResourceType::Arsc {
+            let mut f = zip.by_index(index)?;
+            let mut buf = Vec::with_capacity(f.size() as usize);
+            f.read_to_end(&mut buf)?;
+            return ResTable::parse(&buf, opts).map(Some);
+        }
+    }
+    Ok(None)
 }
 
 /// New name of a resource file that is referenced by a resource entry

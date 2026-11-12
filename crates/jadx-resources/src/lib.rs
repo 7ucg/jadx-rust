@@ -22,7 +22,9 @@ pub mod text;
 pub mod values;
 mod xml_chars;
 
-pub use apk::{decode_apk, ApkOptions, ApkResources, DecodedFile, ResourceType};
+pub use apk::{
+    decode_apk, read_resource_table, ApkOptions, ApkResources, DecodedFile, ResourceType,
+};
 pub use axml::{BinaryXmlParser, ClassAliasFn, XmlContext};
 pub use error::{ResError, Result};
 pub use manifest_attrs::ManifestAttributes;

@@ -9,35 +9,38 @@ use anyhow::{bail, Context, Result};
 use jadx_resources::{decode_apk, ApkOptions};
 
 pub fn res_dump(args: &[String]) -> Result<()> {
-    let (apk, out, alias_file) = match args {
+    let (apk, out, aux_dir) = match args {
         [apk, out] => (PathBuf::from(apk), PathBuf::from(out), None),
-        [apk, out, aliases] => (
+        [apk, out, aux] => (
             PathBuf::from(apk),
             PathBuf::from(out),
-            Some(PathBuf::from(aliases)),
+            Some(PathBuf::from(aux)),
         ),
-        _ => bail!("usage: jadx-rs res-dump <file.apk> <outDir> [classAliasFile]"),
+        _ => bail!("usage: jadx-rs res-dump <file.apk> <outDir> [auxDir]"),
     };
-    // optional table of renamed classes: "<raw name> TAB <alias name>" per line
+    // optional tables that normally come from the decompiled code:
+    // class-aliases.txt: "<raw class name> TAB <alias name>" per line
+    // code-names.txt: "0x<resource id> TAB <constant field name>" per line
     let mut aliases: HashMap<String, String> = HashMap::new();
-    if let Some(f) = alias_file {
-        let text =
-            std::fs::read_to_string(&f).with_context(|| format!("reading {}", f.display()))?;
-        for line in text.lines() {
+    let mut opts = ApkOptions::default();
+    if let Some(dir) = aux_dir {
+        for line in read_lines(&dir.join("class-aliases.txt"))? {
             if let Some((raw, alias)) = line.split_once('\t') {
                 aliases.insert(raw.to_string(), alias.to_string());
             }
         }
+        for line in read_lines(&dir.join("code-names.txt"))? {
+            if let Some((id, name)) = line.split_once('\t') {
+                if let Ok(id) = u32::from_str_radix(id.trim_start_matches("0x"), 16) {
+                    opts.res.code_names.insert(id as i32, name.to_string());
+                }
+            }
+        }
     }
     let lookup = |name: &str| aliases.get(name).cloned();
-    let opts = ApkOptions {
-        class_alias: if aliases.is_empty() {
-            None
-        } else {
-            Some(&lookup)
-        },
-        ..ApkOptions::default()
-    };
+    if !aliases.is_empty() {
+        opts.class_alias = Some(&lookup);
+    }
     let res = decode_apk(&apk, &opts).with_context(|| format!("decoding {}", apk.display()))?;
     for w in &res.warnings {
         eprintln!("warning: {w}");
@@ -58,6 +61,15 @@ pub fn res_dump(args: &[String]) -> Result<()> {
         list.push_str(&format!("0x{id:08x} {name}\n"));
     }
     write_file(&out.join("resnames.txt"), list.as_bytes())
+}
+
+fn read_lines(path: &Path) -> Result<Vec<String>> {
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let text =
+        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    Ok(text.lines().map(str::to_string).collect())
 }
 
 fn write_file(path: &Path, data: &[u8]) -> Result<()> {

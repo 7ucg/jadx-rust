@@ -16,6 +16,8 @@ import jadx.api.ResourceType;
 import jadx.core.dex.info.ClassInfo;
 import jadx.core.dex.info.InfoStorage;
 import jadx.core.dex.instructions.args.ArgType;
+import jadx.core.dex.nodes.FieldNode;
+import jadx.core.dex.nodes.IFieldInfoRef;
 import jadx.core.xmlgen.ResContainer;
 
 /**
@@ -24,10 +26,12 @@ import jadx.core.xmlgen.ResContainer;
  * directory, one file per resource, named like the reference resource saver names them. The
  * resource id to name table is written as "resnames.txt" (one "0x%08x type/name" line per id).
  *
- * When a third argument is given, the class alias table (renamed classes, inner class names) is
- * written to that file; the Rust decoder reads it to resolve class names in the XML the same way.
+ * When a third argument is given, the tables that come from the decompiled code are written to
+ * that directory: the class alias table (renamed classes, inner class names) and the names of the
+ * constant fields that carry resource ids. The Rust decoder reads them to resolve class names in
+ * the XML and to name resources the same way.
  *
- * Usage: ResDump input.apk outDir [classAliasFile]
+ * Usage: ResDump input.apk outDir [auxDir]
  */
 public class ResDump {
 	public static void main(String[] args) throws Exception {
@@ -63,9 +67,30 @@ public class ResDump {
 			}
 			write(new File(out, "resnames.txt"), sb.toString());
 			if (args.length > 2) {
-				writeClassAliases(jadx, new File(args[2]));
+				File aux = new File(args[2]);
+				writeClassAliases(jadx, new File(aux, "class-aliases.txt"));
+				writeCodeNames(jadx, new File(aux, "code-names.txt"));
 			}
 		}
+	}
+
+	/**
+	 * Names of the constant fields of the app code by value (int constants that other code does
+	 * not use any more, e.g. the fields of the app resource class), one "0x%08x TAB name" line
+	 * each. Fields of generated classes are left out.
+	 */
+	private static void writeCodeNames(JadxDecompiler jadx, File file) throws Exception {
+		List<String> lines = new ArrayList<>();
+		for (Map.Entry<Object, IFieldInfoRef> e : jadx.getRoot().getConstValues().getGlobalConstFields().entrySet()) {
+			if (e.getKey() instanceof Integer && e.getValue() instanceof FieldNode) {
+				FieldNode fld = (FieldNode) e.getValue();
+				if (!fld.getTopParentClass().isSynthetic()) {
+					lines.add(String.format("0x%08x\t%s", (Integer) e.getKey(), fld.getName()));
+				}
+			}
+		}
+		Collections.sort(lines);
+		write(file, String.join("\n", lines) + "\n");
 	}
 
 	/**
