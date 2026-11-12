@@ -649,8 +649,18 @@ impl<'a> ClassGen<'a> {
 
     fn add_fields(&self, code: &mut CodeWriter) -> Res {
         self.add_enum_fields(code)?;
-        for f in &self.node().fields {
-            self.add_field(code, f)?;
+        let node = self.node();
+        match &node.fields_order {
+            Some(order) => {
+                for &fi in order {
+                    self.add_field(code, &node.fields[fi])?;
+                }
+            }
+            None => {
+                for f in &node.fields {
+                    self.add_field(code, f)?;
+                }
+            }
         }
         Ok(())
     }

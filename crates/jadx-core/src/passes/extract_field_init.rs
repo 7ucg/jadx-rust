@@ -344,7 +344,13 @@ fn fix_fields_order(root: &mut Root, cfg: &MethodCfg, cls: usize, inits: &[Field
         .encode_utf16()
         .collect()
     };
-    cls_fields.sort_by_key(|f| alias(*f));
+    // `Comparator.comparingInt(FieldNode::getSourceLine).thenComparing(ClassGen::getShortAlias)`.
+    cls_fields.sort_by(|a, b| {
+        root.classes[cls].fields[*a]
+            .source_line
+            .cmp(&root.classes[cls].fields[*b].source_line)
+            .then_with(|| alias(*a).cmp(&alias(*b)))
+    });
     if !ordered_fields.is_empty() {
         // check if already ordered
         let ordered = cls_fields
@@ -566,6 +572,7 @@ fn add_field_init_attr(
     field: usize,
     put_insn: InsnId,
 ) {
+    let source_line = cfg.insn(put_insn).source_line;
     let assign_insn = match cfg.insn(put_insn).args.first().cloned() {
         Some(InsnArg::Wrapped(w)) => w.insn,
         Some(arg) => {
@@ -582,4 +589,8 @@ fn add_field_init_attr(
         insn: assign_insn,
     });
     f.zero_init = false;
+    // `ExtractFieldInit.addFieldInitAttr`: `if (putInsn.getSourceLine() != 0) field.setSourceLine(...)`.
+    if source_line != 0 {
+        f.source_line = source_line;
+    }
 }

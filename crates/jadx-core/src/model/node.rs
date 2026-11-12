@@ -51,6 +51,10 @@ pub struct FieldNode {
     pub info_comments: Vec<String>,
     /// `AType.FIELD_INIT_INSN`: instruction that initializes the field.
     pub init_insn: Option<FieldInitInsn>,
+    /// `FieldNode.getSourceLine()`: 0 unless set by `ExtractFieldInit` from the moved
+    /// initialization instruction's source line. Used to sort fields with the same key as
+    /// methods and inner classes (source line, then alias).
+    pub source_line: u32,
     /// Explicit zero initialization (`EncodedValue.NULL` constant value): the bytecode can omit
     /// the initialization of static final fields to 0 (`ClassNode.initStaticValues`). Removed
     /// when the field initialization is found in the class initializer.
@@ -420,6 +424,7 @@ impl Root {
                     info_comments: Vec::new(),
                     init_insn: None,
                     zero_init: false,
+                    source_line: 0,
                 });
             }
             let mut methods = Vec::with_capacity(c.methods.len());
