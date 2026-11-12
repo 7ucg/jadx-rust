@@ -72,6 +72,9 @@ fn collect_register_args(cfg: &MethodCfg, insn: InsnId, out: &mut Vec<ArgRef>) {
     if let InsnKind::Ternary { cond } = n.kind {
         collect_register_args(cfg, cond, out);
     }
+    if let InsnKind::TernaryCond(cond) = &n.kind {
+        out.extend(cond.register_args(cfg));
+    }
 }
 
 /// `RegisterArg.getName`
@@ -300,6 +303,13 @@ pub fn rebind_args(cfg: &mut MethodCfg, insn: InsnId) -> Result<(), String> {
     cfg.rebind_args(insn)?;
     if let InsnKind::Ternary { cond } = cfg.insn(insn).kind {
         for reg in register_args(cfg, cond) {
+            if let Some(p) = reg.parent_insn() {
+                cfg.rebind_args(p)?;
+            }
+        }
+    }
+    if let InsnKind::TernaryCond(cond) = &cfg.insn(insn).kind {
+        for reg in cond.register_args(cfg) {
             if let Some(p) = reg.parent_insn() {
                 cfg.rebind_args(p)?;
             }

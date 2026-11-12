@@ -80,6 +80,13 @@ fn add_args(cfg: &MethodCfg, insn: InsnId, out: &mut Vec<(ArgRef, u32)>) {
                 .map(|a| (a, cfg.reg(a).reg_num)),
         );
     }
+    if let InsnKind::TernaryCond(cond) = &n.kind {
+        out.extend(
+            cond.register_args(cfg)
+                .into_iter()
+                .map(|a| (a, cfg.reg(a).reg_num)),
+        );
+    }
     for (k, a) in n.args.iter().enumerate() {
         if let InsnArg::Register(r) = a {
             out.push((ArgRef::Arg(insn, k), r.reg_num));

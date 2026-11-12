@@ -121,6 +121,20 @@ pub fn insn_line(cfg: &MethodCfg, iid: InsnId) -> String {
         }
         _ => {}
     }
+    match &insn.kind {
+        InsnKind::TernaryCond(c) => {
+            let _ = write!(out, " cond={}", cond_string(cfg, c));
+        }
+        InsnKind::Ternary { cond } => {
+            let c = IfCondition {
+                mode: CondMode::Compare,
+                args: Vec::new(),
+                compare: Some(*cond),
+            };
+            let _ = write!(out, " cond={}", cond_string(cfg, &c));
+        }
+        _ => {}
+    }
     if let Some(loops) = cfg.regions.insn_loops.get(&iid) {
         let ids: Vec<String> = loops
             .iter()

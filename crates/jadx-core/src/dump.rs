@@ -252,7 +252,7 @@ fn insn_line(n: &InsnNode, if_target: Option<i32>, cfg: Ctx) -> String {
         } => {
             let _ = write!(s, " ctor {call_mth} {}", call_type.name());
         }
-        InsnKind::Ternary { .. } => {}
+        InsnKind::Ternary { .. } | InsnKind::TernaryCond(_) => {}
     }
     if !n.jumps.is_empty() {
         let j: Vec<String> = n

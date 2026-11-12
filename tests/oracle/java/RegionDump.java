@@ -103,6 +103,9 @@ public class RegionDump {
 			sb.append(" tblocks=").append(tb == null ? "-" : cids(java.util.Arrays.asList(tb))).append(" defblock=")
 					.append(s.getDefTargetBlock() == null ? "-" : s.getDefTargetBlock().getCId());
 		}
+		if (insn instanceof jadx.core.dex.instructions.mods.TernaryInsn) {
+			sb.append(" cond=").append(cond(((jadx.core.dex.instructions.mods.TernaryInsn) insn).getCondition()));
+		}
 		AttrList<LoopInfo> loops = insn.get(AType.LOOP);
 		if (loops != null) {
 			sb.append(" loops=[").append(loops.getList().stream().map(l -> Integer.toString(l.getId())).collect(Collectors.joining(",")))

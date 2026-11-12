@@ -3,11 +3,13 @@
 pub mod block_ext;
 pub mod clean;
 pub mod if_maker;
+pub mod if_visitor;
 pub mod loop_maker;
 pub mod maker;
 pub mod post_process;
 pub mod switch_maker;
 pub mod sync_maker;
+pub mod ternary_mod;
 pub mod traversal;
 pub mod try_catch;
 pub mod utils;
@@ -24,6 +26,18 @@ const ACC_SYNCHRONIZED: u32 = 0x20 | 0x20000;
 pub fn run_region_stages(cfg: &mut MethodCfg, env: &MethodEnv, stage: u32) -> Res<()> {
     if stage >= 12 {
         region_maker_visitor(cfg, env)?;
+    }
+    if stage >= 13 && !cfg.blocks.is_empty() {
+        if_visitor::if_region_visitor(cfg, env)?;
+    }
+    if stage >= 14 {
+        if_visitor::return_visitor(cfg)?;
+    }
+    if stage >= 15 {
+        clean::clean_regions(cfg)?;
+    }
+    if stage >= 16 {
+        crate::passes::code_shrink::code_shrink(cfg)?;
     }
     Ok(())
 }

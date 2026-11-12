@@ -455,6 +455,8 @@ pub enum InsnKind {
     Ternary {
         cond: InsnId,
     },
+    /// `TernaryInsn` with a general condition (made by `TernaryMod`).
+    TernaryCond(Box<super::condition::IfCondition>),
 }
 
 /// `ConstructorInsn.CallType`

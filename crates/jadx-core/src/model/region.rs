@@ -151,6 +151,8 @@ pub struct Regions {
     pub block_loop_label: HashMap<BlockId, LoopId>,
     /// `RegionRefAttr` on switch and `break` instructions.
     pub insn_region_ref: HashMap<InsnId, RegionId>,
+    /// `AFlag.REQUEST_CODE_SHRINK`
+    pub request_code_shrink: bool,
 }
 
 impl Regions {
