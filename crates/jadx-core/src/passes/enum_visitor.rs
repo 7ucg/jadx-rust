@@ -420,7 +420,7 @@ fn process_field_by_wrapped_insn(
     }
     if cfg.insn(insn).ty == InsnType::Constructor && src == data.ci {
         let offset = cfg.insn(insn).offset;
-        let fi = create_fake_field(ctx.root, data.cls, &format!("EF{offset:x}"));
+        let fi = create_fake_field(ctx.root, data.cls, &format!("EF{offset}"));
         return create_field_by_constructor(ctx, data, fi, insn);
     }
     Ok(None)
@@ -530,6 +530,8 @@ fn create_fake_field(root: &mut Root, cls: usize, name: &str) -> usize {
     f.zero_init = false;
     f.use_in = Vec::new();
     f.annotation_refs = Vec::new();
+    // `EnumVisitor.createFakeField`: marks the field as not present in the bytecode.
+    f.info_comments = vec!["Fake field, exist only in values array".to_string()];
     root.classes[cls].fields.push(f);
     root.classes[cls].fields.len() - 1
 }
