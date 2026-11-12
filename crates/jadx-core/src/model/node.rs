@@ -303,31 +303,6 @@ impl Root {
         keys.into_iter().map(|(_, i)| i).collect()
     }
 
-    /// Order of `DepthTraversal` over the sorted class list: top level classes by raw name, each
-    /// followed by its inner classes (depth first).
-    pub fn depth_traversal_order(&self) -> Vec<usize> {
-        let sorted = self.sorted_class_order();
-        let mut children: Vec<Vec<usize>> = vec![Vec::new(); self.classes.len()];
-        for &i in &sorted {
-            if let Some(p) = self.parent_index(i).filter(|p| *p != i) {
-                children[p].push(i);
-            }
-        }
-        fn visit(i: usize, children: &[Vec<usize>], out: &mut Vec<usize>) {
-            out.push(i);
-            for &c in &children[i] {
-                visit(c, children, out);
-            }
-        }
-        let mut out = Vec::with_capacity(self.classes.len());
-        for &i in &sorted {
-            if self.parent_index(i).is_none() {
-                visit(i, &children, &mut out);
-            }
-        }
-        out
-    }
-
     /// Top level class of a class (the class itself if it is not an inner class).
     pub fn top_parent_index(&self, idx: usize) -> usize {
         let mut cur = idx;

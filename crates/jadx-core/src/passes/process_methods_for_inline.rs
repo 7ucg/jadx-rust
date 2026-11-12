@@ -4,7 +4,7 @@
 use crate::model::node::{MethodId, Root, ACC_STATIC, ACC_SYNTHETIC};
 
 pub fn process_methods_for_inline(root: &mut Root, inline_anonymous_classes: bool) {
-    for c in root.depth_traversal_order() {
+    for c in root.traversal_order() {
         for m in 0..root.classes[c].methods.len() {
             if can_inline(root, (c, m), inline_anonymous_classes) {
                 root.classes[c].methods[m].inline_candidate = true;
