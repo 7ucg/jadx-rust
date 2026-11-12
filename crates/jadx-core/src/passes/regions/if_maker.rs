@@ -259,18 +259,6 @@ fn check_insns_inline(
             return false;
         }
         let use_place = uses[0].parent_insn();
-        if std::env::var("DBG_IF").is_ok() {
-            let tys: Vec<_> = uses
-                .iter()
-                .map(|u| u.parent_insn().map(|p| cfg.insn(p).ty))
-                .collect();
-            eprintln!(
-                "CHK block={block} next={next} uses={tys:?} first_in={}",
-                use_place
-                    .is_some_and(|u| cfg.block(block).insns.contains(&u)
-                        || cfg.block(next).insns.contains(&u))
-            );
-        }
         let in_block = use_place.is_some_and(|u| cfg.block(block).insns.contains(&u))
             || use_place.is_some_and(|u| cfg.block(next).insns.contains(&u));
         if !in_block {
@@ -346,12 +334,6 @@ pub fn merge_nested_if_nodes(cfg: &mut MethodCfg, current: &IfInfo) -> Res<Optio
     }
     let then_path_same = is_equal_paths(cfg, cur_then, next_if.then_block);
     let else_path_same = is_equal_paths(cfg, cur_else, next_if.else_block);
-    if std::env::var("DBG_IF").is_ok() {
-        eprintln!(
-            "MERGE cur_then={cur_then:?} cur_else={cur_else:?} next then={:?} else={:?} tps={then_path_same} eps={else_path_same} follow_then={follow_then_branch} inline={assign_inline_needed}",
-            next_if.then_block, next_if.else_block
-        );
-    }
     if !then_path_same && !else_path_same {
         // complex condition, run additional checks
         if check_condition_branches(cfg, cur_then, cur_else)

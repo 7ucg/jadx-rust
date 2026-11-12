@@ -23,7 +23,7 @@ STAGE="${STAGE:-0}"
 SUB="insn-blocks"; [ "$STAGE" = "1" ] && SUB="insn-cfg"; [ "$STAGE" -ge 2 ] && SUB="insn-ssa"; export JADX_RS_STAGE="$STAGE"
 mkdir -p "$WORK/cls"
 cargo build --release -p jadx-cli --manifest-path "$ROOT/Cargo.toml" 2>/dev/null
-"$JAVAC" -cp "$LIB" -d "$WORK/cls" "$ROOT/tests/oracle/java/InsnNodeDump.java" "$ROOT/tests/oracle/java/BlockDump.java"
+"$JAVAC" -cp "$LIB" -d "$WORK/cls" "$ROOT/tests/oracle/java/InsnNodeDump.java" "$ROOT/tests/oracle/java/BlockDump.java" "$ROOT/tests/oracle/java/RegionDump.java" "$ROOT/tests/oracle/java/RegionStages.java"
 fail=0
 for f in "$@"; do
   "$JAVA" $JOPTS -cp "$WORK/cls:$LIB" BlockDump "$f" "$STAGE" 2>/dev/null > "$WORK/blocks.ref.raw" || true

@@ -424,8 +424,16 @@ fn can_move_between_blocks(
     for b in paths {
         if cfg.block(b).contains(bflag::DONT_GENERATE) {
             if check_last_insn_type(cfg, b, InsnType::MonitorExit) {
-                // regions are not built at this stage, so the blocks are never in the same region
-                return Ok(false);
+                if crate::passes::regions::utils::is_blocks_in_same_region(
+                    cfg,
+                    assign_block,
+                    use_block,
+                ) {
+                    // allow move inside same synchronized region
+                } else {
+                    // don't move from synchronized block
+                    return Ok(false);
+                }
             }
             // skip checks for not generated blocks
             continue;

@@ -460,6 +460,23 @@ pub fn get_block_container(cfg: &MethodCfg, c: Container, block: BlockId) -> Opt
     }
 }
 
+/// `RegionUtils.isBlocksInSameRegion`: two blocks on the same level of one (non branch) region.
+pub fn is_blocks_in_same_region(cfg: &MethodCfg, first: BlockId, second: BlockId) -> bool {
+    let Some(region) = cfg.regions.method_region else {
+        return false;
+    };
+    if let Some(Container::Region(r)) = get_block_container(cfg, Container::Region(region), first) {
+        if cfg.regions.is_branch_region(r) {
+            return false;
+        }
+        return cfg
+            .regions
+            .sub_blocks(r)
+            .contains(&Container::Block(second));
+    }
+    false
+}
+
 /// `RegionUtils.isDominatedBy`
 pub fn is_dominated_by(cfg: &MethodCfg, dom: BlockId, c: Container) -> bool {
     if c == Container::Block(dom) {
