@@ -7,8 +7,11 @@
 //!   jadx-rs smali       <file>   smali text of every class (oracle comparison format)
 //!   jadx-rs dex-counts  <file>   id table counts (oracle comparison format)
 //!   jadx-rs pre-info    <file>   class level state after the pre decompile passes
+//!   jadx-rs res-dump    <apk> <outDir>   decoded text resources of an APK
 
 use std::path::PathBuf;
+
+mod res_dump;
 
 use anyhow::{bail, Context, Result};
 use jadx_dex_input::{load_path, DexFile, LoadOptions};
@@ -16,6 +19,9 @@ use jadx_dex_input::{load_path, DexFile, LoadOptions};
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
     let cmd = args.next().unwrap_or_default();
+    if cmd == "res-dump" {
+        return res_dump::res_dump(&args.collect::<Vec<_>>());
+    }
     let path = args.next().map(PathBuf::from);
     let no_verify = args.any(|a| a == "--no-verify-checksum");
     let path = match (cmd.as_str(), path) {

@@ -112,6 +112,7 @@ dependencies = [
  "jadx-core",
  "jadx-dex-input",
  "jadx-input-api",
+ "jadx-resources",
 ]
 
 [[package]]
@@ -143,6 +144,13 @@ version = "0.1.0"
 [[package]]
 name = "jadx-mcp"
 version = "0.1.0"
+
+[[package]]
+name = "jadx-resources"
+version = "0.1.0"
+dependencies = [
+ "zip",
+]
 
 [[package]]
 name = "js-sys"
