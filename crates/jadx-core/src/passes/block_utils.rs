@@ -2,7 +2,7 @@
 
 use crate::model::bitset::BitSet;
 use crate::model::cfg::MethodCfg;
-use crate::model::insn::BlockId;
+use crate::model::insn::{BlockId, InsnId};
 
 fn traverse_successors_until(
     cfg: &MethodCfg,
@@ -316,4 +316,191 @@ pub fn get_prev_block_on_path(
         }
     }
     None
+}
+
+/// `getFirstInsn`
+pub fn get_first_insn(cfg: &MethodCfg, block: BlockId) -> Option<InsnId> {
+    cfg.block(block).insns.first().copied()
+}
+
+/// `getLastInsn`
+pub fn get_last_insn(cfg: &MethodCfg, block: BlockId) -> Option<InsnId> {
+    cfg.block(block).insns.last().copied()
+}
+
+/// `isBackEdge`
+pub fn is_back_edge(cfg: &MethodCfg, from: BlockId, to: BlockId) -> bool {
+    if cfg
+        .block(from)
+        .clean_succs()
+        .is_some_and(|c| c.contains(&to))
+    {
+        return false;
+    }
+    cfg.block(from).succs.contains(&to)
+}
+
+/// `isAllBlocksEmpty`
+pub fn is_all_blocks_empty(cfg: &MethodCfg, blocks: &[BlockId]) -> bool {
+    blocks.iter().all(|b| cfg.block(*b).insns.is_empty())
+}
+
+fn next_block_on_empty_path(
+    cfg: &MethodCfg,
+    block: BlockId,
+    reverse: bool,
+    clean_only: bool,
+) -> Option<BlockId> {
+    let b = cfg.block(block);
+    let clean_count = b.clean_succs().map_or(0, |c| c.len());
+    if !b.insns.is_empty() || (!reverse && b.preds.len() > 1) || (reverse && clean_count > 1) {
+        return None;
+    }
+    let next: &[BlockId] = if reverse {
+        &b.preds
+    } else if clean_only {
+        b.clean_succs().map_or(&[][..], |c| c.as_slice())
+    } else {
+        &b.succs
+    };
+    if next.len() != 1 {
+        return None;
+    }
+    Some(next[0])
+}
+
+/// `followEmptyPath(start, reverse, cleanOnly)`
+pub fn follow_empty_path(
+    cfg: &MethodCfg,
+    mut start: BlockId,
+    reverse: bool,
+    clean_only: bool,
+) -> BlockId {
+    while let Some(next) = next_block_on_empty_path(cfg, start, reverse, clean_only) {
+        start = next;
+    }
+    start
+}
+
+/// `followEmptyUpPathWithinSet`
+pub fn follow_empty_up_path_within_set(
+    cfg: &MethodCfg,
+    start: BlockId,
+    traversable: &[BlockId],
+) -> Vec<BlockId> {
+    let mut results = Vec::new();
+    let mut traversed: Vec<BlockId> = Vec::new();
+    follow_empty_up_path_rec(cfg, &mut results, start, traversable, &mut traversed);
+    results
+}
+
+fn follow_empty_up_path_rec(
+    cfg: &MethodCfg,
+    results: &mut Vec<BlockId>,
+    mut start: BlockId,
+    traversable: &[BlockId],
+    traversed: &mut Vec<BlockId>,
+) {
+    let preds: Vec<BlockId> = cfg
+        .block(start)
+        .preds
+        .iter()
+        .copied()
+        .filter(|p| traversable.contains(p))
+        .collect();
+    for pred in preds {
+        if !traversable.contains(&pred) || traversed.contains(&pred) {
+            continue;
+        }
+        traversed.push(pred);
+        if cfg.block(pred).insns.is_empty() {
+            follow_empty_up_path_rec(cfg, results, start, traversable, traversed);
+        } else {
+            results.push(pred);
+        }
+        start = pred;
+    }
+}
+
+fn collect_until(
+    cfg: &MethodCfg,
+    blocks: &mut Vec<BlockId>,
+    current: BlockId,
+    clean: bool,
+    stop: &dyn Fn(BlockId) -> bool,
+) {
+    if blocks.contains(&current) {
+        return;
+    }
+    blocks.push(current);
+    if stop(current) {
+        return;
+    }
+    let succs: Vec<BlockId> = if clean {
+        cfg.block(current)
+            .clean_succs()
+            .cloned()
+            .unwrap_or_default()
+    } else {
+        cfg.block(current).succs.clone()
+    };
+    for s in succs {
+        collect_until(cfg, blocks, s, clean, stop);
+    }
+}
+
+/// `collectAllSuccessorsUntil`: depth first, the block matching `stop` is included but not
+/// expanded.
+pub fn collect_all_successors_until(
+    cfg: &MethodCfg,
+    start: BlockId,
+    clean: bool,
+    stop: &dyn Fn(BlockId) -> bool,
+) -> Vec<BlockId> {
+    let mut blocks = Vec::new();
+    collect_until(cfg, &mut blocks, start, clean, stop);
+    blocks
+}
+
+/// `collectAllPredecessors`
+pub fn collect_all_predecessors(cfg: &MethodCfg, start: BlockId) -> Vec<BlockId> {
+    let mut visited = vec![false; cfg.arena.len()];
+    visited[start] = true;
+    let mut queue = vec![start];
+    let mut list = Vec::new();
+    while let Some(current) = queue.pop() {
+        for &n in cfg.block(current).preds.iter().rev() {
+            if !visited[n] {
+                visited[n] = true;
+                queue.push(n);
+            }
+        }
+        list.push(current);
+    }
+    list
+}
+
+/// `getBottomCommonPredecessor`: the bottom block of the blocks that precede every block of
+/// `blocks` (the intermediate `HashSet` iteration order is emulated).
+pub fn get_bottom_common_predecessor(cfg: &MethodCfg, blocks: &[BlockId]) -> Option<BlockId> {
+    let first = *blocks.first()?;
+    let initial = collect_all_predecessors(cfg, first);
+    let mut by_all: Vec<BlockId> = initial.clone();
+    for &next in &blocks[1..] {
+        let preds = collect_all_predecessors(cfg, next);
+        by_all.retain(|b| preds.contains(b));
+    }
+    let ordered = java_hash_set_order(&by_all, initial.len());
+    get_bottom_block(cfg, &ordered)
+}
+
+/// Iteration order of a `java.util.HashSet` of blocks (hash code = block id) created by
+/// `new HashSet<>(collection)` from a collection of `initial_size` elements; `items` are the
+/// elements in their insertion order.
+pub fn java_hash_set_order(items: &[BlockId], initial_size: usize) -> Vec<BlockId> {
+    let wanted = ((initial_size as f32 / 0.75) as usize + 1).max(16);
+    let cap = wanted.next_power_of_two();
+    let mut v: Vec<BlockId> = items.to_vec();
+    v.sort_by_key(|x| (x ^ (x >> 16)) & (cap - 1));
+    v
 }

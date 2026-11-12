@@ -477,6 +477,7 @@ pub mod iflag {
     pub const DONT_INLINE: u64 = 1 << 8;
     pub const EXPLICIT_CAST: u64 = 1 << 9;
     pub const SOFT_CAST: u64 = 1 << 10;
+    pub const FINALLY_INSNS: u64 = 1 << 11;
 
     pub const NAMES: &[(u64, &str)] = &[
         (TRY_ENTER, "TRY_ENTER"),
@@ -490,6 +491,7 @@ pub mod iflag {
         (DONT_INLINE, "DONT_INLINE"),
         (EXPLICIT_CAST, "EXPLICIT_CAST"),
         (SOFT_CAST, "SOFT_CAST"),
+        (FINALLY_INSNS, "FINALLY_INSNS"),
     ];
 }
 

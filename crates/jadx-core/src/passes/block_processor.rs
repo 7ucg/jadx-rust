@@ -374,7 +374,7 @@ fn same_result(
 }
 
 /// `InsnNode.isSame` for the instruction kinds that can occur at this stage.
-fn insn_is_same(a: &InsnNode, b: &InsnNode) -> bool {
+pub(crate) fn insn_is_same(a: &InsnNode, b: &InsnNode) -> bool {
     if a.ty != b.ty || a.args.len() != b.args.len() {
         return false;
     }

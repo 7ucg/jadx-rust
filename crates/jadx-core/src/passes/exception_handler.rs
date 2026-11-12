@@ -186,7 +186,7 @@ fn fix_move_exception_insn(cfg: &mut MethodCfg, block: BlockId, handler: Handler
     }
 }
 
-fn mark_for_remove(cfg: &mut MethodCfg, h: HandlerId) {
+pub(crate) fn mark_for_remove(cfg: &mut MethodCfg, h: HandlerId) {
     cfg.handlers[h].removed = true;
     for b in cfg.handlers[h].blocks.clone() {
         let blk = cfg.block_mut(b);
@@ -195,7 +195,7 @@ fn mark_for_remove(cfg: &mut MethodCfg, h: HandlerId) {
     }
 }
 
-fn clear_exception_handlers(cfg: &mut MethodCfg) {
+pub(crate) fn clear_exception_handlers(cfg: &mut MethodCfg) {
     let removed: Vec<HandlerId> = cfg
         .handler_list
         .iter()
@@ -242,7 +242,7 @@ fn new_try(
     tid
 }
 
-fn handler_hash(cfg: &MethodCfg, h: HandlerId) -> i32 {
+pub(crate) fn handler_hash(cfg: &MethodCfg, h: HandlerId) -> i32 {
     // Objects.hash(catchTypes, handlerOffset)
     let eh = &cfg.handlers[h];
     let mut list_hash: i32 = 1;
