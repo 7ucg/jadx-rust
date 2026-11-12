@@ -13,7 +13,7 @@ use crate::model::insn::{
     iflag, ArithOp, CallType, IndexValue, InsnArg, InsnId, InsnKind, InsnNode, InsnType,
     InvokeType, LiteralArg, RegisterArg, WrapArg,
 };
-use crate::model::node::{MethodNode, Root};
+use crate::model::node::{FieldReplace, MethodNode, Root};
 use crate::model::types::{ArgType, PrimitiveType};
 
 type Res<T = ()> = Result<T, CodegenError>;
@@ -216,7 +216,33 @@ impl<'m, 'a> InsnGen<'m, 'a> {
 
     // ---- fields ----------------------------------------------------------------------------
 
+    /// `instanceField`: a field marked for replacement (`FieldReplace`, set by `AnonymousClassVisitor`
+    /// / `ClassModifier` for captured variables and the outer instance reference) is printed as the
+    /// captured variable or `Outer.this` instead of the (removed) field itself.
     fn instance_field(&self, code: &mut CodeWriter, field: &FieldInfo, arg: &InsnArg) -> Res {
+        if let Some((cls, fi)) = self.root().resolve_field_id(field) {
+            match &self.root().classes[cls].fields[fi].replace {
+                Some(FieldReplace::ClassInstance(info)) => {
+                    self.use_class_info(code, info)?;
+                    code.add(".this");
+                    return Ok(());
+                }
+                Some(FieldReplace::Var { ctor, arg: arg_idx }) => {
+                    let loaded = self.env().method_cfg(cls, *ctor);
+                    if let Ok(ctor_cfg) = loaded.as_ref() {
+                        if let Some(reg) = ctor_cfg.arg_regs.get(*arg_idx) {
+                            let name = self.mgen.name_gen().borrow().use_arg(ctor_cfg, reg);
+                            code.add(&name);
+                            return Ok(());
+                        }
+                    }
+                    return Err(CodegenError::new(
+                        "Missing constructor argument for the replaced field",
+                    ));
+                }
+                None => {}
+            }
+        }
         self.add_arg_dot(code, arg)?;
         code.add(&self.root().field_name(field));
         Ok(())
