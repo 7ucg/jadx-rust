@@ -86,6 +86,50 @@ impl CodeSource for OwnedCodeSource {
     fn load_code(&self, root: &Root, cls: usize, mth: usize) -> Result<LoadedCode, String> {
         self.decode(root, cls, mth)
     }
+
+    fn debug_info(&self, root: &Root, cls: usize, mth: usize) -> Option<jadx_input_api::DebugInfo> {
+        let m = &root.classes[cls].methods[mth];
+        let off = m.code_offset?;
+        match self.class_origin.get(cls).copied() {
+            Some(ClassOrigin::Dex(d)) => {
+                let dex = self.dexes.get(d)?;
+                let code = dex.code_item(off).ok()?;
+                if code.debug_info_off == 0 {
+                    return None;
+                }
+                let widths: Vec<u32> = m.arg_types.iter().map(|t| t.reg_count()).collect();
+                dex.debug_info(
+                    code.debug_info_off,
+                    code.insns.len() as u32,
+                    code.registers_size as u32,
+                    &widths,
+                )
+                .ok()
+            }
+            Some(ClassOrigin::Java(j)) => {
+                let class = self.java_classes.get(j)?;
+                let debug = class.debug_info(off).ok()??;
+                Some(jadx_input_api::DebugInfo {
+                    lines: debug.lines,
+                    locals: debug
+                        .vars
+                        .into_iter()
+                        .filter_map(|v| {
+                            Some(jadx_input_api::LocalVar {
+                                reg: v.reg,
+                                name: v.name?,
+                                ty: v.ty.unwrap_or_default(),
+                                signature: v.signature,
+                                start: v.start as i32,
+                                end: v.end,
+                            })
+                        })
+                        .collect(),
+                })
+            }
+            _ => None,
+        }
+    }
 }
 
 /// The class pass driver over a private copy of the class tree (the passes modify classes,

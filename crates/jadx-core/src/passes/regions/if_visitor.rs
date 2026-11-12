@@ -9,8 +9,8 @@ use crate::passes::regions::maker::Res;
 use crate::passes::regions::ternary_mod::ternary_mod;
 use crate::passes::regions::traversal::{traverse_iterative, traverse_method, RegionVisitor};
 use crate::passes::regions::utils::{
-    cflag, cflag_add, container_insns, get_last_insn, has_break_insn, has_exit_block,
-    has_exit_edge, insns_count, is_empty, is_exit_container,
+    cflag, cflag_add, container_insns, get_first_source_line, get_last_insn, has_break_insn,
+    has_exit_block, has_exit_edge, insns_count, is_empty, is_exit_container,
 };
 
 /// `IfRegionVisitor.process`
@@ -126,6 +126,16 @@ fn order_branches(cfg: &mut MethodCfg, region: RegionId) {
     if is_empty(cfg, then_r) {
         invert_if_region(cfg, region);
         return;
+    }
+    if cfg.use_lines_hints {
+        let then_line = then_r.map_or(0, |c| get_first_source_line(cfg, c));
+        let else_line = else_r.map_or(0, |c| get_first_source_line(cfg, c));
+        if then_line != 0 && else_line != 0 {
+            if then_line > else_line {
+                invert_if_region(cfg, region);
+            }
+            return;
+        }
     }
     if simplify_condition(cfg, region) {
         let is_not = matches!(

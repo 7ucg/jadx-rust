@@ -302,6 +302,46 @@ pub fn has_break_insn(cfg: &MethodCfg, c: Container) -> bool {
     }
 }
 
+/// `RegionUtils.getFirstSourceLine`: `0` when no instruction of the container has a line.
+pub fn get_first_source_line(cfg: &MethodCfg, c: Container) -> u32 {
+    match c {
+        Container::Block(_) | Container::Insns(_) => container_insns(cfg, c)
+            .into_iter()
+            .map(|i| cfg.insn(i).source_line)
+            .find(|&l| l != 0)
+            .unwrap_or(0),
+        Container::Region(r) => match &cfg.regions.arena[r].kind {
+            // `ConditionRegion.getConditionSourceLine`: `IfRegion`/`LoopRegion` are condition
+            // regions before they are (for `IfRegion`) branch regions.
+            RegionKind::If { cond_blocks, .. } | RegionKind::Loop { cond_blocks, .. } => {
+                cond_blocks
+                    .iter()
+                    .filter_map(|&b| last_insn(cfg, b))
+                    .map(|i| cfg.insn(i).source_line)
+                    .find(|&l| l != 0)
+                    .unwrap_or(0)
+            }
+            _ => {
+                if cfg.regions.is_branch_region(r) {
+                    cfg.regions
+                        .branches(r)
+                        .into_iter()
+                        .flatten()
+                        .map(|b| get_first_source_line(cfg, b))
+                        .find(|&l| l != 0)
+                        .unwrap_or(0)
+                } else {
+                    subs(cfg, r)
+                        .into_iter()
+                        .map(|s| get_first_source_line(cfg, s))
+                        .find(|&l| l != 0)
+                        .unwrap_or(0)
+                }
+            }
+        },
+    }
+}
+
 /// `RegionUtils.insnsCount`
 pub fn insns_count(cfg: &MethodCfg, c: Container) -> usize {
     match c {

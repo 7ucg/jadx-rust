@@ -28,11 +28,26 @@ pub struct LoadedCode {
 /// Provider of method code.
 pub trait CodeSource {
     fn load_code(&self, root: &Root, cls: usize, mth: usize) -> Result<LoadedCode, String>;
+
+    /// Debug info of the method's code (`IDebugInfo`): source lines and local variables, `None`
+    /// when the input has none (stripped code, fallback mode sources).
+    fn debug_info(
+        &self,
+        _root: &Root,
+        _cls: usize,
+        _mth: usize,
+    ) -> Option<jadx_input_api::DebugInfo> {
+        None
+    }
 }
 
 impl<T: CodeSource + ?Sized> CodeSource for &T {
     fn load_code(&self, root: &Root, cls: usize, mth: usize) -> Result<LoadedCode, String> {
         (**self).load_code(root, cls, mth)
+    }
+
+    fn debug_info(&self, root: &Root, cls: usize, mth: usize) -> Option<jadx_input_api::DebugInfo> {
+        (**self).debug_info(root, cls, mth)
     }
 }
 
@@ -243,6 +258,28 @@ impl<'s> ClassDriver<'s> {
                 cfg: None,
                 failed: Some("panic while loading".to_string()),
             },
+        }
+    }
+
+    /// `DebugInfoAttachVisitor` + `DebugInfoApplyVisitor` (local variable names and source
+    /// lines), applied directly to the already built SSA state (see module docs of
+    /// `passes::debug_info`). Run before [`CodeSource::debug_info`]'s caller mutably borrows
+    /// `self.methods`, so this is a dedicated loop rather than [`ClassDriver::method_pass`].
+    fn apply_debug_info_pass(&mut self, visits: &[Visit]) {
+        for v in visits {
+            let Visit::Method(c, m) = *v else {
+                continue;
+            };
+            let Some(debug) = self.src.debug_info(&self.root, c, m) else {
+                continue;
+            };
+            if let Some(st) = self.methods.get_mut(&(c, m)) {
+                if st.failed.is_none() {
+                    if let Some(cfg) = st.cfg.as_mut() {
+                        crate::passes::debug_info::apply_debug_info(cfg, &debug);
+                    }
+                }
+            }
         }
     }
 
@@ -565,6 +602,7 @@ impl<'s> ClassDriver<'s> {
         let on = |s: u32| stage >= s;
 
         if on(pass_stage::MOD_VISITOR) {
+            self.apply_debug_info_pass(visits);
             self.method_pass(visits, &|cfg, env, _| {
                 crate::passes::debug_info::apply_method_parameters(cfg, env.root, env.cls, env.mth);
                 Ok(())

@@ -4,6 +4,7 @@
 pub mod annotations;
 pub mod class_data;
 pub mod code_refs;
+pub mod debug_info;
 pub mod error;
 pub mod file;
 pub mod header;

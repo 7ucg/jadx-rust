@@ -307,6 +307,9 @@ pub struct MethodCfg {
     /// location to the location of the parent the shared object belongs to.
     pub arg_alias:
         std::collections::HashMap<(super::insn::InsnId, usize), (super::insn::InsnId, usize)>,
+    /// `AFlag.USE_LINES_HINTS`: the method's debug line numbers are trustworthy enough to decide
+    /// `if`/`else` branch order (`DebugInfoAttachVisitor.verifyDebugLines`).
+    pub use_lines_hints: bool,
 }
 
 /// Warnings added by `addWarn` (they also mark the method code as inconsistent), identified by

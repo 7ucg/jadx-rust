@@ -555,6 +555,8 @@ pub struct InsnNode {
     pub ty: InsnType,
     /// Offset in code units, `-1` when not set.
     pub offset: i32,
+    /// `LineAttrNode.sourceLine`: `0` when not set.
+    pub source_line: u32,
     pub result: Option<RegisterArg>,
     pub args: Vec<InsnArg>,
     pub kind: InsnKind,
@@ -587,6 +589,7 @@ impl InsnNode {
         InsnNode {
             ty,
             offset: -1,
+            source_line: 0,
             result: None,
             args: Vec::new(),
             kind,
