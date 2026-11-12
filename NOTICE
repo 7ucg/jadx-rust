@@ -11,3 +11,16 @@ jadx design; the original Java sources are used as a behavioural reference
 
 crates/jadx-core/resources/core.jcst is the class hierarchy data of the Android and Java
 framework classes shipped with jadx (Apache License 2.0, Copyright 2015 Skylot and contributors).
+
+RDX (https://github.com/Ch0pin/RDX), Copyright 2026 Ch0pin and RDX contributors, licensed under
+the Apache License, Version 2.0. The following parts of this repository are adapted from RDX
+sources (Rust, non-GUI engine code); each adapted file names its origin and the modifications in
+its module documentation:
+
+- crates/jadx-package: the split-package container reader (bundletool `toc.pb` reader, split
+  identity validation, logical split-aware entry paths, bounded ZIP directory check, temporary
+  APK handling) is adapted from RDX `src/package_container.rs`. Modifications: the selection
+  policy of the reference jadx plugins as default, `.apkm` support, manifest decoding with
+  `jadx-resources`, a dependency free JSON reader, no dependency on the RDX engine.
+
+No fonts, icons, themes or GUI code of RDX are part of this repository.

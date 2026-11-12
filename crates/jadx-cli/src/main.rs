@@ -10,7 +10,9 @@
 //!   jadx-rs res-dump    <apk> <outDir>   decoded text resources of an APK
 //!   jadx-rs java-classes <file>  class data of .class/.jar input (oracle comparison format)
 //!   jadx-rs java-insns  <file>   decoded JVM instructions of .class/.jar input
+//!   jadx-rs input-classes <file>... all classes of all code inputs (dex, nested archives, splits)
 
+mod input_dump;
 mod java_dump;
 
 use std::path::PathBuf;
@@ -25,6 +27,9 @@ fn main() -> Result<()> {
     let cmd = args.next().unwrap_or_default();
     if cmd == "res-dump" {
         return res_dump::res_dump(&args.collect::<Vec<_>>());
+    }
+    if cmd == "input-classes" {
+        return input_dump::run(&args.collect::<Vec<_>>());
     }
     let path = args.next().map(PathBuf::from);
     if matches!(cmd.as_str(), "java-classes" | "java-insns") {

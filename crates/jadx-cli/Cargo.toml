@@ -16,3 +16,4 @@ jadx-java-input.workspace = true
 jadx-input-api.workspace = true
 jadx-core.workspace = true
 jadx-resources.workspace = true
+jadx-package.workspace = true
