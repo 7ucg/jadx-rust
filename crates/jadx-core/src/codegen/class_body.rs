@@ -14,6 +14,7 @@ use crate::access::{
     AccessInfo, AccessKind, ACC_ABSTRACT, ACC_INTERFACE, ACC_PRIVATE, ACC_STATIC, ACC_SYNTHETIC,
 };
 use crate::model::info::ClassInfo;
+use crate::model::insn::{IndexValue, InsnKind, InsnType};
 use crate::model::node::{ClassNode, FieldNode};
 use crate::model::types::{ArgType, CLASS_OBJECT};
 
@@ -579,9 +580,43 @@ impl<'a> ClassGen<'a> {
         } else if let Some(v) = &f.const_value {
             code.add(" = ");
             self.add_const_value(code, v, &f.ty)?;
+        } else if f.zero_init && !self.assigned_in_class_init(f) {
+            code.add(" = ");
+            let lit = literal_to_string(
+                0,
+                &f.ty,
+                &env.string_utils,
+                self.is_fallback_mode(),
+                false,
+            )?;
+            code.add(&lit);
         }
         code.add_char(';');
         Ok(())
+    }
+
+    /// The zero initialization is ignored if the field is initialized in the class initializer
+    /// (`ExtractFieldInit.processStaticFields`).
+    fn assigned_in_class_init(&self, f: &FieldNode) -> bool {
+        let env = self.env();
+        let cidx = self.class_index();
+        let Some(mi) = self.node().methods.iter().position(|m| m.info.is_class_init()) else {
+            return false;
+        };
+        let cfg = env.method_cfg(cidx, mi);
+        let Ok(cfg) = cfg.as_ref() else {
+            return false;
+        };
+        cfg.blocks.iter().any(|b| {
+            cfg.block(*b).insns.iter().any(|i| {
+                let insn = cfg.insn(*i);
+                insn.ty == InsnType::Sput
+                    && matches!(
+                        &insn.kind,
+                        InsnKind::Index(IndexValue::Field(fi)) if *fi == f.info
+                    )
+            })
+        })
     }
 
     fn add_const_value(&self, code: &mut CodeWriter, v: &ConstValue, ty: &ArgType) -> Res {

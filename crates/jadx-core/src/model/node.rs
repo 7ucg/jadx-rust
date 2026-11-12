@@ -47,6 +47,10 @@ pub struct FieldNode {
     pub alias_reason: Option<String>,
     /// `AType.FIELD_INIT_INSN`: instruction that initializes the field.
     pub init_insn: Option<FieldInitInsn>,
+    /// Explicit zero initialization (`EncodedValue.NULL` constant value): the bytecode can omit
+    /// the initialization of static final fields to 0 (`ClassNode.initStaticValues`). Removed
+    /// when the field initialization is found in the class initializer.
+    pub zero_init: bool,
 }
 
 /// `FieldInitInsnAttr`: the initializer instruction lives in the code state of method `mth` of
@@ -275,6 +279,7 @@ impl Root {
                     dont_generate: false,
                     alias_reason: None,
                     init_insn: None,
+                    zero_init: false,
                 });
             }
             let mut methods = Vec::with_capacity(c.methods.len());
@@ -349,6 +354,11 @@ impl Root {
             });
         }
         for c in &mut classes {
+            for f in &mut c.fields {
+                f.zero_init = f.access & ACC_STATIC != 0
+                    && f.access & ACC_FINAL != 0
+                    && f.const_value.is_none();
+            }
             c.package_info = c.info.short_name() == "package-info"
                 && c.fields.is_empty()
                 && c.methods.is_empty();
