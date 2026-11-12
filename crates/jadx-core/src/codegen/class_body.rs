@@ -813,6 +813,7 @@ impl<'a> ClassGen<'a> {
         let n = enum_attr.fields.len();
         for (i, f) in enum_attr.fields.iter().enumerate() {
             let field = &cls.fields[f.field];
+            self.add_info_comments(code, &field.info_comments);
             code.start_line_str(field.alias.as_deref().unwrap_or(&field.info.name));
             let cfg = env.method_cfg(cidx, enum_attr.static_method);
             if let Ok(cfg) = cfg.as_ref() {
