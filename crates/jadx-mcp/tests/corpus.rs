@@ -451,7 +451,7 @@ fn strings_and_string_references() {
     let code = data(&r[5]);
     assert_eq!(code["source_kind"], json!("decompiled"));
     assert_eq!(code["items"][0]["class_id"], json!("corpus.Finally"));
-    assert_eq!(code["items"][0]["line"], json!(14));
+    assert_eq!(code["items"][0]["line"], json!(16));
     assert_eq!(data(&r[6])["items"].as_array().unwrap().len(), 1);
     assert_eq!(data(&r[7])["items"], json!([]));
 }
