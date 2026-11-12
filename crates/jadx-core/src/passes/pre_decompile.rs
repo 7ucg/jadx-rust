@@ -52,11 +52,12 @@ pub fn run_pre_decompile(root: &mut Root, refs: &dyn CodeRefProvider, opts: &Pre
     override_methods::process_overrides(root);
     root.const_storage.set_replace_enabled(opts.replace_consts);
     add_android_constants::add_android_constants(root);
+    let mut alias_provider = rename::AliasProvider::default();
     if let Some(d) = &opts.deobf {
-        rename::deobfuscate(root, d);
+        rename::deobfuscate(root, d, &mut alias_provider);
     }
     if let Some(r) = &opts.rename {
-        rename::rename_all(root, r);
+        rename::rename_all(root, r, &mut alias_provider);
     }
     usage_info::collect_usage(root, refs);
     collect_const_values::collect_const_values(root);

@@ -74,41 +74,55 @@ impl DeobfOptions {
 /// Not ported from the reference: package renaming, the top level domain exclusion list, the
 /// class/package name collision avoidance, and the deobfuscation mapping file (`DeobfPresets`,
 /// JOBF read/write).
-pub fn deobfuscate(root: &mut Root, opts: &DeobfOptions) {
-    let mut provider = AliasProvider::default();
+pub fn deobfuscate(root: &mut Root, opts: &DeobfOptions, provider: &mut AliasProvider) {
     let classes = root.sorted_class_order();
     for &ci in &classes {
-        deobf_class(root, &mut provider, ci, opts);
-        deobf_fields(root, &mut provider, ci, opts);
-        deobf_methods(root, &mut provider, ci, opts);
+        if is_deobf_excluded(root, ci, opts) {
+            continue;
+        }
+        deobf_class(root, provider, ci, opts);
+        deobf_fields(root, provider, ci, opts);
+        deobf_methods(root, provider, ci, opts);
     }
 }
 
-/// `ExcludeAndroidRClass` (class level only): a class is part of the generated `R` resource
-/// class if its top level parent is named `R`.
-fn is_android_r_class(root: &Root, ci: usize) -> bool {
-    match root.parent_index(ci) {
-        Some(p) => root.classes[p].info.short_name() == "R" || is_android_r_class(root, p),
-        None => root.classes[ci].info.short_name() == "R",
-    }
-}
-
-fn deobf_class(root: &mut Root, provider: &mut AliasProvider, ci: usize, opts: &DeobfOptions) {
+/// `DeobfWhitelist`/`ExcludeAndroidRClass`: a class (and transitively its fields and methods)
+/// is left untouched by deobfuscation if it is package-info, part of the generated `R` resource
+/// class tree, or matches the class/package whitelist.
+fn is_deobf_excluded(root: &Root, ci: usize, opts: &DeobfOptions) -> bool {
     if root.classes[ci].package_info || is_android_r_class(root, ci) {
-        return;
+        return true;
     }
     let full_name = root.classes[ci].info.full_name().to_string();
     if opts.whitelist_classes.contains(&full_name) {
-        return;
+        return true;
     }
     let pkg = root.class_package(&root.classes[ci].info);
-    if opts
-        .whitelist_packages
+    opts.whitelist_packages
         .iter()
         .any(|p| pkg == *p || pkg.starts_with(&format!("{p}.")))
-    {
-        return;
+}
+
+/// `ExcludeAndroidRClass` (class level only): a class is part of the generated `R` resource
+/// class if its top level parent is named `R`. Iterative with a bound on the class count so a
+/// malformed input with a cyclic outer-class chain cannot cause unbounded recursion.
+fn is_android_r_class(root: &Root, ci: usize) -> bool {
+    let mut cur = ci;
+    for _ in 0..=root.classes.len() {
+        match root.parent_index(cur) {
+            Some(p) => {
+                if root.classes[p].info.short_name() == "R" {
+                    return true;
+                }
+                cur = p;
+            }
+            None => return root.classes[cur].info.short_name() == "R",
+        }
     }
+    false
+}
+
+fn deobf_class(root: &mut Root, provider: &mut AliasProvider, ci: usize, opts: &DeobfOptions) {
     let name = class_short_name(root, ci);
     if opts.should_rename(&name) {
         let new = for_class(root, provider, ci);
@@ -147,9 +161,11 @@ fn deobf_methods(root: &mut Root, provider: &mut AliasProvider, ci: usize, opts:
     }
 }
 
-/// `DeobfAliasProvider` (counters of generated names).
+/// `DeobfAliasProvider` (counters of generated names). Shared between [`deobfuscate`] and
+/// [`rename_all`] (when both run) so a name chosen by one pass can never collide with one
+/// chosen by the other.
 #[derive(Default)]
-struct AliasProvider {
+pub struct AliasProvider {
     pkg_index: usize,
     cls_index: usize,
     fld_index: usize,
@@ -167,28 +183,27 @@ struct Pkg {
     alias_name: String,
 }
 
-pub fn rename_all(root: &mut Root, opts: &RenameOptions) {
-    let mut provider = AliasProvider::default();
+pub fn rename_all(root: &mut Root, opts: &RenameOptions, provider: &mut AliasProvider) {
     let classes = root.sorted_class_order();
     for &ci in &classes {
-        check_class_name(root, &mut provider, ci);
-        check_fields(root, &mut provider, ci);
-        check_methods(root, &mut provider, ci);
+        check_class_name(root, provider, ci);
+        check_fields(root, provider, ci);
+        check_methods(root, provider, ci);
     }
     let mut pkgs = collect_packages(root);
     for i in 0..pkgs.len() {
-        check_package(&mut pkgs, i, &mut provider);
+        check_package(&mut pkgs, i, provider);
     }
     if !opts.fs_case_sensitive {
         // check for package directory conflicts on case insensitive filesystems
         let mut paths = HashSet::new();
         for i in 0..pkgs.len() {
             if !paths.insert(pkgs[i].alias_full.to_lowercase()) {
-                let name = for_package(&mut provider, &pkgs[i].name);
+                let name = for_package(provider, &pkgs[i].name);
                 set_leaf_alias(&mut pkgs, i, &name);
                 // verify the new name also doesn't conflict
                 if !paths.insert(pkgs[i].alias_full.to_lowercase()) {
-                    let name = for_package(&mut provider, &pkgs[i].name);
+                    let name = for_package(provider, &pkgs[i].name);
                     set_leaf_alias(&mut pkgs, i, &name);
                 }
             }
@@ -205,7 +220,7 @@ pub fn rename_all(root: &mut Root, opts: &RenameOptions) {
         let mut paths = HashSet::new();
         for &ci in &classes {
             if !paths.insert(alias_full_path(root, ci).to_lowercase()) {
-                let name = for_class(root, &mut provider, ci);
+                let name = for_class(root, provider, ci);
                 set_class_short_name(root, ci, &name);
                 append_reason(
                     &mut root.classes[ci].alias_reason,
@@ -213,13 +228,13 @@ pub fn rename_all(root: &mut Root, opts: &RenameOptions) {
                 );
                 // verify the new name also doesn't conflict
                 if !paths.insert(alias_full_path(root, ci).to_lowercase()) {
-                    let name = for_class(root, &mut provider, ci);
+                    let name = for_class(root, provider, ci);
                     set_class_short_name(root, ci, &name);
                 }
             }
         }
     }
-    process_root_packages(root, &mut provider, &classes);
+    process_root_packages(root, provider, &classes);
 }
 
 fn alias_full_path(root: &Root, ci: usize) -> String {
