@@ -188,12 +188,50 @@ fn cids(v: &[usize]) -> String {
 
 /// Block graph dump (oracle comparison format, see `tests/oracle/java/BlockDump.java`).
 pub fn dump_cfg(id: &str, cfg: &crate::model::cfg::MethodCfg) -> String {
+    dump_cfg_ext(id, cfg, false)
+}
+
+fn bits(b: &Option<crate::model::bitset::BitSet>) -> String {
+    match b {
+        Some(b) => b
+            .iter()
+            .map(|x| x.to_string())
+            .collect::<Vec<_>>()
+            .join(","),
+        None => "-".to_string(),
+    }
+}
+
+fn opt(b: Option<usize>) -> String {
+    b.map(|x| x.to_string()).unwrap_or_else(|| "-".into())
+}
+
+/// With `analysis`, dominators, loops and clean successors are included.
+pub fn dump_cfg_ext(id: &str, cfg: &crate::model::cfg::MethodCfg, analysis: bool) -> String {
     use crate::model::cfg::bflag;
     use crate::model::insn::iflag;
     let mut out = format!("M {id}\n");
     for h in &cfg.handlers {
         let types: Vec<&str> = h.catch_types.iter().map(|c| c.full_name()).collect();
         let _ = writeln!(out, "H {} types=[{}]", h.handler_offset, types.join(","));
+    }
+    if analysis {
+        for l in &cfg.loops {
+            let li = &cfg.loop_infos[*l];
+            let mut blocks: Vec<usize> = li.blocks.iter();
+            blocks.sort_unstable();
+            let _ = writeln!(
+                out,
+                "L {} start={} end={} parent={} blocks=[{}]",
+                li.id,
+                li.start,
+                li.end,
+                li.parent
+                    .map(|p| cfg.loop_infos[p].id.to_string())
+                    .unwrap_or_else(|| "-".into()),
+                cids(&blocks)
+            );
+        }
     }
     for bid in &cfg.blocks {
         let b = cfg.block(*bid);
@@ -214,13 +252,41 @@ pub fn dump_cfg(id: &str, cfg: &crate::model::cfg::MethodCfg) -> String {
                 .map(|t| t.to_string())
                 .unwrap_or_else(|| "-".into())
         );
-        let _ = writeln!(
+        let _ = write!(
             out,
             " exh={}",
             b.exc_handler
                 .map(|h| cfg.handlers[h].handler_offset.to_string())
                 .unwrap_or_else(|| "-".into())
         );
+        if analysis {
+            let clean = b
+                .clean_succs
+                .as_ref()
+                .map(|c| cids(c))
+                .unwrap_or_else(|| "-".into());
+            let loops: Vec<String> = b
+                .loops
+                .iter()
+                .map(|l| {
+                    let li = &cfg.loop_infos[*l];
+                    format!("{}:{}>{}", li.id, li.start, li.end)
+                })
+                .collect();
+            let _ = write!(
+                out,
+                " doms=[{}] idom={} df=[{}] pdoms=[{}] ipdom={} domon=[{}] clean=[{}] loops=[{}]",
+                bits(&b.doms),
+                opt(b.idom),
+                bits(&b.dom_frontier),
+                bits(&b.post_doms),
+                opt(b.ipost_dom),
+                cids(&b.dominates_on),
+                clean,
+                loops.join(",")
+            );
+        }
+        out.push('\n');
         for insn in &b.insns {
             let if_target = match &insn.kind {
                 InsnKind::If {

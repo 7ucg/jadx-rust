@@ -718,14 +718,13 @@ impl<'a> InsnDecoder<'a> {
         );
         let count = insn.regs.len();
         if is_range {
-            let mut r = *insn.regs.first().unwrap_or(&0);
-            for _ in 0..count {
+            let start = *insn.regs.first().unwrap_or(&0);
+            for r in start..start + count as u32 {
                 n.args.push(InsnArg::Register(RegisterArg {
                     reg_num: r,
                     init_type: elem_type.clone(),
                     immutable_type: immutable,
                 }));
-                r += 1;
             }
         } else {
             for &r in &insn.regs {

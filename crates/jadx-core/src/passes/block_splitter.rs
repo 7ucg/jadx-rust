@@ -250,7 +250,8 @@ fn remove_insns(cfg: &mut MethodCfg) {
     }
 }
 
-fn remove_empty_detached_blocks(cfg: &mut MethodCfg) {
+pub fn remove_empty_detached_blocks(cfg: &mut MethodCfg) -> bool {
+    let before = cfg.blocks.len();
     let keep: Vec<BlockId> = cfg
         .blocks
         .iter()
@@ -265,6 +266,7 @@ fn remove_empty_detached_blocks(cfg: &mut MethodCfg) {
         })
         .collect();
     cfg.blocks = keep;
+    cfg.blocks.len() != before
 }
 
 fn can_remove_block(cfg: &MethodCfg, id: BlockId) -> bool {
@@ -278,7 +280,7 @@ fn can_remove_block(cfg: &MethodCfg, id: BlockId) -> bool {
         && !b.succs.contains(&id)
 }
 
-fn replace_target(cfg: &mut MethodCfg, source: BlockId, old: BlockId, new: BlockId) {
+pub fn replace_target(cfg: &mut MethodCfg, source: BlockId, old: BlockId, new: BlockId) {
     if let Some(last) = cfg.block_mut(source).insns.last_mut() {
         match &mut last.kind {
             InsnKind::If {
@@ -314,7 +316,7 @@ fn replace_target(cfg: &mut MethodCfg, source: BlockId, old: BlockId, new: Block
     }
 }
 
-fn remove_empty_block(cfg: &mut MethodCfg, id: BlockId) -> bool {
+pub fn remove_empty_block(cfg: &mut MethodCfg, id: BlockId) -> bool {
     if !can_remove_block(cfg, id) {
         return false;
     }

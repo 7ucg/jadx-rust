@@ -18,7 +18,9 @@ import jadx.core.dex.trycatch.ExcHandlerAttr;
 import jadx.core.dex.trycatch.ExceptionHandler;
 import jadx.core.dex.visitors.AttachTryCatchVisitor;
 import jadx.core.dex.visitors.ProcessInstructionsVisitor;
+import jadx.core.dex.visitors.blocks.BlockProcessor;
 import jadx.core.dex.visitors.blocks.BlockSplitter;
+import jadx.core.dex.attributes.nodes.LoopInfo;
 
 /**
  * Oracle helper: runs AttachTryCatch + ProcessInstructions + BlockSplitter of the reference and dumps
@@ -29,7 +31,7 @@ public class BlockDump {
 			AFlag.REMOVE, AFlag.WRAPPED, AFlag.FALL_THROUGH };
 	static final AFlag[] BLOCK_FLAGS = { AFlag.MTH_ENTER_BLOCK, AFlag.MTH_EXIT_BLOCK, AFlag.SYNTHETIC, AFlag.RETURN, AFlag.REMOVE,
 			AFlag.LOOP_START, AFlag.LOOP_END, AFlag.EXC_TOP_SPLITTER, AFlag.EXC_BOTTOM_SPLITTER, AFlag.ADDED_TO_REGION,
-			AFlag.DONT_GENERATE, AFlag.FALL_THROUGH };
+			AFlag.DONT_GENERATE, AFlag.FALL_THROUGH, AFlag.ORIG_RETURN, AFlag.IGNORE_THROW_SPLIT };
 
 	public static void main(String[] args) throws Exception {
 		JadxArgs jargs = new JadxArgs();
@@ -50,13 +52,16 @@ public class BlockDump {
 						new AttachTryCatchVisitor().visit(mth);
 						new ProcessInstructionsVisitor().visit(mth);
 						new BlockSplitter().visit(mth);
+						if (stage >= 1) {
+							new BlockProcessor().visit(mth);
+						}
 					} catch (Throwable e) {
 						sb.append("M ").append(mth.getMethodInfo().getRawFullId()).append(" LOAD_ERROR\n");
 						System.out.print(sb);
 						sb.setLength(0);
 						continue;
 					}
-					dump(sb, mth);
+					dump(sb, mth, stage >= 1);
 					System.out.print(sb);
 					sb.setLength(0);
 					mth.unload();
@@ -73,11 +78,30 @@ public class BlockDump {
 		return list.stream().map(b -> Integer.toString(b.getCId())).collect(Collectors.joining(","));
 	}
 
-	static void dump(StringBuilder sb, MethodNode mth) {
+	static String bits(java.util.BitSet bs) {
+		if (bs == null) {
+			return "-";
+		}
+		return bs.stream().mapToObj(Integer::toString).collect(Collectors.joining(","));
+	}
+
+	static String cid(BlockNode b) {
+		return b == null ? "-" : Integer.toString(b.getCId());
+	}
+
+	static void dump(StringBuilder sb, MethodNode mth, boolean analysis) {
 		sb.append("M ").append(mth.getMethodInfo().getRawFullId()).append('\n');
 		for (ExceptionHandler h : mth.getExceptionHandlers()) {
 			sb.append("H ").append(h.getHandlerOffset()).append(" types=[")
 					.append(h.getCatchTypes().stream().map(c -> c.getFullName()).collect(Collectors.joining(","))).append("]\n");
+		}
+		if (analysis) {
+			for (LoopInfo l : mth.getLoops()) {
+				sb.append("L ").append(l.getId()).append(" start=").append(l.getStart().getCId()).append(" end=").append(l.getEnd().getCId())
+						.append(" parent=").append(l.getParentLoop() == null ? "-" : Integer.toString(l.getParentLoop().getId()))
+						.append(" blocks=[").append(l.getLoopBlocks().stream().map(b -> b.getCId()).sorted().map(Object::toString)
+								.collect(Collectors.joining(","))).append("]\n");
+			}
 		}
 		for (BlockNode b : mth.getBasicBlocks()) {
 			sb.append("B ").append(b.getCId()).append(" pos=").append(b.getPos()).append(" off=").append(b.getStartOffset())
@@ -86,7 +110,17 @@ public class BlockDump {
 			var tmp = b.get(AType.TMP_EDGE);
 			sb.append(" tmp=").append(tmp == null ? "-" : Integer.toString(tmp.getBlock().getCId()));
 			ExcHandlerAttr eh = b.get(AType.EXC_HANDLER);
-			sb.append(" exh=").append(eh == null ? "-" : Integer.toString(eh.getHandler().getHandlerOffset())).append('\n');
+			sb.append(" exh=").append(eh == null ? "-" : Integer.toString(eh.getHandler().getHandlerOffset()));
+			if (analysis) {
+				sb.append(" doms=[").append(bits(b.getDoms())).append("] idom=").append(cid(b.getIDom())).append(" df=[")
+						.append(bits(b.getDomFrontier())).append("] pdoms=[").append(bits(b.getPostDoms())).append("] ipdom=")
+						.append(cid(b.getIPostDom())).append(" domon=[").append(cids(b.getDominatesOn())).append("] clean=[")
+						.append(b.getCleanSuccessors() == null ? "-" : cids(b.getCleanSuccessors())).append("] loops=[")
+						.append(b.getAll(AType.LOOP).stream().map(l -> l.getId() + ":" + l.getStart().getCId() + ">" + l.getEnd().getCId())
+								.collect(Collectors.joining(",")))
+						.append(']');
+			}
+			sb.append('\n');
 			for (InsnNode insn : b.getInstructions()) {
 				sb.append("  ").append(InsnNodeDump.line(insn));
 				sb.append(" fl=[").append(flags(insn, INSN_FLAGS)).append(']');

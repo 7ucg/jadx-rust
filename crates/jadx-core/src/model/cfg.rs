@@ -1,7 +1,20 @@
 //! Control flow graph: basic blocks, exception handlers and the per-method code state.
 
+use super::bitset::{BitSet, JavaIntSet};
 use super::info::ClassInfo;
 use super::insn::{BlockId, HandlerId, InsnNode};
+
+pub type LoopId = usize;
+
+/// `LoopInfo`
+#[derive(Debug, Clone)]
+pub struct LoopInfo {
+    pub start: BlockId,
+    pub end: BlockId,
+    pub blocks: JavaIntSet,
+    pub id: usize,
+    pub parent: Option<LoopId>,
+}
 
 /// Block flags (subset of the reference `AFlag`).
 pub mod bflag {
@@ -17,6 +30,8 @@ pub mod bflag {
     pub const ADDED_TO_REGION: u64 = 1 << 9;
     pub const DONT_GENERATE: u64 = 1 << 10;
     pub const FALL_THROUGH: u64 = 1 << 11;
+    pub const ORIG_RETURN: u64 = 1 << 12;
+    pub const IGNORE_THROW_SPLIT: u64 = 1 << 13;
 
     pub const NAMES: &[(u64, &str)] = &[
         (MTH_ENTER_BLOCK, "MTH_ENTER_BLOCK"),
@@ -31,6 +46,8 @@ pub mod bflag {
         (ADDED_TO_REGION, "ADDED_TO_REGION"),
         (DONT_GENERATE, "DONT_GENERATE"),
         (FALL_THROUGH, "FALL_THROUGH"),
+        (ORIG_RETURN, "ORIG_RETURN"),
+        (IGNORE_THROW_SPLIT, "IGNORE_THROW_SPLIT"),
     ];
 }
 
@@ -101,6 +118,15 @@ pub struct BlockNode {
     pub exc_handler: Option<HandlerId>,
     /// `AType.TMP_EDGE`
     pub tmp_edge: Option<BlockId>,
+    /// Dominators by block position (`None` = not computed).
+    pub doms: Option<BitSet>,
+    pub post_doms: Option<BitSet>,
+    pub dom_frontier: Option<BitSet>,
+    pub idom: Option<BlockId>,
+    pub ipost_dom: Option<BlockId>,
+    pub dominates_on: Vec<BlockId>,
+    /// `AType.LOOP` attribute list (loops this block starts or ends).
+    pub loops: Vec<LoopId>,
 }
 
 impl BlockNode {
@@ -116,6 +142,13 @@ impl BlockNode {
             flags: 0,
             exc_handler: None,
             tmp_edge: None,
+            doms: Some(BitSet::new()),
+            post_doms: Some(BitSet::new()),
+            dom_frontier: None,
+            idom: None,
+            ipost_dom: None,
+            dominates_on: Vec::new(),
+            loops: Vec::new(),
         }
     }
     pub fn contains(&self, flag: u64) -> bool {
@@ -126,7 +159,10 @@ impl BlockNode {
     }
     /// `isAttrStorageEmpty`
     pub fn attrs_empty(&self) -> bool {
-        self.flags == 0 && self.exc_handler.is_none() && self.tmp_edge.is_none()
+        self.flags == 0
+            && self.exc_handler.is_none()
+            && self.tmp_edge.is_none()
+            && self.loops.is_empty()
     }
 }
 
@@ -140,6 +176,15 @@ pub struct MethodCfg {
     pub enter: BlockId,
     pub exit: BlockId,
     pub handlers: Vec<ExceptionHandler>,
+    /// `AFlag.COMPUTE_POST_DOM`
+    pub compute_post_dom: bool,
+    /// `CodeFeature.SWITCH`
+    pub has_switch: bool,
+    /// Method returns `void` (original, erased signature).
+    pub void_return: bool,
+    pub loop_infos: Vec<LoopInfo>,
+    /// Registered loops of the method (`mth.getLoops()`).
+    pub loops: Vec<LoopId>,
 }
 
 impl MethodCfg {
@@ -186,6 +231,11 @@ impl MethodCfg {
         for b in &succs {
             if self.is_exception_handler_path(*b) {
                 to_remove.push(*b);
+            }
+        }
+        if self.arena[id].contains(bflag::LOOP_END) {
+            for l in &self.arena[id].loops {
+                to_remove.push(self.loop_infos[*l].start);
             }
         }
         let result: Vec<BlockId> = succs

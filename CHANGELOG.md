@@ -11,7 +11,8 @@ cites its verification (oracle parity, benchmark, or test result).
 - `jadx-core`: type model (`ArgType`), class/field/method descriptors, instruction nodes, instruction decoder and the instruction post-processing pass (work in progress, oracle: `tests/oracle/nodes_oracle.sh`).
 - `jadx-core`: generic signature parser and processor, class hierarchy graph with the bundled framework class set, type comparison, generic type variable mapping, override based return/argument type fixes. Verification: decoded instruction nodes identical to the reference on 371,908/371,908 methods of a large app and 108,147/108,194 of a second one (`tests/oracle/nodes_oracle.sh`; the remaining differences are class names with nested `$` synthetic parts).
 - `jadx-core`: try/catch attachment and basic block splitting (blocks, edges, exception handler edges, exit connections). Verification: block graphs identical to the reference on 371,908/371,908 methods (`tests/oracle/blocks_oracle.sh`).
-- `jadx-rs insn-dump`, `insn-nodes` and `insn-blocks` developer subcommands.
+- `jadx-core`: dominator tree, dominance frontier, post dominators, loop detection and the CFG normalisation of the block processor for methods without exception handlers (loop pre-headers/exits, const-return merging, return/throw splitting, multi-entry loop fixes). Verification: block graphs with dominator/loop data identical to the reference on all methods without exception handlers of a 108k method app (`STAGE=1 tests/oracle/blocks_oracle.sh`).
+- `jadx-rs insn-dump`, `insn-nodes`, `insn-blocks` and `insn-cfg` developer subcommands.
 
 ## 2026-11-12 — Smali output
 ### Added
