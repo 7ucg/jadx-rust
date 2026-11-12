@@ -11,11 +11,11 @@ use crate::model::insn::{
 use crate::model::ssa::{ArgRef, SsaId};
 use crate::model::types::ArgType;
 
-pub fn const_inline(cfg: &mut MethodCfg) -> Result<(), String> {
+pub fn const_inline(cfg: &mut MethodCfg, root: &crate::model::node::Root) -> Result<(), String> {
     for bid in cfg.blocks.clone() {
         let mut to_remove: Vec<InsnId> = Vec::new();
         for iid in cfg.block(bid).insns.clone() {
-            check_insn(cfg, iid, &mut to_remove)?;
+            check_insn(cfg, root, iid, &mut to_remove)?;
         }
         // InsnRemover.removeAllAndUnbind(mth, block, toRemove)
         for &i in &to_remove {
@@ -36,6 +36,7 @@ pub fn const_inline(cfg: &mut MethodCfg) -> Result<(), String> {
 
 fn check_insn(
     cfg: &mut MethodCfg,
+    root: &crate::model::node::Root,
     insn: InsnId,
     to_remove: &mut Vec<InsnId>,
 ) -> Result<(), String> {
@@ -72,7 +73,7 @@ fn check_insn(
         }
         _ => return Ok(()),
     };
-    if replace_const(cfg, insn, &const_arg)? {
+    if replace_const(cfg, root, insn, &const_arg)? {
         to_remove.push(insn);
     }
     Ok(())
@@ -149,6 +150,7 @@ fn is_linked_to_other_ssa_vars(cfg: &MethodCfg, at: ArgRef) -> bool {
 
 fn replace_const(
     cfg: &mut MethodCfg,
+    root: &crate::model::node::Root,
     const_insn: InsnId,
     const_arg: &InsnArg,
 ) -> Result<bool, String> {
@@ -161,7 +163,7 @@ fn replace_const(
     let uses = cfg.svars[var].uses.clone();
     let mut replace_count = 0;
     for at in &uses {
-        if can_inline(cfg, *at) && replace_arg(cfg, *at, const_arg, const_insn)? {
+        if can_inline(cfg, root, *at) && replace_arg(cfg, *at, const_arg, const_insn)? {
             replace_count += 1;
         }
     }
@@ -188,7 +190,7 @@ fn can_ignore_insn(cfg: &MethodCfg, reg: ArgRef) -> bool {
     cfg.insn(parent).contains_flag(iflag::DONT_GENERATE)
 }
 
-fn can_inline(cfg: &MethodCfg, at: ArgRef) -> bool {
+fn can_inline(cfg: &MethodCfg, root: &crate::model::node::Root, at: ArgRef) -> bool {
     if cfg.reg(at).dont_inline_const {
         return false;
     }
@@ -205,6 +207,16 @@ fn can_inline(cfg: &MethodCfg, at: ArgRef) -> bool {
             .is_some_and(|v| cfg.svars[v].is_used_in_phi());
         if !used_in_phi {
             return false;
+        }
+    }
+    if cfg.insn(parent).ty == InsnType::Constructor {
+        if let Some(crate::method_utils::MethodDetails::App(c, m)) =
+            crate::method_utils::insn_method_details(root, cfg.insn(parent))
+        {
+            let mth = &root.classes[c].methods[m];
+            if mth.inline_candidate || mth.anonymous_constructor {
+                return false;
+            }
         }
     }
     true

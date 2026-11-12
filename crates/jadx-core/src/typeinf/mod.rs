@@ -154,10 +154,30 @@ fn add_assign_bound(
             add_bound(cfg, var, const_bound(BoundKind::Assign, t));
         }
         InsnType::Constructor => {
-            let t = match &cfg.insn(insn).kind {
-                InsnKind::Constructor { call_mth, .. } => call_mth.decl_class.arg_type().clone(),
+            let (cls_info, is_new) = match &cfg.insn(insn).kind {
+                InsnKind::Constructor {
+                    call_mth,
+                    call_type,
+                } => (
+                    call_mth.decl_class.clone(),
+                    *call_type == crate::model::insn::CallType::Constructor,
+                ),
                 _ => return Err("constructor without call".into()),
             };
+            let mut t = cls_info.arg_type().clone();
+            if is_new {
+                // `replaceAnonymousType`
+                if let Some(ci) = root.resolve_class(&t) {
+                    let c = &root.classes[ci];
+                    if c.dont_generate {
+                        if let Some(a) = &c.anonymous {
+                            if a.inline_type == crate::model::node::InlineType::Constructor {
+                                t = a.base_type.clone();
+                            }
+                        }
+                    }
+                }
+            }
             add_bound(cfg, var, const_bound(BoundKind::Assign, t));
         }
         InsnType::Const => {

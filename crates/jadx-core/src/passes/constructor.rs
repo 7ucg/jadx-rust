@@ -224,8 +224,26 @@ fn replace_insn(
     cfg.rebind_args(new)
 }
 
-/// `canRemoveConstructor` (anonymous class inlining is not ported yet, so the last clause of
-/// the reference is never true).
+/// `MethodNode.isDefaultConstructor`
+fn is_default_constructor(env: &MethodEnv) -> bool {
+    let m = env.method();
+    if !m.is_constructor() {
+        return false;
+    }
+    let cls = env.class();
+    let mut default_arg_count = 0;
+    // workaround for non-static inner class constructor, that has synthetic argument
+    if cls.info.is_inner() && cls.access & crate::model::node::ACC_STATIC == 0 {
+        if let Some(outer) = env.root.parent_index(env.cls) {
+            if m.arg_types.first() == Some(env.root.classes[outer].info.arg_type()) {
+                default_arg_count = 1;
+            }
+        }
+    }
+    m.arg_types.len() == default_arg_count
+}
+
+/// `canRemoveConstructor`
 fn can_remove_constructor(
     env: &MethodEnv,
     call_type: CallType,
@@ -246,7 +264,7 @@ fn can_remove_constructor(
             return true;
         }
     }
-    false
+    env.class().is_anonymous() && is_default_constructor(env) && call_type == CallType::Super
 }
 
 /// `processConstructor`: replace a call of a synthetic constructor (all arguments null) by the

@@ -57,10 +57,6 @@ public class BlockDump {
 		JadxArgs jargs = new JadxArgs();
 		jargs.setInputFile(new File(args[0]));
 		jargs.setSkipResources(true);
-		if (args.length > 1 && Integer.parseInt(args[1]) >= 4) {
-			// anonymous class inlining is not ported yet
-			jargs.setInlineAnonymousClasses(false);
-		}
 		// JADX_RS_FINALLY=1: run MarkFinallyVisitor after InitCodeVariables
 		boolean extractFinally = "1".equals(System.getenv("JADX_RS_FINALLY"));
 		if (args.length > 1 && Integer.parseInt(args[1]) >= 6) {
