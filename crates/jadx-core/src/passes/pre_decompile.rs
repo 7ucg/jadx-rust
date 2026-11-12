@@ -24,6 +24,8 @@ pub struct PreDecompileOptions {
     pub allow_inline_kotlin_lambda: bool,
     /// Rename invalid and colliding names of classes, fields, methods and packages.
     pub rename: Option<rename::RenameOptions>,
+    /// `--deobf`: force rename classes, fields and methods whose name is too short or too long.
+    pub deobf: Option<rename::DeobfOptions>,
 }
 
 impl Default for PreDecompileOptions {
@@ -35,6 +37,7 @@ impl Default for PreDecompileOptions {
             inline_methods: true,
             allow_inline_kotlin_lambda: true,
             rename: Some(rename::RenameOptions::default()),
+            deobf: None,
         }
     }
 }
@@ -49,6 +52,9 @@ pub fn run_pre_decompile(root: &mut Root, refs: &dyn CodeRefProvider, opts: &Pre
     override_methods::process_overrides(root);
     root.const_storage.set_replace_enabled(opts.replace_consts);
     add_android_constants::add_android_constants(root);
+    if let Some(d) = &opts.deobf {
+        rename::deobfuscate(root, d);
+    }
     if let Some(r) = &opts.rename {
         rename::rename_all(root, r);
     }

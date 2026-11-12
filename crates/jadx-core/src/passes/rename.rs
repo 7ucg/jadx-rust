@@ -22,6 +22,131 @@ pub struct RenameOptions {
     pub fs_case_sensitive: bool,
 }
 
+/// Options of the `--deobf` pass (`DeobfuscatorVisitor` with the reference's default rename
+/// conditions: length and whitelist, run before [`rename_all`]).
+#[derive(Debug, Clone)]
+pub struct DeobfOptions {
+    /// `--deobf-min`: names shorter than this are force renamed.
+    pub min_length: usize,
+    /// `--deobf-max`: names longer than this are force renamed.
+    pub max_length: usize,
+    /// `--deobf-whitelist`: full class names and packages (without the trailing `.*`) that are
+    /// never renamed.
+    pub whitelist_classes: HashSet<String>,
+    pub whitelist_packages: HashSet<String>,
+}
+
+impl DeobfOptions {
+    pub fn from_whitelist(min_length: usize, max_length: usize, whitelist: &[String]) -> Self {
+        let mut whitelist_classes = HashSet::new();
+        let mut whitelist_packages = HashSet::new();
+        for item in whitelist {
+            if item.is_empty() {
+                continue;
+            }
+            match item.strip_suffix(".*") {
+                Some(pkg) => {
+                    whitelist_packages.insert(pkg.to_string());
+                }
+                None => {
+                    whitelist_classes.insert(item.clone());
+                }
+            }
+        }
+        DeobfOptions {
+            min_length,
+            max_length,
+            whitelist_classes,
+            whitelist_packages,
+        }
+    }
+
+    fn should_rename(&self, name: &str) -> bool {
+        let len = name.chars().count();
+        len < self.min_length || len > self.max_length
+    }
+}
+
+/// `DeobfuscatorVisitor`: rename classes, fields and methods whose name is shorter than
+/// `deobf-min` or longer than `deobf-max`, using the same alias scheme as [`rename_all`]
+/// (`DeobfAliasProvider`). Runs before [`rename_all`] so names it chooses are already valid.
+///
+/// Not ported from the reference: package renaming, the top level domain exclusion list, the
+/// class/package name collision avoidance, and the deobfuscation mapping file (`DeobfPresets`,
+/// JOBF read/write).
+pub fn deobfuscate(root: &mut Root, opts: &DeobfOptions) {
+    let mut provider = AliasProvider::default();
+    let classes = root.sorted_class_order();
+    for &ci in &classes {
+        deobf_class(root, &mut provider, ci, opts);
+        deobf_fields(root, &mut provider, ci, opts);
+        deobf_methods(root, &mut provider, ci, opts);
+    }
+}
+
+/// `ExcludeAndroidRClass` (class level only): a class is part of the generated `R` resource
+/// class if its top level parent is named `R`.
+fn is_android_r_class(root: &Root, ci: usize) -> bool {
+    match root.parent_index(ci) {
+        Some(p) => root.classes[p].info.short_name() == "R" || is_android_r_class(root, p),
+        None => root.classes[ci].info.short_name() == "R",
+    }
+}
+
+fn deobf_class(root: &mut Root, provider: &mut AliasProvider, ci: usize, opts: &DeobfOptions) {
+    if root.classes[ci].package_info || is_android_r_class(root, ci) {
+        return;
+    }
+    let full_name = root.classes[ci].info.full_name().to_string();
+    if opts.whitelist_classes.contains(&full_name) {
+        return;
+    }
+    let pkg = root.class_package(&root.classes[ci].info);
+    if opts
+        .whitelist_packages
+        .iter()
+        .any(|p| pkg == *p || pkg.starts_with(&format!("{p}.")))
+    {
+        return;
+    }
+    let name = class_short_name(root, ci);
+    if opts.should_rename(&name) {
+        let new = for_class(root, provider, ci);
+        set_class_short_name(root, ci, &new);
+        root.classes[ci].alias_reason = Some("deobfuscation".to_string());
+    }
+}
+
+fn deobf_fields(root: &mut Root, provider: &mut AliasProvider, ci: usize, opts: &DeobfOptions) {
+    for fi in 0..root.classes[ci].fields.len() {
+        let f = &root.classes[ci].fields[fi];
+        let name = f.alias.clone().unwrap_or_else(|| f.info.name.clone());
+        if opts.should_rename(&name) {
+            let new = for_field(provider, &f.info.name);
+            let f = &mut root.classes[ci].fields[fi];
+            f.alias = Some(new);
+            f.alias_reason = Some("deobfuscation".to_string());
+        }
+    }
+}
+
+fn deobf_methods(root: &mut Root, provider: &mut AliasProvider, ci: usize, opts: &DeobfOptions) {
+    let methods: Vec<usize> = (0..root.classes[ci].methods.len())
+        .filter(|&mi| root.classes[ci].methods[mi].access & ACC_CONSTRUCTOR == 0)
+        .collect();
+    for mi in methods {
+        if !can_rename(root, ci, mi) {
+            continue;
+        }
+        let name = mth_name(root, ci, mi);
+        if opts.should_rename(&name) {
+            let new = for_method(root, provider, ci, mi);
+            rename_method(root, ci, mi, &new);
+            root.classes[ci].methods[mi].alias_reason = Some("deobfuscation".to_string());
+        }
+    }
+}
+
 /// `DeobfAliasProvider` (counters of generated names).
 #[derive(Default)]
 struct AliasProvider {
@@ -507,6 +632,23 @@ mod tests {
         assert_eq!(fix_cls_short_name("Abc").as_deref(), Some("Abc"));
         assert_eq!(fix_cls_short_name("").as_deref(), None);
         assert_eq!(fix_cls_short_name("a-b").as_deref(), Some("ab"));
+    }
+
+    #[test]
+    fn deobf_whitelist_parsing_and_length_condition() {
+        let opts = DeobfOptions::from_whitelist(
+            3,
+            6,
+            &[
+                "android.support.v4.*".to_string(),
+                "com.example.Kept".to_string(),
+            ],
+        );
+        assert!(opts.whitelist_packages.contains("android.support.v4"));
+        assert!(opts.whitelist_classes.contains("com.example.Kept"));
+        assert!(opts.should_rename("ab")); // shorter than min
+        assert!(opts.should_rename("toolong")); // longer than max
+        assert!(!opts.should_rename("abcd")); // within range
     }
 
     #[test]

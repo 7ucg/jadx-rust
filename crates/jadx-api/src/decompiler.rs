@@ -296,6 +296,13 @@ impl JadxDecompiler {
             inline_anonymous_classes: self.args.inline_anonymous_classes,
             inline_methods: self.args.inline_methods,
             allow_inline_kotlin_lambda: self.args.allow_inline_kotlin_lambda,
+            deobf: self.args.deobfuscation_on.then(|| {
+                jadx_core::passes::rename::DeobfOptions::from_whitelist(
+                    self.args.deobfuscation_min_length,
+                    self.args.deobfuscation_max_length,
+                    &self.args.deobfuscation_whitelist,
+                )
+            }),
             ..PreDecompileOptions::default()
         };
         {
