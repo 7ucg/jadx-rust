@@ -345,7 +345,7 @@ impl MethodCfg {
 
     /// `SSAVar.getImmutableType`
     pub fn svar_immutable_type(&self, var: SsaId) -> Option<ArgType> {
-        let r = self.reg(self.svars[var].assign);
+        let r = self.try_reg(self.svars[var].assign)?;
         r.immutable_type.then(|| r.init_type.clone())
     }
 
@@ -685,7 +685,7 @@ impl MethodCfg {
 impl MethodCfg {
     /// `RegisterArg.getType`: the type of the SSA variable (unknown without one).
     pub fn reg_type(&self, at: ArgRef) -> ArgType {
-        match self.reg(at).svar {
+        match self.try_reg(at).and_then(|r| r.svar) {
             Some(v) => self.svars[v].ty.clone(),
             None => ArgType::unknown_any(),
         }
@@ -782,7 +782,9 @@ impl MethodCfg {
                 return false;
             }
         }
-        let r = self.reg(at);
+        let Some(r) = self.try_reg(at) else {
+            return false;
+        };
         match r.svar {
             Some(v) => self.svar_type_immutable(v),
             None => r.immutable_type,
@@ -791,7 +793,22 @@ impl MethodCfg {
 
     /// `SSAVar.isTypeImmutable`
     pub fn svar_type_immutable(&self, var: SsaId) -> bool {
-        self.reg(self.svars[var].assign).immutable_type
+        self.try_reg(self.svars[var].assign)
+            .is_some_and(|r| r.immutable_type)
+    }
+
+    /// Register at `r` if the location still holds one.
+    pub fn try_reg(&self, r: ArgRef) -> Option<&RegisterArg> {
+        match r {
+            ArgRef::Result(i) => self.insns[i].result.as_ref(),
+            ArgRef::Arg(i, k) => match self.insns[i].args.get(k) {
+                Some(InsnArg::Register(reg)) => Some(reg),
+                _ => None,
+            },
+            ArgRef::This => self.this_arg.as_ref(),
+            ArgRef::Method(k) => self.arg_regs.get(k),
+            ArgRef::Floating(k) => self.floating.get(k),
+        }
     }
 
     /// `InsnArg.setType`
@@ -809,7 +826,11 @@ impl MethodCfg {
                 InsnArg::Register(_) => {}
             }
         }
-        let Some(var) = self.reg(at).svar else {
+        let Some(r) = self.try_reg(at) else {
+            // location of an already removed variable
+            return Ok(());
+        };
+        let Some(var) = r.svar else {
             return Err("Can't change type for register without SSA variable".into());
         };
         self.svar_set_type(var, ty)

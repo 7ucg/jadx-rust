@@ -99,10 +99,13 @@ pub fn method_generic_return_type(root: &Root, insn: &InsnNode) -> Option<ArgTyp
 /// `getMethodOriginDeclClass`
 pub fn method_origin_decl_class(root: &Root, cls: usize, mth: usize) -> ArgType {
     let m = &root.classes[cls].methods[mth];
-    match &m.override_base_decl {
-        Some(t) => t.clone(),
-        None => root.classes[cls].info.arg_type().clone(),
+    if let Some(t) = &m.override_base_decl {
+        return t.clone();
     }
+    if let Some(b) = m.bridged_by {
+        return method_origin_decl_class(root, cls, b);
+    }
+    root.classes[cls].info.arg_type().clone()
 }
 
 /// `BaseInvokeNode.getInstanceArg` index: argument 0 of non-static invokes.

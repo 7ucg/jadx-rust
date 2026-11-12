@@ -75,7 +75,30 @@ pub fn process_overrides(root: &mut Root) {
                 if let Some(a) = args {
                     m.arg_types = a;
                 }
+                check_method_signature_collisions(root, cidx, midx);
             }
+        }
+    }
+    if std::env::var("JADX_RS_OVR_DUMP").is_ok() {
+        let name = |m: &MthRef| match m {
+            MthRef::App(c, i) => format!(
+                "{}.{}",
+                root.classes[*c].info.raw_name(),
+                root.classes[*c].methods[*i].info.short_id()
+            ),
+            MthRef::Clsp(c, id) => format!("{c}.{id}"),
+        };
+        let mut lines: Vec<String> = Vec::new();
+        for (m, attr) in &attrs {
+            if let MthRef::App(..) = m {
+                let mut b: Vec<String> = attr.base_methods.iter().map(&name).collect();
+                b.sort();
+                lines.push(format!("O {} base=[{}]", name(m), b.join(", ")));
+            }
+        }
+        lines.sort();
+        for l in lines {
+            eprintln!("{l}");
         }
     }
     for (m, attr) in &attrs {
@@ -447,4 +470,23 @@ fn fix_arg_types(
         }
     }
     changed.then_some(out)
+}
+
+/// `checkMethodSignatureCollisions` (without the alias rename).
+fn check_method_signature_collisions(root: &mut Root, cidx: usize, midx: usize) {
+    let (name, new_sig) = {
+        let m = &root.classes[cidx].methods[midx];
+        (
+            m.info.name.clone(),
+            crate::model::info::make_short_id(&m.info.name, &m.arg_types, None),
+        )
+    };
+    let other = root.classes[cidx].methods.iter().position(|o| {
+        o.info.name == name
+            && !std::ptr::eq(o, &root.classes[cidx].methods[midx])
+            && crate::model::info::make_short_id(&o.info.name, &o.info.arg_types, None) == new_sig
+    });
+    if let Some(o) = other {
+        root.classes[cidx].methods[o].bridged_by = Some(midx);
+    }
 }

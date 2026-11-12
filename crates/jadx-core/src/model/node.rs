@@ -33,6 +33,9 @@ pub struct MethodNode {
     /// Declaring class type of the single base method this method overrides
     /// (`MethodOverrideAttr`, used by `getMethodOriginDeclClass`).
     pub override_base_decl: Option<ArgType>,
+    /// `AType.BRIDGED_BY`: index (same class) of the method this one collides with after the
+    /// argument types of the other were fixed.
+    pub bridged_by: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -116,6 +119,7 @@ impl Root {
                     signature: m.signature,
                     code_offset: m.code_offset,
                     override_base_decl: None,
+                    bridged_by: None,
                 });
             }
             by_raw.insert(info.raw_name(), classes.len());
@@ -146,8 +150,12 @@ impl Root {
     /// Class processing order of the pre-decompile passes: top level classes in input order,
     /// each followed by its inner classes (depth first).
     pub fn traversal_order(&self) -> Vec<usize> {
+        // the reference sorts all classes by raw name before any pass runs
+        let mut sorted: Vec<usize> = (0..self.classes.len()).collect();
+        sorted.sort_by_cached_key(|i| self.classes[*i].info.raw_name());
         let mut children: Vec<Vec<usize>> = vec![Vec::new(); self.classes.len()];
-        for (i, c) in self.classes.iter().enumerate() {
+        for &i in &sorted {
+            let c = &self.classes[i];
             if let Some(p) = self.parent_index_of(c) {
                 if p != i {
                     children[p].push(i);
@@ -161,8 +169,8 @@ impl Root {
             }
         }
         let mut out = Vec::with_capacity(self.classes.len());
-        for (i, c) in self.classes.iter().enumerate() {
-            if !c.is_inner() {
+        for &i in &sorted {
+            if !self.classes[i].is_inner() {
                 visit(i, &children, &mut out);
             }
         }
