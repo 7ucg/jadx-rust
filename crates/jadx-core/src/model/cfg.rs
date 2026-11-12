@@ -5,6 +5,19 @@ use super::info::ClassInfo;
 use super::insn::{BlockId, HandlerId, InsnNode};
 
 pub type LoopId = usize;
+pub type TryId = usize;
+
+/// `TryCatchBlockAttr`
+#[derive(Debug, Clone)]
+pub struct TryBlock {
+    pub id: usize,
+    pub handlers: Vec<HandlerId>,
+    pub blocks: Vec<BlockId>,
+    pub outer: Option<TryId>,
+    pub inner: Vec<TryId>,
+    pub merged: bool,
+    pub top_splitter: Option<BlockId>,
+}
 
 /// `LoopInfo`
 #[derive(Debug, Clone)]
@@ -32,6 +45,8 @@ pub mod bflag {
     pub const FALL_THROUGH: u64 = 1 << 11;
     pub const ORIG_RETURN: u64 = 1 << 12;
     pub const IGNORE_THROW_SPLIT: u64 = 1 << 13;
+    pub const TRY_ENTER: u64 = 1 << 14;
+    pub const TRY_LEAVE: u64 = 1 << 15;
 
     pub const NAMES: &[(u64, &str)] = &[
         (MTH_ENTER_BLOCK, "MTH_ENTER_BLOCK"),
@@ -48,6 +63,8 @@ pub mod bflag {
         (FALL_THROUGH, "FALL_THROUGH"),
         (ORIG_RETURN, "ORIG_RETURN"),
         (IGNORE_THROW_SPLIT, "IGNORE_THROW_SPLIT"),
+        (TRY_ENTER, "TRY_ENTER"),
+        (TRY_LEAVE, "TRY_LEAVE"),
     ];
 }
 
@@ -59,6 +76,9 @@ pub struct ExceptionHandler {
     pub blocks: Vec<BlockId>,
     pub is_finally: bool,
     pub removed: bool,
+    pub try_block: Option<TryId>,
+    /// Argument type of the caught exception (`getArgType`) applied to `move-exception`.
+    pub arg_reg: Option<u32>,
 }
 
 impl ExceptionHandler {
@@ -70,6 +90,8 @@ impl ExceptionHandler {
             blocks: Vec::new(),
             is_finally: false,
             removed: false,
+            try_block: None,
+            arg_reg: None,
         };
         eh.add_catch_type(ty);
         eh
@@ -95,6 +117,17 @@ impl ExceptionHandler {
         }
     }
 
+    /// `getArgType`
+    pub fn arg_type(&self) -> super::types::ArgType {
+        if self.is_catch_all() {
+            return super::types::ArgType::throwable();
+        }
+        if self.catch_types.len() == 1 {
+            return self.catch_types[0].arg_type().clone();
+        }
+        super::types::ArgType::throwable()
+    }
+
     pub fn is_catch_all(&self) -> bool {
         self.catch_types.is_empty()
             || self
@@ -112,7 +145,9 @@ pub struct BlockNode {
     pub insns: Vec<InsnNode>,
     pub preds: Vec<BlockId>,
     pub succs: Vec<BlockId>,
-    pub clean_succs: Option<Vec<BlockId>>,
+    /// `cleanSuccessors`: `None` = not computed, `Some(None)` = same list object as `succs`
+    /// (the reference aliases the list when nothing is removed), `Some(Some(v))` = own copy.
+    pub clean: Option<Option<Vec<BlockId>>>,
     pub flags: u64,
     /// `AType.EXC_HANDLER`
     pub exc_handler: Option<HandlerId>,
@@ -127,6 +162,12 @@ pub struct BlockNode {
     pub dominates_on: Vec<BlockId>,
     /// `AType.LOOP` attribute list (loops this block starts or ends).
     pub loops: Vec<LoopId>,
+    /// `AType.EXC_CATCH` on the block (common catch attribute of its instructions).
+    pub catch: Option<Vec<HandlerId>>,
+    /// `AType.TRY_BLOCK`
+    pub try_block: Option<TryId>,
+    /// `AType.EXC_SPLIT_CROSS`: original path cross block.
+    pub split_cross: Option<BlockId>,
 }
 
 impl BlockNode {
@@ -138,7 +179,7 @@ impl BlockNode {
             insns: Vec::with_capacity(2),
             preds: Vec::new(),
             succs: Vec::new(),
-            clean_succs: None,
+            clean: None,
             flags: 0,
             exc_handler: None,
             tmp_edge: None,
@@ -149,6 +190,17 @@ impl BlockNode {
             ipost_dom: None,
             dominates_on: Vec::new(),
             loops: Vec::new(),
+            catch: None,
+            try_block: None,
+            split_cross: None,
+        }
+    }
+    /// Clean successors (`None` if never computed).
+    pub fn clean_succs(&self) -> Option<&Vec<BlockId>> {
+        match &self.clean {
+            None => None,
+            Some(None) => Some(&self.succs),
+            Some(Some(v)) => Some(v),
         }
     }
     pub fn contains(&self, flag: u64) -> bool {
@@ -163,6 +215,9 @@ impl BlockNode {
             && self.exc_handler.is_none()
             && self.tmp_edge.is_none()
             && self.loops.is_empty()
+            && self.catch.is_none()
+            && self.try_block.is_none()
+            && self.split_cross.is_none()
     }
 }
 
@@ -175,7 +230,9 @@ pub struct MethodCfg {
     pub blocks: Vec<BlockId>,
     pub enter: BlockId,
     pub exit: BlockId,
+    /// Handler arena (never shrinks); `handler_list` is the method's live list.
     pub handlers: Vec<ExceptionHandler>,
+    pub handler_list: Vec<HandlerId>,
     /// `AFlag.COMPUTE_POST_DOM`
     pub compute_post_dom: bool,
     /// `CodeFeature.SWITCH`
@@ -185,6 +242,9 @@ pub struct MethodCfg {
     pub loop_infos: Vec<LoopInfo>,
     /// Registered loops of the method (`mth.getLoops()`).
     pub loops: Vec<LoopId>,
+    /// Arena of try/catch blocks; `try_list` holds the final list (`AType.TRY_BLOCKS_LIST`).
+    pub try_blocks: Vec<TryBlock>,
+    pub try_list: Vec<TryId>,
 }
 
 impl MethodCfg {
@@ -242,7 +302,11 @@ impl MethodCfg {
             .into_iter()
             .filter(|b| !to_remove.contains(b))
             .collect();
-        self.arena[id].clean_succs = Some(result);
+        self.arena[id].clean = Some(if to_remove.is_empty() {
+            None
+        } else {
+            Some(result)
+        });
     }
 
     pub fn is_exception_handler_path(&self, b: BlockId) -> bool {

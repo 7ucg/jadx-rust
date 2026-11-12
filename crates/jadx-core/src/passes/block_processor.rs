@@ -4,6 +4,7 @@
 
 use std::collections::HashMap;
 
+use crate::clsp::ClspGraph;
 use crate::model::bitset::JavaIntSet;
 use crate::model::cfg::{bflag, LoopInfo, MethodCfg};
 use crate::model::insn::{BlockId, InsnArg, InsnKind, InsnNode, InsnType};
@@ -50,6 +51,15 @@ fn copy_block_attributes(cfg: &mut MethodCfg, from: BlockId, to: BlockId) {
     if f.exc_handler.is_some() {
         t.exc_handler = f.exc_handler;
     }
+    if f.catch.is_some() {
+        t.catch = f.catch.clone();
+    }
+    if f.try_block.is_some() {
+        t.try_block = f.try_block;
+    }
+    if f.split_cross.is_some() {
+        t.split_cross = f.split_cross;
+    }
     if f.tmp_edge.is_some() {
         t.tmp_edge = f.tmp_edge;
     }
@@ -81,16 +91,13 @@ pub fn detach_block(cfg: &mut MethodCfg, block: BlockId) {
 
 // ---- main driver ----------------------------------------------------------------------------
 
-pub fn process_blocks(cfg: &mut MethodCfg) -> Res<()> {
+pub fn process_blocks(cfg: &mut MethodCfg, clsp: &ClspGraph) -> Res<()> {
     if cfg.blocks.is_empty() {
         return Ok(());
     }
-    if !cfg.handlers.is_empty() {
-        return Err("exception handler processing is not supported yet".into());
-    }
     remove_unreachable_blocks(cfg);
     compute_dominators_and_loops(cfg)?;
-    if independent_block_tree_mod(cfg) {
+    if independent_block_tree_mod(cfg, clsp)? {
         check_for_unreachable_blocks(cfg)?;
         compute_dominators_and_loops(cfg)?;
     }
@@ -271,25 +278,71 @@ fn remove_unreachable_blocks(cfg: &mut MethodCfg) {
     cfg.update_block_positions();
 }
 
-fn check_for_unreachable_blocks(cfg: &MethodCfg) -> Res<()> {
-    for &b in &cfg.blocks {
-        if cfg.block(b).preds.is_empty() && b != cfg.enter {
-            return Err(format!("Unreachable block: {b}"));
+fn check_for_unreachable_blocks(cfg: &mut MethodCfg) -> Res<()> {
+    loop {
+        let mut fixed = false;
+        for b in cfg.blocks.clone() {
+            if cfg.block(b).preds.is_empty() && b != cfg.enter {
+                if cfg.block(b).split_cross.is_some() && fix_unreachable_split_cross(cfg, b) {
+                    fixed = true;
+                    break;
+                }
+                return Err(format!("Unreachable block: {b}"));
+            }
+        }
+        if !fixed {
+            return Ok(());
         }
     }
-    Ok(())
+}
+
+fn fix_unreachable_split_cross(cfg: &mut MethodCfg, split_cross: BlockId) -> bool {
+    let bottom = cfg
+        .block(split_cross)
+        .succs
+        .iter()
+        .copied()
+        .find(|s| cfg.block(*s).contains(bflag::EXC_BOTTOM_SPLITTER));
+    let Some(bottom) = bottom else { return false };
+    if cfg.block(bottom).preds.len() != 1 {
+        return false;
+    }
+    remove_from_method(cfg, &[bottom, split_cross]);
+    true
+}
+
+fn remove_from_method(cfg: &mut MethodCfg, to_remove: &[BlockId]) {
+    if to_remove.is_empty() {
+        return;
+    }
+    for &b in to_remove {
+        detach_block(cfg, b);
+    }
+    cfg.blocks.retain(|b| !to_remove.contains(b));
+    cfg.update_block_positions();
+}
+
+/// `BlockProcessor.removeUnreachableBlock`
+pub fn remove_unreachable_block(cfg: &mut MethodCfg, block: BlockId) {
+    let mut to_remove: Vec<BlockId> = Vec::new();
+    if cfg.block(block).preds.is_empty() && block != cfg.enter {
+        collect_successors(cfg, block, cfg.enter, &mut to_remove);
+    }
+    remove_from_method(cfg, &to_remove);
 }
 
 // ---- tree modifications -----------------------------------------------------------------------
 
-fn independent_block_tree_mod(cfg: &mut MethodCfg) -> bool {
+fn independent_block_tree_mod(cfg: &mut MethodCfg, clsp: &ClspGraph) -> Res<bool> {
     let mut changed = false;
     for b in cfg.blocks.clone() {
         if deduplicate_block_insns(cfg, b) {
             changed = true;
         }
     }
-    // BlockExceptionHandler.process: no handlers in supported methods
+    if crate::passes::exception_handler::process(cfg, clsp)? {
+        changed = true;
+    }
     for b in cfg.blocks.clone() {
         if remove_empty_block(cfg, b) {
             changed = true;
@@ -298,7 +351,7 @@ fn independent_block_tree_mod(cfg: &mut MethodCfg) -> bool {
     if remove_empty_detached_blocks(cfg) {
         changed = true;
     }
-    changed
+    Ok(changed)
 }
 
 fn is_same_arg(a: &InsnArg, b: &InsnArg) -> bool {
@@ -553,6 +606,9 @@ pub fn remove_marked_blocks(cfg: &mut MethodCfg) {
     for b in blocks {
         let blk = cfg.block(b);
         if blk.contains(bflag::REMOVE) && blk.preds.is_empty() && blk.succs.is_empty() {
+            if let Some(t) = blk.try_block {
+                cfg.try_blocks[t].blocks.retain(|x| *x != b);
+            }
             removed = true;
         } else {
             kept.push(b);
@@ -810,9 +866,45 @@ fn split_throw(cfg: &mut MethodCfg, exit_block: BlockId) -> bool {
     if throw_insn.ty != InsnType::Throw {
         return false;
     }
-    // handler discovery: no exception handlers in supported methods, so no handler blocks found
-    let handlers_found: HashMap<BlockId, ()> = HashMap::new();
-    if handlers_found.len() == 1 {
+    let throw_arg = throw_insn.args.first().cloned();
+    let mut handlers_map: HashMap<BlockId, usize> = HashMap::new();
+    let mut handler_blocks: Vec<BlockId> = Vec::new();
+    for &pred in &preds {
+        // BFS over predecessors until a correct handler block is found
+        let mut visited = crate::model::bitset::BitSet::new();
+        let mut queue: std::collections::VecDeque<BlockId> = std::collections::VecDeque::new();
+        queue.push_back(pred);
+        while let Some(cur) = queue.pop_front() {
+            let stop = match cfg.block(cur).exc_handler {
+                None => false,
+                Some(h) => {
+                    let correct = cfg.handlers[h].blocks.contains(&cur);
+                    if correct {
+                        if let Some(arg) = &throw_arg {
+                            if is_arg_assign_in_pred(cfg, &[cur], arg) {
+                                handlers_map.insert(pred, h);
+                                if !handler_blocks.contains(&cur) {
+                                    handler_blocks.push(cur);
+                                }
+                            }
+                        }
+                    }
+                    correct
+                }
+            };
+            if stop {
+                break;
+            }
+            for &next in &cfg.block(cur).preds {
+                let id = cfg.block(next).pos;
+                if !visited.get(id) {
+                    visited.set(id);
+                    queue.push_back(next);
+                }
+            }
+        }
+    }
+    if handler_blocks.len() == 1 {
         cfg.block_mut(exit_block).add(bflag::IGNORE_THROW_SPLIT);
         return false;
     }
@@ -829,6 +921,9 @@ fn split_throw(cfg: &mut MethodCfg, exit_block: BlockId) -> bool {
                 cfg.block_mut(nb).insns.push(c);
             }
             copy_block_attributes(cfg, exit_block, nb);
+            if let Some(h) = handlers_map.get(&pred) {
+                cfg.handlers[*h].blocks.push(nb);
+            }
             replace_connection(cfg, pred, exit_block, nb);
         }
     }

@@ -31,8 +31,10 @@ pub fn build_blocks(
         .flatten()
         .any(|i| i.ty == InsnType::MoveException);
     process_instructions(&mut decoded.insns).map_err(|e| e.0)?;
+    let handler_list: Vec<usize> = (0..handlers.len()).collect();
     let mut cfg = MethodCfg {
         handlers,
+        handler_list,
         compute_post_dom: has_switch || has_move_exc,
         has_switch,
         void_return,
@@ -47,9 +49,10 @@ pub fn build_processed_blocks(
     decoded: DecodedMethod,
     tries: &[TryData],
     root: &RootCtx,
+    clsp: &crate::clsp::ClspGraph,
     void_return: bool,
 ) -> Result<MethodCfg, String> {
     let mut cfg = build_blocks(decoded, tries, root, void_return)?;
-    process_blocks(&mut cfg)?;
+    process_blocks(&mut cfg, clsp)?;
     Ok(cfg)
 }

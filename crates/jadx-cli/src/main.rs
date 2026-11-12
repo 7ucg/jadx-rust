@@ -295,7 +295,7 @@ fn insn_nodes(dexes: &[DexFile], blocks: bool, analysis: bool) -> Result<()> {
                 let void = m.info.return_type.is_void();
                 let built = if analysis {
                     jadx_core::passes::pipeline::build_processed_blocks(
-                        decoded, &tries, &root.ctx, void,
+                        decoded, &tries, &root.ctx, &root.clsp, void,
                     )
                 } else {
                     jadx_core::passes::pipeline::build_blocks(decoded, &tries, &root.ctx, void)

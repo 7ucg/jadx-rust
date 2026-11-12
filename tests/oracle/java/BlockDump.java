@@ -16,6 +16,7 @@ import jadx.core.dex.nodes.RootNode;
 import jadx.core.dex.trycatch.CatchAttr;
 import jadx.core.dex.trycatch.ExcHandlerAttr;
 import jadx.core.dex.trycatch.ExceptionHandler;
+import jadx.core.dex.trycatch.TryCatchBlockAttr;
 import jadx.core.dex.visitors.AttachTryCatchVisitor;
 import jadx.core.dex.visitors.ProcessInstructionsVisitor;
 import jadx.core.dex.visitors.blocks.BlockProcessor;
@@ -28,10 +29,10 @@ import jadx.core.dex.attributes.nodes.LoopInfo;
  */
 public class BlockDump {
 	static final AFlag[] INSN_FLAGS = { AFlag.TRY_ENTER, AFlag.TRY_LEAVE, AFlag.SYNTHETIC, AFlag.DONT_GENERATE, AFlag.HIDDEN,
-			AFlag.REMOVE, AFlag.WRAPPED, AFlag.FALL_THROUGH };
+			AFlag.REMOVE, AFlag.WRAPPED, AFlag.FALL_THROUGH, AFlag.DONT_INLINE };
 	static final AFlag[] BLOCK_FLAGS = { AFlag.MTH_ENTER_BLOCK, AFlag.MTH_EXIT_BLOCK, AFlag.SYNTHETIC, AFlag.RETURN, AFlag.REMOVE,
 			AFlag.LOOP_START, AFlag.LOOP_END, AFlag.EXC_TOP_SPLITTER, AFlag.EXC_BOTTOM_SPLITTER, AFlag.ADDED_TO_REGION,
-			AFlag.DONT_GENERATE, AFlag.FALL_THROUGH, AFlag.ORIG_RETURN, AFlag.IGNORE_THROW_SPLIT };
+			AFlag.DONT_GENERATE, AFlag.FALL_THROUGH, AFlag.ORIG_RETURN, AFlag.IGNORE_THROW_SPLIT, AFlag.TRY_ENTER, AFlag.TRY_LEAVE };
 
 	public static void main(String[] args) throws Exception {
 		JadxArgs jargs = new JadxArgs();
@@ -96,6 +97,17 @@ public class BlockDump {
 					.append(h.getCatchTypes().stream().map(c -> c.getFullName()).collect(Collectors.joining(","))).append("]\n");
 		}
 		if (analysis) {
+			List<TryCatchBlockAttr> tries = mth.getAll(AType.TRY_BLOCKS_LIST);
+			if (tries != null) {
+				for (TryCatchBlockAttr t : tries) {
+					sb.append("T ").append(t.id()).append(" handlers=[")
+							.append(t.getHandlers().stream().map(h -> Integer.toString(h.getHandlerOffset())).collect(Collectors.joining(",")))
+							.append("] blocks=[").append(cids(t.getBlocks())).append("] outer=")
+							.append(t.getOuterTryBlock() == null ? "-" : Integer.toString(t.getOuterTryBlock().id())).append(" inner=[")
+							.append(t.getInnerTryBlocks().stream().map(i -> Integer.toString(i.id())).collect(Collectors.joining(",")))
+							.append("] top=").append(t.getTopSplitter() == null ? "-" : Integer.toString(t.getTopSplitter().getCId())).append('\n');
+				}
+			}
 			for (LoopInfo l : mth.getLoops()) {
 				sb.append("L ").append(l.getId()).append(" start=").append(l.getStart().getCId()).append(" end=").append(l.getEnd().getCId())
 						.append(" parent=").append(l.getParentLoop() == null ? "-" : Integer.toString(l.getParentLoop().getId()))

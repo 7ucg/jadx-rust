@@ -3,7 +3,9 @@
 pub mod attach_try_catch;
 pub mod block_processor;
 pub mod block_splitter;
+pub mod block_utils;
 pub mod dominators;
+pub mod exception_handler;
 pub mod override_methods;
 pub mod pipeline;
 pub mod process_insns;

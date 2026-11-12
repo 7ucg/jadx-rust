@@ -405,6 +405,7 @@ pub mod iflag {
     pub const REMOVE: u64 = 1 << 5;
     pub const WRAPPED: u64 = 1 << 6;
     pub const FALL_THROUGH: u64 = 1 << 7;
+    pub const DONT_INLINE: u64 = 1 << 8;
 
     pub const NAMES: &[(u64, &str)] = &[
         (TRY_ENTER, "TRY_ENTER"),
@@ -415,6 +416,7 @@ pub mod iflag {
         (REMOVE, "REMOVE"),
         (WRAPPED, "WRAPPED"),
         (FALL_THROUGH, "FALL_THROUGH"),
+        (DONT_INLINE, "DONT_INLINE"),
     ];
 }
 

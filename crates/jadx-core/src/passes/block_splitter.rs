@@ -347,7 +347,7 @@ fn add_temp_connections_for_exc_handlers(
     cfg: &mut MethodCfg,
     blocks_map: &HashMap<i32, BlockId>,
 ) -> Result<(), SplitError> {
-    if cfg.handlers.is_empty() {
+    if cfg.handler_list.is_empty() {
         return Ok(());
     }
     for id in cfg.blocks.clone() {

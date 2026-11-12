@@ -211,11 +211,35 @@ pub fn dump_cfg_ext(id: &str, cfg: &crate::model::cfg::MethodCfg, analysis: bool
     use crate::model::cfg::bflag;
     use crate::model::insn::iflag;
     let mut out = format!("M {id}\n");
-    for h in &cfg.handlers {
+    for hid in &cfg.handler_list {
+        let h = &cfg.handlers[*hid];
         let types: Vec<&str> = h.catch_types.iter().map(|c| c.full_name()).collect();
         let _ = writeln!(out, "H {} types=[{}]", h.handler_offset, types.join(","));
     }
     if analysis {
+        for t in &cfg.try_list {
+            let tb = &cfg.try_blocks[*t];
+            let _ = writeln!(
+                out,
+                "T {} handlers=[{}] blocks=[{}] outer={} inner=[{}] top={}",
+                tb.id,
+                tb.handlers
+                    .iter()
+                    .map(|h| cfg.handlers[*h].handler_offset.to_string())
+                    .collect::<Vec<_>>()
+                    .join(","),
+                cids(&tb.blocks),
+                tb.outer
+                    .map(|o| cfg.try_blocks[o].id.to_string())
+                    .unwrap_or_else(|| "-".into()),
+                tb.inner
+                    .iter()
+                    .map(|i| cfg.try_blocks[*i].id.to_string())
+                    .collect::<Vec<_>>()
+                    .join(","),
+                opt(tb.top_splitter)
+            );
+        }
         for l in &cfg.loops {
             let li = &cfg.loop_infos[*l];
             let mut blocks: Vec<usize> = li.blocks.iter();
@@ -261,8 +285,7 @@ pub fn dump_cfg_ext(id: &str, cfg: &crate::model::cfg::MethodCfg, analysis: bool
         );
         if analysis {
             let clean = b
-                .clean_succs
-                .as_ref()
+                .clean_succs()
                 .map(|c| cids(c))
                 .unwrap_or_else(|| "-".into());
             let loops: Vec<String> = b
