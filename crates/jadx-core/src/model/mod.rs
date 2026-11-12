@@ -1,5 +1,6 @@
 //! Core data model.
 
+pub mod cfg;
 pub mod info;
 pub mod insn;
 pub mod node;

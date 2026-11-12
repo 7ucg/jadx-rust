@@ -179,3 +179,33 @@ fn read_methods(r: &mut Reader<'_>, n: u32, out: &mut Vec<EncodedMethod>) -> Res
     }
     Ok(())
 }
+
+impl DexFile {
+    /// Try blocks of a code item in the input API form.
+    pub fn tries_api(&self, code: &CodeItem) -> Result<Vec<jadx_input_api::TryData>> {
+        use jadx_input_api::{CatchData, TryData};
+        let mut out = Vec::with_capacity(code.tries.len());
+        for t in &code.tries {
+            let h = &code.handlers[t.handler_idx];
+            let mut handlers = Vec::new();
+            let mut types = Vec::new();
+            for (type_idx, addr) in &h.handlers {
+                types.push(self.type_descriptor(*type_idx)?);
+                handlers.push(*addr);
+            }
+            out.push(TryData {
+                start: t.start_addr,
+                end: t
+                    .start_addr
+                    .wrapping_add(t.insn_count as u32)
+                    .wrapping_sub(1),
+                catch: CatchData {
+                    handlers,
+                    types,
+                    catch_all: h.catch_all.map(i64::from).unwrap_or(-1),
+                },
+            });
+        }
+        Ok(out)
+    }
+}

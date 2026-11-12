@@ -360,12 +360,16 @@ pub enum InsnKind {
     If {
         op: IfOp,
         target: i32,
+        then_block: Option<BlockId>,
+        else_block: Option<BlockId>,
     },
     Switch {
         data_target: i32,
         packed: bool,
         data: Option<SwitchData>,
         def: i32,
+        target_blocks: Option<Vec<BlockId>>,
+        def_block: Option<BlockId>,
     },
     SwitchData(SwitchData),
     /// String as UTF-16 code units.
@@ -386,6 +390,34 @@ pub enum InsnKind {
     FillArrayData(FillArrayData),
 }
 
+/// Block identifier: index into the method's block arena (the block's `cid`).
+pub type BlockId = usize;
+/// Exception handler identifier: index into the method's handler list.
+pub type HandlerId = usize;
+
+/// Instruction flags (subset of the reference `AFlag`).
+pub mod iflag {
+    pub const TRY_ENTER: u64 = 1 << 0;
+    pub const TRY_LEAVE: u64 = 1 << 1;
+    pub const SYNTHETIC: u64 = 1 << 2;
+    pub const DONT_GENERATE: u64 = 1 << 3;
+    pub const HIDDEN: u64 = 1 << 4;
+    pub const REMOVE: u64 = 1 << 5;
+    pub const WRAPPED: u64 = 1 << 6;
+    pub const FALL_THROUGH: u64 = 1 << 7;
+
+    pub const NAMES: &[(u64, &str)] = &[
+        (TRY_ENTER, "TRY_ENTER"),
+        (TRY_LEAVE, "TRY_LEAVE"),
+        (SYNTHETIC, "SYNTHETIC"),
+        (DONT_GENERATE, "DONT_GENERATE"),
+        (HIDDEN, "HIDDEN"),
+        (REMOVE, "REMOVE"),
+        (WRAPPED, "WRAPPED"),
+        (FALL_THROUGH, "FALL_THROUGH"),
+    ];
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct JumpInfo {
     pub src: i32,
@@ -404,6 +436,12 @@ pub struct InsnNode {
     pub jumps: Vec<JumpInfo>,
     /// Decode error recorded on a replacement `NOP` (`AType.JADX_ERROR`).
     pub error: Option<String>,
+    /// `iflag` bits.
+    pub flags: u64,
+    /// `AType.EXC_CATCH`: handlers protecting this instruction.
+    pub catch: Option<Vec<HandlerId>>,
+    /// `AType.EXC_HANDLER`: this instruction starts the given handler.
+    pub exc_handler: Option<HandlerId>,
 }
 
 impl InsnNode {
@@ -416,11 +454,44 @@ impl InsnNode {
             kind,
             jumps: Vec::new(),
             error: None,
+            flags: 0,
+            catch: None,
+            exc_handler: None,
         }
     }
     pub fn plain(ty: InsnType) -> Self {
         InsnNode::new(ty, InsnKind::None)
     }
+    pub fn contains_flag(&self, flag: u64) -> bool {
+        self.flags & flag != 0
+    }
+
+    /// `isAttrStorageEmpty`: no flags and no attributes at all.
+    pub fn attrs_empty(&self) -> bool {
+        self.flags == 0
+            && self.jumps.is_empty()
+            && self.error.is_none()
+            && self.catch.is_none()
+            && self.exc_handler.is_none()
+    }
+
+    /// `copyAttributesFrom`: flags are merged, attributes of the other node replace ours.
+    pub fn copy_attributes_from(&mut self, other: &InsnNode) {
+        self.flags |= other.flags;
+        if !other.jumps.is_empty() {
+            self.jumps = other.jumps.clone();
+        }
+        if other.error.is_some() {
+            self.error = other.error.clone();
+        }
+        if other.catch.is_some() {
+            self.catch = other.catch.clone();
+        }
+        if other.exc_handler.is_some() {
+            self.exc_handler = other.exc_handler;
+        }
+    }
+
     pub fn with_result(mut self, res: RegisterArg) -> Self {
         self.result = Some(res);
         self

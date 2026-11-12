@@ -140,3 +140,21 @@ pub struct ClassData {
     pub fields: Vec<FieldData>,
     pub methods: Vec<MethodData>,
 }
+
+/// Exception handlers of a try block.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CatchData {
+    /// Handler offsets (code units), parallel to `types`.
+    pub handlers: Vec<u32>,
+    pub types: Vec<String>,
+    /// Catch-all handler offset, `-1` if none.
+    pub catch_all: i64,
+}
+
+/// A try block: `[start, end]` (inclusive) in code units.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TryData {
+    pub start: u32,
+    pub end: u32,
+    pub catch: CatchData,
+}

@@ -613,6 +613,8 @@ impl<'a> InsnDecoder<'a> {
             InsnKind::If {
                 op,
                 target: insn.target as i32,
+                then_block: None,
+                else_block: None,
             },
         );
         n.args.push(InsnArg::reg(r0, arg_ty.clone()));
@@ -749,6 +751,8 @@ impl<'a> InsnDecoder<'a> {
                 packed,
                 data: None,
                 def: -1,
+                target_blocks: None,
+                def_block: None,
             },
         );
         n.args.push(InsnArg::reg(r0, ArgType::narrow_integral()));

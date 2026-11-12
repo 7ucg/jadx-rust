@@ -99,7 +99,14 @@ public class InsnNodeDump {
 		return d.getSize() + ":" + d.getElementType() + ":" + d.dataToString();
 	}
 
-	private static void dump(StringBuilder sb, InsnNode n) {
+	static String line(InsnNode n) {
+		StringBuilder sb = new StringBuilder();
+		dump(sb, n);
+		sb.setLength(sb.length() - 1);
+		return sb.toString();
+	}
+
+	static void dump(StringBuilder sb, InsnNode n) {
 		sb.append("I ").append(Integer.toHexString(n.getOffset())).append(' ').append(n.getType());
 		sb.append(" res=").append(n.getResult() == null ? "-" : reg(n.getResult()));
 		sb.append(" args=[");

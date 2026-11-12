@@ -196,8 +196,9 @@ fn merge_move_result(insns: &mut [Option<InsnNode>], offset: usize, res_type: Ar
         init_type: res_type,
         immutable_type: move_res.immutable_type,
     };
-    if let Some(insn) = insns[offset].as_mut() {
+    let next_insn = insns[next].take();
+    if let (Some(insn), Some(next_insn)) = (insns[offset].as_mut(), next_insn) {
         insn.result = Some(new_res);
+        insn.copy_attributes_from(&next_insn);
     }
-    insns[next] = None;
 }
