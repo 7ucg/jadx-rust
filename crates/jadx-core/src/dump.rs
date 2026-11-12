@@ -8,7 +8,15 @@ use jadx_input_api::ArrayData;
 use crate::model::cfg::MethodCfg;
 use crate::model::insn::{FillArrayData, IndexValue, InsnArg, InsnKind, InsnNode, RegisterArg};
 
-fn reg(r: &RegisterArg, cfg: Option<&MethodCfg>) -> String {
+/// Dump context: the method (needed for wrapped instructions) and whether SSA versions are shown.
+#[derive(Clone, Copy)]
+struct Ctx<'a> {
+    cfg: Option<&'a MethodCfg>,
+    versions: bool,
+}
+
+fn reg(r: &RegisterArg, ctx: Ctx) -> String {
+    let cfg = if ctx.versions { ctx.cfg } else { None };
     let mut s = format!(
         "r{}:{}{}",
         r.reg_num,
@@ -21,10 +29,17 @@ fn reg(r: &RegisterArg, cfg: Option<&MethodCfg>) -> String {
     s
 }
 
-fn arg(a: &InsnArg, cfg: Option<&MethodCfg>) -> String {
+fn arg(a: &InsnArg, ctx: Ctx) -> String {
     match a {
-        InsnArg::Register(r) => reg(r, cfg),
+        InsnArg::Register(r) => reg(r, ctx),
         InsnArg::Literal(l) => format!("#{}:{}", l.literal, l.ty),
+        InsnArg::Wrapped(w) => {
+            let inner = ctx
+                .cfg
+                .map(|c| insn_line(c.insn(w.insn), None, ctx))
+                .unwrap_or_default();
+            format!("(wrap {}:{})", w.ty, inner.trim_start_matches("I "))
+        }
     }
 }
 
@@ -78,11 +93,30 @@ pub fn dump_insn(n: &InsnNode) -> String {
 /// Like [`dump_insn`]; `if_target` replaces the printed `if` target (the reference reports the start
 /// offset of the `then` block once blocks are initialised).
 pub fn dump_insn_with(n: &InsnNode, if_target: Option<i32>) -> String {
-    dump_insn_ssa(n, if_target, None)
+    insn_line(
+        n,
+        if_target,
+        Ctx {
+            cfg: None,
+            versions: false,
+        },
+    )
 }
 
-/// Like [`dump_insn_with`]; with `cfg` registers carry their SSA version (`r1:int/v0`).
-pub fn dump_insn_ssa(n: &InsnNode, if_target: Option<i32>, cfg: Option<&MethodCfg>) -> String {
+/// Like [`dump_insn_with`] inside `cfg`; with `ssa` registers carry their SSA version
+/// (`r1:int/v0`).
+pub fn dump_insn_ssa(n: &InsnNode, if_target: Option<i32>, cfg: &MethodCfg, ssa: bool) -> String {
+    insn_line(
+        n,
+        if_target,
+        Ctx {
+            cfg: Some(cfg),
+            versions: ssa,
+        },
+    )
+}
+
+fn insn_line(n: &InsnNode, if_target: Option<i32>, cfg: Ctx) -> String {
     let mut s = String::new();
     let _ = write!(s, "I {:x} {}", n.offset, n.ty.name());
     let _ = write!(
@@ -391,7 +425,7 @@ fn dump_cfg_impl(
                 let _ = writeln!(
                     out,
                     "  P {}",
-                    dump_insn_ssa(insn, None, Some(cfg)).trim_start_matches("I ")
+                    dump_insn_ssa(insn, None, cfg, true).trim_start_matches("I ")
                 );
             }
         }
@@ -404,11 +438,7 @@ fn dump_cfg_impl(
                 } => Some(cfg.block(*t).start_offset),
                 _ => None,
             };
-            let _ = write!(
-                out,
-                "  {}",
-                dump_insn_ssa(insn, if_target, if ssa { Some(cfg) } else { None })
-            );
+            let _ = write!(out, "  {}", dump_insn_ssa(insn, if_target, cfg, ssa));
             let _ = write!(out, " fl=[{}]", flag_names(insn.flags, iflag::NAMES));
             if let Some(c) = &insn.catch {
                 let offs: Vec<String> = c

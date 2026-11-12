@@ -71,6 +71,8 @@ pub struct SsaVar {
     pub used_in_phi: Option<Vec<InsnId>>,
     /// Set by `InitCodeVariables`.
     pub code_var: Option<CodeVarId>,
+    /// Current type (`getTypeInfo().getType()`), unknown until type inference.
+    pub ty: ArgType,
 }
 
 impl SsaVar {
@@ -159,12 +161,19 @@ impl MethodCfg {
             self.svar_set_assign(v, ArgRef::Result(insn));
         }
         for k in 0..self.insns[insn].args.len() {
-            if let InsnArg::Register(r) = &self.insns[insn].args[k] {
-                let Some(v) = r.svar else {
-                    return Err("No SSA var for argument".into());
-                };
-                self.svar_use(v, ArgRef::Arg(insn, k));
-                self.svar_update_used_in_phi_list(v);
+            match &self.insns[insn].args[k] {
+                InsnArg::Register(r) => {
+                    let Some(v) = r.svar else {
+                        return Err("No SSA var for argument".into());
+                    };
+                    self.svar_use(v, ArgRef::Arg(insn, k));
+                    self.svar_update_used_in_phi_list(v);
+                }
+                InsnArg::Wrapped(w) => {
+                    let wrapped = w.insn;
+                    self.rebind_args(wrapped)?;
+                }
+                InsnArg::Literal(_) => {}
             }
         }
         Ok(())
@@ -202,6 +211,7 @@ impl MethodCfg {
             uses: Vec::new(),
             used_in_phi: None,
             code_var: None,
+            ty: ArgType::unknown_any(),
         });
         self.reg_mut(assign).svar = Some(id);
         self.svar_list.push(id);
@@ -402,10 +412,18 @@ impl MethodCfg {
 
     /// `InsnRemover.unbindArgUsage`
     pub fn unbind_arg_usage(&mut self, insn: InsnId, index: usize) {
-        if let InsnArg::Register(r) = &self.insns[insn].args[index] {
-            if let Some(v) = r.svar {
-                self.svar_remove_use(v, ArgRef::Arg(insn, index));
+        match &self.insns[insn].args[index] {
+            InsnArg::Register(r) => {
+                if let Some(v) = r.svar {
+                    self.svar_remove_use(v, ArgRef::Arg(insn, index));
+                }
             }
+            InsnArg::Wrapped(w) => {
+                let wrapped = w.insn;
+                // errors while unbinding a wrapped instruction cannot be reported here
+                let _ = self.unbind_insn(wrapped);
+            }
+            InsnArg::Literal(_) => {}
         }
     }
 
@@ -584,6 +602,86 @@ impl MethodCfg {
         let t = &mut self.insns[target];
         if t.ty == InsnType::Return && t.contains_flag(iflag::SYNTHETIC) {
             t.offset = off;
+        }
+    }
+}
+
+impl MethodCfg {
+    /// `RegisterArg.getType`: the type of the SSA variable (unknown without one).
+    pub fn reg_type(&self, at: ArgRef) -> ArgType {
+        match self.reg(at).svar {
+            Some(v) => self.svars[v].ty.clone(),
+            None => ArgType::unknown_any(),
+        }
+    }
+
+    /// `InsnNode.copyWithoutResult`: copy in the arena; register arguments are attached to their
+    /// SSA variables as new uses.
+    pub fn copy_without_result(&mut self, id: InsnId) -> InsnId {
+        let src = self.insns[id].clone();
+        let mut copy = src.clone();
+        copy.result = None;
+        copy.args = Vec::with_capacity(src.args.len());
+        let new_id = self.add_insn(copy);
+        for (k, a) in src.args.iter().enumerate() {
+            let dup = self.duplicate_arg(a);
+            let var = match &dup {
+                InsnArg::Register(r) => r.svar,
+                _ => None,
+            };
+            self.insns[new_id].args.push(dup);
+            if let Some(v) = var {
+                self.svar_use(v, ArgRef::Arg(new_id, k));
+            }
+        }
+        new_id
+    }
+
+    /// `InsnArg.duplicate`
+    pub fn duplicate_arg(&mut self, arg: &InsnArg) -> InsnArg {
+        match arg {
+            InsnArg::Register(r) => InsnArg::Register(r.clone()),
+            InsnArg::Literal(l) => InsnArg::Literal(l.clone()),
+            InsnArg::Wrapped(w) => {
+                let copy = self.copy_without_result(w.insn);
+                InsnArg::Wrapped(super::insn::WrapArg {
+                    insn: copy,
+                    ty: w.ty.clone(),
+                })
+            }
+        }
+    }
+
+    /// `InsnArg.wrapArg`: wrap an instruction (not `CONST`/`MOVE`) into an argument.
+    pub fn wrap_arg(&mut self, insn: InsnId) -> Result<InsnArg, String> {
+        let ty = self.insns[insn].ty;
+        if matches!(ty, InsnType::Const | InsnType::Move) {
+            return Err("Don't wrap MOVE or CONST insns".into());
+        }
+        self.insns[insn].flags |= iflag::WRAPPED;
+        let mut arg_ty = ArgType::unknown_any();
+        match ty {
+            InsnType::ConstStr => {
+                arg_ty = ArgType::string();
+                self.set_result_type(insn, ArgType::string());
+            }
+            InsnType::ConstClass => {
+                arg_ty = ArgType::class();
+                self.set_result_type(insn, ArgType::class());
+            }
+            _ => {
+                if self.insns[insn].result.is_some() {
+                    arg_ty = self.reg_type(ArgRef::Result(insn));
+                }
+            }
+        }
+        Ok(InsnArg::Wrapped(super::insn::WrapArg { insn, ty: arg_ty }))
+    }
+
+    /// `RegisterArg.setType` on the result (updates the SSA variable type).
+    fn set_result_type(&mut self, insn: InsnId, ty: ArgType) {
+        if let Some(v) = self.insns[insn].result.as_ref().and_then(|r| r.svar) {
+            self.svars[v].ty = ty;
         }
     }
 }

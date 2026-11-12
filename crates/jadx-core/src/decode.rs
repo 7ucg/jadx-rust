@@ -768,6 +768,7 @@ fn lit_type(arg: &InsnArg) -> ArgType {
     match arg {
         InsnArg::Literal(l) => l.ty.clone(),
         InsnArg::Register(r) => r.init_type.clone(),
+        InsnArg::Wrapped(w) => w.ty.clone(),
     }
 }
 

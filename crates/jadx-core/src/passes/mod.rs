@@ -4,6 +4,7 @@ pub mod attach_try_catch;
 pub mod block_processor;
 pub mod block_splitter;
 pub mod block_utils;
+pub mod const_inline;
 pub mod constructor;
 pub mod dominators;
 pub mod exception_handler;

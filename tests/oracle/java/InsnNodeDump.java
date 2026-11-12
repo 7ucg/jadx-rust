@@ -22,6 +22,7 @@ import jadx.core.dex.instructions.SwitchData;
 import jadx.core.dex.instructions.SwitchInsn;
 import jadx.core.dex.instructions.args.InsnArg;
 import jadx.core.dex.instructions.args.LiteralArg;
+import jadx.core.dex.instructions.args.InsnWrapArg;
 import jadx.core.dex.instructions.args.RegisterArg;
 import jadx.core.dex.nodes.ClassNode;
 import jadx.core.dex.nodes.InsnNode;
@@ -85,6 +86,10 @@ public class InsnNodeDump {
 	private static String arg(InsnArg a) {
 		if (a instanceof RegisterArg) {
 			return reg((RegisterArg) a);
+		}
+		if (a instanceof InsnWrapArg) {
+			InsnWrapArg w = (InsnWrapArg) a;
+			return "(wrap " + w.getType() + ":" + line(w.getWrapInsn()).substring(2) + ")";
 		}
 		if (a instanceof LiteralArg) {
 			LiteralArg l = (LiteralArg) a;

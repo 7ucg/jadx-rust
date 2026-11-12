@@ -25,6 +25,7 @@ import jadx.core.dex.visitors.ssa.SSATransform;
 import jadx.core.dex.visitors.MoveInlineVisitor;
 import jadx.core.dex.visitors.ConstructorVisitor;
 import jadx.core.dex.visitors.InitCodeVariables;
+import jadx.core.dex.visitors.ConstInlineVisitor;
 import jadx.core.dex.instructions.args.CodeVar;
 import jadx.core.dex.instructions.PhiInsn;
 import jadx.core.dex.instructions.args.RegisterArg;
@@ -41,7 +42,7 @@ import jadx.core.dex.attributes.nodes.LoopInfo;
  */
 public class BlockDump {
 	static final AFlag[] INSN_FLAGS = { AFlag.TRY_ENTER, AFlag.TRY_LEAVE, AFlag.SYNTHETIC, AFlag.DONT_GENERATE, AFlag.HIDDEN,
-			AFlag.REMOVE, AFlag.WRAPPED, AFlag.FALL_THROUGH, AFlag.DONT_INLINE };
+			AFlag.REMOVE, AFlag.WRAPPED, AFlag.FALL_THROUGH, AFlag.DONT_INLINE, AFlag.EXPLICIT_CAST };
 	static final AFlag[] BLOCK_FLAGS = { AFlag.MTH_ENTER_BLOCK, AFlag.MTH_EXIT_BLOCK, AFlag.SYNTHETIC, AFlag.RETURN, AFlag.REMOVE,
 			AFlag.LOOP_START, AFlag.LOOP_END, AFlag.EXC_TOP_SPLITTER, AFlag.EXC_BOTTOM_SPLITTER, AFlag.ADDED_TO_REGION,
 			AFlag.DONT_GENERATE, AFlag.FALL_THROUGH, AFlag.ORIG_RETURN, AFlag.IGNORE_THROW_SPLIT, AFlag.TRY_ENTER, AFlag.TRY_LEAVE };
@@ -53,6 +54,11 @@ public class BlockDump {
 		if (args.length > 1 && Integer.parseInt(args[1]) >= 4) {
 			// anonymous class inlining is not ported yet
 			jargs.setInlineAnonymousClasses(false);
+		}
+		if (args.length > 1 && Integer.parseInt(args[1]) >= 6) {
+			// finally extraction and constant field replacement are not ported yet
+			jargs.setExtractFinally(false);
+			jargs.setReplaceConsts(false);
 		}
 		int stage = args.length > 1 ? Integer.parseInt(args[1]) : 0;
 		StringBuilder sb = new StringBuilder();
@@ -85,6 +91,9 @@ public class BlockDump {
 						}
 						if (stage >= 5) {
 							new InitCodeVariables().visit(mth);
+						}
+						if (stage >= 6) {
+							new ConstInlineVisitor().visit(mth);
 						}
 					} catch (Throwable e) {
 						sb.append("M ").append(mth.getMethodInfo().getRawFullId()).append(" LOAD_ERROR\n");

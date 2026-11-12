@@ -89,7 +89,7 @@ impl FrameInfo {
 }
 
 /// [`build_processed_blocks`] followed by `SSATransform` and, depending on `stage`, the later
-/// SSA passes (3 = `MoveInlineVisitor`, 4 = `ConstructorVisitor`, 5 = `InitCodeVariables`).
+/// SSA passes (3 = `MoveInlineVisitor`, 4 = `ConstructorVisitor`, 5 = `InitCodeVariables`, 6 = `ConstInlineVisitor`).
 pub fn build_ssa(
     decoded: DecodedMethod,
     tries: &[TryData],
@@ -120,6 +120,9 @@ pub fn build_ssa(
     }
     if stage >= 5 {
         crate::passes::init_code_vars::init_code_vars(&mut cfg)?;
+    }
+    if stage >= 6 {
+        crate::passes::const_inline::const_inline(&mut cfg)?;
     }
     Ok(cfg)
 }

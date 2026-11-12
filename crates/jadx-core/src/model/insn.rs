@@ -252,6 +252,8 @@ pub struct RegisterArg {
     pub method_arg: bool,
     /// `AFlag.CUSTOM_DECLARE`: the variable needs no declaration.
     pub custom_declare: bool,
+    /// `AFlag.DONT_INLINE_CONST`
+    pub dont_inline_const: bool,
     /// SSA variable this register belongs to (`RegisterArg.getSVar`).
     pub svar: Option<super::ssa::SsaId>,
 }
@@ -265,6 +267,7 @@ impl RegisterArg {
             is_this: false,
             method_arg: false,
             custom_declare: false,
+            dont_inline_const: false,
             svar: None,
         }
     }
@@ -276,6 +279,7 @@ impl RegisterArg {
             is_this: false,
             method_arg: false,
             custom_declare: false,
+            dont_inline_const: false,
             svar: None,
         }
     }
@@ -285,13 +289,19 @@ impl RegisterArg {
 pub struct LiteralArg {
     pub literal: i64,
     pub ty: ArgType,
+    /// `AFlag.EXPLICIT_PRIMITIVE_TYPE`
+    pub explicit_primitive: bool,
 }
 
 impl LiteralArg {
     /// `LiteralArg.makeWithFixedType`: narrow an unknown type by the literal's value.
     pub fn with_fixed_type(literal: i64, ty: ArgType) -> Self {
         let ty = fix_literal_type(literal, ty);
-        LiteralArg { literal, ty }
+        LiteralArg {
+            literal,
+            ty,
+            explicit_primitive: false,
+        }
     }
 }
 
@@ -316,6 +326,14 @@ fn fix_literal_type(value: i64, ty: ArgType) -> ArgType {
 pub enum InsnArg {
     Register(RegisterArg),
     Literal(LiteralArg),
+    /// `InsnWrapArg`: an instruction inlined as an argument.
+    Wrapped(WrapArg),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct WrapArg {
+    pub insn: InsnId,
+    pub ty: ArgType,
 }
 
 impl InsnArg {
@@ -457,6 +475,7 @@ pub mod iflag {
     pub const WRAPPED: u64 = 1 << 6;
     pub const FALL_THROUGH: u64 = 1 << 7;
     pub const DONT_INLINE: u64 = 1 << 8;
+    pub const EXPLICIT_CAST: u64 = 1 << 9;
 
     pub const NAMES: &[(u64, &str)] = &[
         (TRY_ENTER, "TRY_ENTER"),
@@ -468,6 +487,7 @@ pub mod iflag {
         (WRAPPED, "WRAPPED"),
         (FALL_THROUGH, "FALL_THROUGH"),
         (DONT_INLINE, "DONT_INLINE"),
+        (EXPLICIT_CAST, "EXPLICIT_CAST"),
     ];
 }
 
