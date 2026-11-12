@@ -76,7 +76,19 @@ public class ClassStateDump {
 	}
 
 	private static String extraClassAttrs(ClassNode cls) {
-		return "";
+		jadx.core.dex.attributes.nodes.EnumClassAttr e = cls.get(AType.ENUM_CLASS);
+		StringBuilder sb = new StringBuilder();
+		sb.append(" rmsuper=").append(cls.contains(AFlag.REMOVE_SUPER_CLASS) ? 1 : 0);
+		if (e != null) {
+			sb.append(" enum=[");
+			for (jadx.core.dex.attributes.nodes.EnumClassAttr.EnumField f : e.getFields()) {
+				sb.append(f.getField().getName()).append('|').append(f.getNameStr()).append('|')
+						.append(f.getCls() == null ? "-" : f.getCls().getClassInfo().getRawName()).append('|')
+						.append(RegionDump.insnLine(f.getConstrInsn())).append(';');
+			}
+			sb.append(']');
+		}
+		return sb.toString();
 	}
 
 	private static String extraFieldAttrs(FieldNode f) {

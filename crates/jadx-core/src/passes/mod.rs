@@ -14,6 +14,7 @@ pub mod constructor;
 pub mod deboxing;
 pub mod dominators;
 pub mod driver;
+pub mod enum_visitor;
 pub mod exception_handler;
 pub mod extract_field_init;
 pub mod fix_instructions;

@@ -376,6 +376,11 @@ impl<'s> ClassDriver<'s> {
                 crate::passes::fix_instructions::fix_instructions(cfg)
             });
         }
+        if on(pass_stage::ENUM_VISITOR) {
+            self.class_pass(visits, &|root, methods, c| {
+                crate::passes::enum_visitor::enum_visitor(root, methods, c)
+            });
+        }
         if on(pass_stage::EXTRACT_FIELD_INIT) {
             if let Some(Visit::Class(top)) = visits.first().copied() {
                 self.class_pass_post(top, &|root, methods, c| {
@@ -448,4 +453,5 @@ pub mod pass_stage {
     pub const ANONYMOUS_CLASS: u32 = 33;
     pub const EXTRACT_FIELD_INIT: u32 = 34;
     pub const CLASS_MODIFIER: u32 = 35;
+    pub const ENUM_VISITOR: u32 = 36;
 }

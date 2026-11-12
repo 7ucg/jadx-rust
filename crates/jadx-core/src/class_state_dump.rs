@@ -14,11 +14,40 @@ pub fn dump_class_state<'a>(
 ) -> String {
     let cls = &root.classes[ci];
     let mut out = format!("M CLASS {}\n", cls.info.raw_name());
+    let mut en = String::new();
+    if let Some(e) = &cls.enum_class {
+        en.push_str(" enum=[");
+        for f in &e.fields {
+            let name = cfg_of((ci, e.static_method))
+                .and_then(|c| match &c.insn(f.ctr_insn).args.first() {
+                    Some(crate::model::insn::InsnArg::Wrapped(w)) => match &c.insn(w.insn).kind {
+                        crate::model::insn::InsnKind::ConstStr(s) => {
+                            Some(String::from_utf16_lossy(s))
+                        }
+                        _ => None,
+                    },
+                    _ => None,
+                })
+                .unwrap_or_else(|| "null".to_string());
+            let line = cfg_of((ci, e.static_method))
+                .map(|c| crate::region_dump::insn_line(c, f.ctr_insn))
+                .unwrap_or_default();
+            let _ = write!(
+                en,
+                "{}|{name}|{}|{line};",
+                cls.fields[f.field].info.name,
+                f.cls
+                    .map_or_else(|| "-".to_string(), |c| root.classes[c].info.raw_name())
+            );
+        }
+        en.push(']');
+    }
     let _ = writeln!(
         out,
-        "R C acc={:x} dont={}",
+        "R C acc={:x} dont={} rmsuper={}{en}",
         cls.access,
-        u8::from(cls.dont_generate)
+        u8::from(cls.dont_generate),
+        u8::from(cls.remove_super_class)
     );
     let order: Vec<usize> = cls
         .fields_order

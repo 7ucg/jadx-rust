@@ -93,7 +93,7 @@ fn process_static_fields(
     for fi in &inits {
         let f = &mut root.classes[cls].fields[fi.field];
         if f.access & ACC_FINAL != 0 {
-            f.const_value = None;
+            // the constant value stays (used to resolve names), the field initializer wins
             f.zero_init = false;
         }
     }
