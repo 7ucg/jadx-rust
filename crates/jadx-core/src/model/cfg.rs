@@ -274,6 +274,8 @@ pub struct MethodCfg {
     pub units_count: usize,
     /// Type inference ran (types are meaningful).
     pub types_done: bool,
+    /// The type fixing stage ran (warnings are reported by the dump).
+    pub types_fixed: bool,
 }
 
 impl MethodCfg {

@@ -431,6 +431,11 @@ pub enum InsnKind {
         call_mth: MethodInfo,
         call_type: CallType,
     },
+    /// `TernaryInsn`: `condition` is the compare instruction (an `If` instruction that is not part
+    /// of a block); the arguments are the values for the true and false case.
+    Ternary {
+        condition: InsnId,
+    },
 }
 
 /// `ConstructorInsn.CallType`
