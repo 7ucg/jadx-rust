@@ -412,6 +412,7 @@ impl DexFile {
             EncodedValue::Type(t) => {
                 ConstValue::Str(self.type_descriptor(*t)?.encode_utf16().collect())
             }
+            EncodedValue::Null => ConstValue::Null,
             _ => return Ok(None),
         }))
     }

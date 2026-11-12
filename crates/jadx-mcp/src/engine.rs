@@ -365,6 +365,7 @@ fn render_const(value: &ConstValue) -> String {
         ConstValue::Float(bits) => format!("{:?}f", f32::from_bits(*bits)),
         ConstValue::Double(bits) => format!("{:?}", f64::from_bits(*bits)),
         ConstValue::Str(units) => format!("\"{}\"", escape_java(units, '"')),
+        ConstValue::Null => "null".to_string(),
     }
 }
 

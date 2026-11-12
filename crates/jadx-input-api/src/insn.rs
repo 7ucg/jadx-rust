@@ -271,6 +271,9 @@ pub enum ConstValue {
     Double(u64),
     /// String as UTF-16 code units.
     Str(Vec<u16>),
+    /// `EncodedType.ENCODED_NULL`: an explicit `null` static value (allowed for any field type,
+    /// not only reference types, since the bytecode just stores the "no value" marker).
+    Null,
 }
 
 impl ConstValue {

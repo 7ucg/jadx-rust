@@ -759,6 +759,11 @@ impl<'a> ClassGen<'a> {
             ConstValue::Float(bits) => code.add(&lit(i64::from(*bits as i32))?),
             ConstValue::Double(bits) => code.add(&lit(*bits as i64)?),
             ConstValue::Str(units) => code.add(&env.string_utils.unescape_string(units)),
+            ConstValue::Null => {
+                let lit =
+                    literal_to_string(0, ty, &env.string_utils, self.is_fallback_mode(), false)?;
+                code.add(&lit)
+            }
         };
         Ok(())
     }
