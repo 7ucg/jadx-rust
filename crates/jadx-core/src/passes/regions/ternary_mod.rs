@@ -5,10 +5,10 @@ use crate::model::condition::{is_false, is_true, CondMode, IfCondition};
 use crate::model::insn::{InsnArg, InsnId, InsnKind, InsnNode, InsnType, RegisterArg};
 use crate::model::region::{Container, RegionId, RegionKind};
 use crate::model::ssa::{ArgRef, SsaId};
-use crate::passes::code_shrink::code_shrink;
 use crate::passes::constructor::MethodEnv;
 use crate::passes::insn_utils::{is_const_insn, rebind_args, wrap_insn_into_arg};
 use crate::passes::regions::maker::Res;
+use crate::passes::regions::shrink_method as code_shrink;
 use crate::passes::regions::traversal::{traverse_iterative, traverse_method, RegionVisitor};
 use crate::passes::regions::utils::cflag;
 

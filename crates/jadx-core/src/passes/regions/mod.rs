@@ -37,7 +37,7 @@ pub fn run_region_stages(cfg: &mut MethodCfg, env: &MethodEnv, stage: u32) -> Re
         clean::clean_regions(cfg)?;
     }
     if stage >= 16 {
-        crate::passes::code_shrink::code_shrink(cfg)?;
+        shrink_method(cfg)?;
     }
     Ok(())
 }
@@ -71,6 +71,12 @@ pub fn region_maker_visitor(cfg: &mut MethodCfg, env: &MethodEnv) -> Res<()> {
     Ok(())
 }
 
+/// `CodeShrinkVisitor.shrinkMethod`: also clears the shrink request.
+pub fn shrink_method(cfg: &mut MethodCfg) -> Res<()> {
+    cfg.regions.request_code_shrink = false;
+    crate::passes::code_shrink::code_shrink(cfg)
+}
+
 fn process_force_inline_insns(cfg: &mut MethodCfg) -> Res<()> {
     let need_shrink = cfg.blocks.iter().any(|b| {
         cfg.block(*b)
@@ -79,7 +85,7 @@ fn process_force_inline_insns(cfg: &mut MethodCfg) -> Res<()> {
             .any(|i| cfg.insn(*i).contains_flag(iflag::FORCE_ASSIGN_INLINE))
     });
     if need_shrink {
-        crate::passes::code_shrink::code_shrink(cfg)?;
+        shrink_method(cfg)?;
     }
     Ok(())
 }
