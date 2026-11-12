@@ -150,6 +150,9 @@ impl jadx_input_api::InsnResolver for crate::file::DexFile {
     fn string(&self, idx: u32) -> std::result::Result<String, String> {
         DexFile::string(self, idx).map_err(|e| e.to_string())
     }
+    fn string_utf16(&self, idx: u32) -> std::result::Result<Vec<u16>, String> {
+        DexFile::string_utf16(self, idx).map_err(|e| e.to_string())
+    }
     fn type_desc(&self, idx: u32) -> std::result::Result<String, String> {
         self.type_descriptor(idx).map_err(|e| e.to_string())
     }

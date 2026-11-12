@@ -24,7 +24,7 @@ fn err<T>(msg: impl Into<String>) -> Result<T, DecodeError> {
 pub struct MethodCtx {
     pub return_type: ArgType,
     pub parent_class: ClassInfo,
-    pub root: std::sync::Arc<crate::root::RootCtx>,
+    pub root: std::sync::Arc<crate::model::node::Root>,
 }
 
 /// Decoded instruction array indexed by code-unit offset (`None` at non-instruction offsets).
@@ -76,7 +76,7 @@ impl<'a> InsnDecoder<'a> {
 
     fn class_info(&self, desc: &str) -> Result<ClassInfo, DecodeError> {
         let ty = ArgType::parse(desc).map_err(|e| DecodeError::Msg(e.to_string()))?;
-        self.ctx.root.class_info(&ty).map_err(DecodeError::Msg)
+        self.ctx.root.ctx.class_info(&ty).map_err(DecodeError::Msg)
     }
 
     fn parse_type(&self, desc: &str) -> Result<ArgType, DecodeError> {
@@ -90,6 +90,14 @@ impl<'a> InsnDecoder<'a> {
             name: f.name,
             ty: self.parse_type(&f.ty)?,
         })
+    }
+
+    /// Declared type of the field if it is defined in the input (may carry generics).
+    fn resolved_field_type(&self, fld: &FieldInfo) -> ArgType {
+        match self.ctx.root.resolve_field(fld) {
+            Some(node) => node.ty.clone(),
+            None => fld.ty.clone(),
+        }
     }
 
     fn method_info(&self, idx: u32) -> Result<MethodInfo, DecodeError> {
@@ -153,7 +161,10 @@ impl<'a> InsnDecoder<'a> {
                 one(InsnType::Const, Some(reg_arg(0, ty)?), lit)
             }
             O::ConstString => {
-                let s = self.resolver.string(insn.index).map_err(DecodeError::Msg)?;
+                let s = self
+                    .resolver
+                    .string_utf16(insn.index)
+                    .map_err(DecodeError::Msg)?;
                 let mut n = InsnNode::new(InsnType::ConstStr, InsnKind::ConstStr(s));
                 n.result = Some(reg_arg(0, ArgType::string())?);
                 n
@@ -316,7 +327,7 @@ impl<'a> InsnDecoder<'a> {
             O::Iget => {
                 let fld = self.field_info(insn.index)?;
                 let decl_type = fld.decl_class.arg_type().clone();
-                let ty = fld.ty.clone();
+                let ty = self.resolved_field_type(&fld);
                 let mut n = InsnNode::new(InsnType::Iget, InsnKind::Index(IndexValue::Field(fld)));
                 n.result = Some(reg_arg(0, ty)?);
                 n.args.push(arg(1, decl_type)?);
@@ -325,7 +336,7 @@ impl<'a> InsnDecoder<'a> {
             O::Iput => {
                 let fld = self.field_info(insn.index)?;
                 let decl_type = fld.decl_class.arg_type().clone();
-                let ty = fld.ty.clone();
+                let ty = self.resolved_field_type(&fld);
                 let mut n = InsnNode::new(InsnType::Iput, InsnKind::Index(IndexValue::Field(fld)));
                 n.args.push(arg(0, ty)?);
                 n.args.push(arg(1, decl_type)?);
@@ -333,14 +344,14 @@ impl<'a> InsnDecoder<'a> {
             }
             O::Sget => {
                 let fld = self.field_info(insn.index)?;
-                let ty = fld.ty.clone();
+                let ty = self.resolved_field_type(&fld);
                 let mut n = InsnNode::new(InsnType::Sget, InsnKind::Index(IndexValue::Field(fld)));
                 n.result = Some(reg_arg(0, ty)?);
                 n
             }
             O::Sput => {
                 let fld = self.field_info(insn.index)?;
-                let ty = fld.ty.clone();
+                let ty = self.resolved_field_type(&fld);
                 let mut n = InsnNode::new(InsnType::Sput, InsnKind::Index(IndexValue::Field(fld)));
                 n.args.push(arg(0, ty)?);
                 n

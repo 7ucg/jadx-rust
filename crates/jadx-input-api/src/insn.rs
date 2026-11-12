@@ -97,9 +97,46 @@ pub struct MethodProtoData {
 /// Resolves the index operands of [`InsnData`] against the input's constant tables.
 pub trait InsnResolver {
     fn string(&self, idx: u32) -> Result<String, String>;
+    /// String as UTF-16 code units (exact, including unpaired surrogates).
+    fn string_utf16(&self, idx: u32) -> Result<Vec<u16>, String>;
     /// Type descriptor (`Ljava/lang/String;`, `[I`).
     fn type_desc(&self, idx: u32) -> Result<String, String>;
     fn field(&self, idx: u32) -> Result<FieldRefData, String>;
     fn method(&self, idx: u32) -> Result<MethodRefData, String>;
     fn proto(&self, idx: u32) -> Result<MethodProtoData, String>;
+}
+
+/// Field of a class as read from the input.
+#[derive(Debug, Clone)]
+pub struct FieldData {
+    pub name: String,
+    /// Type descriptor.
+    pub ty: String,
+    pub access_flags: u32,
+    /// Generic signature (`dalvik.annotation.Signature`), joined to one string.
+    pub signature: Option<String>,
+}
+
+/// Method of a class as read from the input.
+#[derive(Debug, Clone)]
+pub struct MethodData {
+    pub name: String,
+    pub arg_types: Vec<String>,
+    pub return_type: String,
+    pub access_flags: u32,
+    pub signature: Option<String>,
+    /// Input specific location of the code, `None` for abstract/native methods.
+    pub code_offset: Option<u32>,
+}
+
+/// Class as read from the input (members only, code is loaded on demand).
+#[derive(Debug, Clone)]
+pub struct ClassData {
+    pub type_desc: String,
+    pub access_flags: u32,
+    pub super_type: Option<String>,
+    pub interfaces: Vec<String>,
+    pub signature: Option<String>,
+    pub fields: Vec<FieldData>,
+    pub methods: Vec<MethodData>,
 }

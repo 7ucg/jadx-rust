@@ -1,7 +1,7 @@
 //! Root context: the set of classes defined in the input, used to resolve class names
 //! (inner class detection depends on whether the outer class exists).
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::model::info::ClassInfo;
 use crate::model::types::ArgType;
@@ -11,6 +11,8 @@ use crate::model::types::ArgType;
 pub struct RootCtx {
     /// Dotted raw names of all defined classes (`com.a.Outer$Inner`).
     defined: HashSet<String>,
+    /// Method names per defined class (used to detect `Cls$method$1` style classes).
+    method_names: HashMap<String, HashSet<String>>,
     /// Root option `moveInnerClasses` (default true).
     pub move_inner_classes: bool,
 }
@@ -19,6 +21,7 @@ impl RootCtx {
     pub fn new(move_inner_classes: bool) -> Self {
         RootCtx {
             defined: HashSet::new(),
+            method_names: HashMap::new(),
             move_inner_classes,
         }
     }
@@ -26,6 +29,13 @@ impl RootCtx {
     pub fn add_class(&mut self, descriptor: &str) {
         self.defined
             .insert(crate::model::types::clean_object_name(descriptor));
+    }
+
+    pub fn add_method_name(&mut self, descriptor: &str, name: &str) {
+        self.method_names
+            .entry(crate::model::types::clean_object_name(descriptor))
+            .or_default()
+            .insert(name.to_string());
     }
 
     pub fn is_defined(&self, raw_name: &str) -> bool {
@@ -54,6 +64,26 @@ impl RootCtx {
             format!("{pkg}.{}", &short[..sep])
         };
         if self.is_defined(&raw) && !self.is_defined(&parent_raw) {
+            // outer class missing: maybe the "outer" is a method of the real outer class
+            let naive = ClassInfo::from_type(ty, true).map_err(|e| e.0)?;
+            if let Some(par) = naive.parent_class() {
+                let par_full = par.full_name();
+                if let Some(dot) = par_full
+                    .rfind('.')
+                    .filter(|d| *d > 0 && *d != par_full.len() - 1)
+                {
+                    let (upper, mth) = (&par_full[..dot], &par_full[dot + 1..]);
+                    if self
+                        .method_names
+                        .get(upper)
+                        .is_some_and(|m| m.contains(mth))
+                    {
+                        let upper_info = self.class_info(&ArgType::object(upper))?;
+                        return ClassInfo::new_converted_inner(ty, upper_info, true)
+                            .map_err(|e| e.0);
+                    }
+                }
+            }
             return Ok(norm);
         }
         let parent = self.class_info(&ArgType::object(&parent_raw))?;

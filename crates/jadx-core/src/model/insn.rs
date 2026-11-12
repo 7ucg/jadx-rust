@@ -368,7 +368,8 @@ pub enum InsnKind {
         def: i32,
     },
     SwitchData(SwitchData),
-    ConstStr(String),
+    /// String as UTF-16 code units.
+    ConstStr(Vec<u16>),
     ConstClass(ArgType),
     Index(IndexValue),
     Invoke {

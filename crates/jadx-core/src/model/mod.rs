@@ -2,6 +2,7 @@
 
 pub mod info;
 pub mod insn;
+pub mod node;
 pub mod types;
 
 pub use info::{ClassInfo, FieldInfo, MethodInfo};

@@ -28,6 +28,9 @@ fn main() -> Result<()> {
     for w in &res.warnings {
         eprintln!("warning: {w}");
     }
+    if cmd == "insn-nodes" {
+        return insn_nodes(&res.dex_files);
+    }
     for dex in &res.dex_files {
         match cmd.as_str() {
             "dex-info" => dex_info(dex),
@@ -46,7 +49,6 @@ fn main() -> Result<()> {
             "smali" => dex_smali(dex)?,
             "dex-opcodes" => dex_opcodes(dex)?,
             "insn-dump" => insn_dump(dex)?,
-            "insn-nodes" => insn_nodes(dex)?,
             _ => dex_classes(dex)?,
         }
     }
@@ -245,51 +247,39 @@ fn insn_dump(dex: &DexFile) -> Result<()> {
 
 /// Decode every method with the core decoder + `ProcessInstructions` and dump the nodes
 /// (oracle comparison format, see `jadx_core::dump`).
-fn insn_nodes(dex: &DexFile) -> Result<()> {
+fn insn_nodes(dexes: &[DexFile]) -> Result<()> {
     use jadx_core::decode::{InsnDecoder, MethodCtx};
     use jadx_core::dump::dump_insn;
-    use jadx_core::model::info::make_short_id;
-    use jadx_core::model::types::ArgType;
     use jadx_core::passes::process_insns::process_instructions;
     use std::io::Write;
 
     let stdout = std::io::stdout();
     let mut out = std::io::BufWriter::new(stdout.lock());
-    let mut root = jadx_core::root::RootCtx::new(true);
-    for def in dex.class_defs() {
-        root.add_class(&dex.type_descriptor(def?.class_idx)?);
+    let mut classes = Vec::new();
+    let mut class_dex = Vec::new();
+    for (i, dex) in dexes.iter().enumerate() {
+        for def in dex.class_defs() {
+            classes.push(dex.class_api(&def?)?);
+            class_dex.push(i);
+        }
     }
+    let mut root =
+        jadx_core::model::node::Root::build(classes, true).map_err(|e| anyhow::anyhow!(e))?;
+    jadx_core::passes::signature::process_signatures(&mut root);
+    jadx_core::passes::override_methods::process_overrides(&mut root);
     let root = std::sync::Arc::new(root);
-    for def in dex.class_defs() {
-        let def = def?;
-        let Some(data) = dex.class_data(&def)? else {
-            continue;
-        };
-        let cls_type = dex.type_descriptor(def.class_idx)?;
-        let parent = root
-            .class_info(&ArgType::object(&cls_type))
-            .map_err(|e| anyhow::anyhow!(e))?;
-        for m in data.direct_methods.iter().chain(&data.virtual_methods) {
-            if m.code_off == 0 {
+    for (ci, cls) in root.classes.iter().enumerate() {
+        let dex = &dexes[class_dex[ci]];
+        for m in &cls.methods {
+            let Some(code_off) = m.code_offset else {
                 continue;
-            }
-            let mr = dex.method_ref(m.method_idx)?;
-            let args: Vec<ArgType> = mr
-                .arg_types
-                .iter()
-                .map(|a| ArgType::parse(a))
-                .collect::<Result<_, _>>()?;
-            let ret = ArgType::parse(&mr.return_type)?;
-            let id = format!(
-                "{}.{}",
-                parent.raw_full_name(),
-                make_short_id(&mr.name, &args, Some(&ret))
-            );
-            let code = dex.code_item(m.code_off)?;
+            };
+            let id = format!("{}.{}", cls.info.raw_name(), m.info.short_id());
+            let code = dex.code_item(code_off)?;
             let raw = jadx_dex_input::insns::decode_insn_data(&code.insns)?;
             let ctx = MethodCtx {
-                return_type: ret,
-                parent_class: parent.clone(),
+                return_type: m.return_type.clone(),
+                parent_class: cls.info.clone(),
                 root: root.clone(),
             };
             let decoded = InsnDecoder::new(dex, &ctx).process(&raw, code.insns.len());

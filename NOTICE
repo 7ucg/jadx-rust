@@ -8,3 +8,6 @@ licensed under the Apache License, Version 2.0.
 The algorithms, pass ordering and data-model structure follow the original
 jadx design; the original Java sources are used as a behavioural reference
 (oracle) and are not part of this repository.
+
+crates/jadx-core/resources/core.jcst is the class hierarchy data of the Android and Java
+framework classes shipped with jadx (Apache License 2.0, Copyright 2015 Skylot and contributors).

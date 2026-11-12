@@ -89,6 +89,24 @@ impl ClassInfo {
         })))
     }
 
+    /// Class converted to an inner class of `parent` although its naive outer class does not
+    /// exist (`Cls$mth$1` becomes inner of `Cls`). The full name keeps the naive structure.
+    pub fn new_converted_inner(
+        ty: &ArgType,
+        parent: ClassInfo,
+        can_be_inner: bool,
+    ) -> Result<ClassInfo, InfoError> {
+        let ty = check_class_type(ty)?;
+        let naive = Self::split(ty.clone(), can_be_inner);
+        Ok(ClassInfo(Arc::new(ClassInfoInner {
+            ty,
+            name: naive.name,
+            pkg: None,
+            full_name: naive.full_name,
+            parent: Some(parent),
+        })))
+    }
+
     fn split(ty: ArgType, can_be_inner: bool) -> ClassInfoInner {
         let full_object_name = ty.object_name().unwrap_or_default();
         let (cls_pkg, mut cls_name) = match full_object_name.rfind('.') {

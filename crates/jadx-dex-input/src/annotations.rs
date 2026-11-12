@@ -264,3 +264,75 @@ impl DexFile {
         Ok(out)
     }
 }
+
+impl DexFile {
+    /// Extract the generic signature (`dalvik.annotation.Signature`) from an annotation list.
+    fn signature_of(&self, anns: &[Annotation]) -> Result<Option<String>> {
+        for a in anns {
+            if self.type_descriptor(a.annotation.type_idx)? != "Ldalvik/annotation/Signature;" {
+                continue;
+            }
+            for (name_idx, value) in &a.annotation.elements {
+                if self.string(*name_idx)? != "value" {
+                    continue;
+                }
+                if let EncodedValue::Array(parts) = value {
+                    let mut sig = String::new();
+                    for p in parts {
+                        if let EncodedValue::String(i) = p {
+                            sig.push_str(&self.string(*i)?);
+                        }
+                    }
+                    return Ok(Some(sig));
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    /// Class members in the form handed to the decompiler core (no code, only locations).
+    pub fn class_api(&self, def: &ClassDef) -> Result<jadx_input_api::ClassData> {
+        use jadx_input_api::{ClassData, FieldData, MethodData};
+        let anns = self.class_annotations(def)?;
+        let data = self.class_data(def)?.unwrap_or_default();
+        let mut fields = Vec::new();
+        for f in data.static_fields.iter().chain(&data.instance_fields) {
+            let fr = self.field_ref(f.field_idx)?;
+            let signature = match anns.fields.get(&f.field_idx) {
+                Some(l) => self.signature_of(l)?,
+                None => None,
+            };
+            fields.push(FieldData {
+                name: fr.name,
+                ty: fr.ty,
+                access_flags: f.access_flags,
+                signature,
+            });
+        }
+        let mut methods = Vec::new();
+        for m in data.direct_methods.iter().chain(&data.virtual_methods) {
+            let mr = self.method_ref(m.method_idx)?;
+            let signature = match anns.methods.get(&m.method_idx) {
+                Some(l) => self.signature_of(l)?,
+                None => None,
+            };
+            methods.push(MethodData {
+                name: mr.name,
+                arg_types: mr.arg_types,
+                return_type: mr.return_type,
+                access_flags: m.access_flags,
+                signature,
+                code_offset: (m.code_off != 0).then_some(m.code_off),
+            });
+        }
+        Ok(ClassData {
+            type_desc: self.type_descriptor(def.class_idx)?,
+            access_flags: def.access_flags,
+            super_type: self.opt_type_descriptor(def.superclass_idx)?,
+            interfaces: self.type_list(def.interfaces_off)?,
+            signature: self.signature_of(&anns.class)?,
+            fields,
+            methods,
+        })
+    }
+}

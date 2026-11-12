@@ -110,7 +110,7 @@ pub fn dump_insn(n: &InsnNode) -> String {
             );
         }
         InsnKind::ConstStr(v) => {
-            let units: Vec<String> = v.encode_utf16().map(|u| format!("{u:x}")).collect();
+            let units: Vec<String> = v.iter().map(|u| format!("{u:x}")).collect();
             let _ = write!(s, " str=[{}]", units.join(","));
         }
         InsnKind::ConstClass(t) => {
