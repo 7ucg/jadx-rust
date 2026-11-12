@@ -1,0 +1,181 @@
+android:accessibilityDataSensitive	E	0=auto 1=yes 2=no
+android:accessibilityEventTypes	F	1=typeViewClicked 2=typeViewLongClicked 4=typeViewSelected 8=typeViewFocused 16=typeViewTextChanged 32=typeWindowStateChanged 64=typeNotificationStateChanged 128=typeViewHoverEnter 256=typeViewHoverExit 512=typeTouchExplorationGestureStart 1024=typeTouchExplorationGestureEnd 2048=typeWindowContentChanged 4096=typeViewScrolled 8192=typeViewTextSelectionChanged 16384=typeAnnouncement 32768=typeViewAccessibilityFocused 65536=typeViewAccessibilityFocusCleared 131072=typeViewTextTraversedAtMovementGranularity 262144=typeGestureDetectionStart 524288=typeGestureDetectionEnd 1048576=typeTouchInteractionStart 2097152=typeTouchInteractionEnd 4194304=typeWindowsChanged 8388608=typeContextClicked 16777216=typeAssistReadingContext 4294967295=typeAllMask
+android:accessibilityFeedbackType	F	1=feedbackSpoken 2=feedbackHaptic 4=feedbackAudible 8=feedbackVisual 16=feedbackGeneric 4294967295=feedbackAllMask
+android:accessibilityFlags	F	1=flagDefault 2=flagIncludeNotImportantViews 4=flagRequestTouchExplorationMode 8=flagRequestEnhancedWebAccessibility 16=flagReportViewIds 32=flagRequestFilterKeyEvents 64=flagRetrieveInteractiveWindows 128=flagEnableAccessibilityVolume 256=flagRequestAccessibilityButton 512=flagRequestFingerprintGestures 1024=flagRequestShortcutWarningDialogSpokenFeedback 2048=flagServiceHandlesDoubleTap 4096=flagRequestMultiFingerGestures 16384=flagSendMotionEvents 32768=flagInputMethodEditor
+android:accessibilityLiveRegion	E	0=none 1=polite 2=assertive
+android:actionBarSize	E	0=wrap_content
+android:alignmentMode	E	0=alignBounds 1=alignMargins
+android:alphabeticModifiers	F	65536=META 4096=CTRL 2=ALT 1=SHIFT 4=SYM 8=FUNCTION
+android:animationOrder	E	0=normal 1=reverse 2=random
+android:appCategory	E	0=game 1=audio 2=video 3=image 4=social 5=news 6=maps 7=productivity 8=accessibility
+android:autoLink	F	0=none 1=web 2=email 4=phone 8=map 15=all
+android:autoRevokePermissions	E	0=allowed 1=discouraged 2=disallowed
+android:autoSizeTextType	E	0=none 1=uniform
+android:backgroundTintMode	E	3=src_over 5=src_in 9=src_atop 14=multiply 15=screen 16=add
+android:breakStrategy	E	0=simple 1=high_quality 2=balanced
+android:bufferType	E	0=normal 1=spannable 2=editable
+android:buttonGravity	F	48=top 80=bottom
+android:buttonTintMode	E	3=src_over 5=src_in 9=src_atop 14=multiply 15=screen 16=add
+android:calendarViewMode	E	0=holo 1=material
+android:capitalize	E	0=none 1=sentences 2=words 3=characters
+android:checkMarkGravity	F	3=left 5=right 8388611=start 8388613=end
+android:checkMarkTintMode	E	3=src_over 5=src_in 9=src_atop 14=multiply 15=screen 16=add
+android:checkableBehavior	E	0=none 1=all 2=single
+android:choiceMode	E	0=none 1=singleChoice 2=multipleChoice 3=multipleChoiceModal
+android:clipOrientation	F	1=horizontal 2=vertical
+android:colorMode	E	0=default 1=wideColorGamut 2=hdr
+android:configChanges	F	1=mcc 2=mnc 4=locale 8=touchscreen 16=keyboard 32=keyboardHidden 64=navigation 128=orientation 256=screenLayout 512=uiMode 1024=screenSize 2048=smallestScreenSize 4096=density 8192=layoutDirection 16384=colorMode 32768=grammaticalGender 1073741824=fontScale 268435456=fontWeightAdjustment 2147483648=assetsPaths 134217728=resourcesUnused
+android:contentSensitivity	E	0=auto 1=sensitive 2=notSensitive
+android:controllerType	E	0=normal 1=micro
+android:datePickerMode	E	1=spinner 2=calendar
+android:descendantFocusability	E	0=beforeDescendants 1=afterDescendants 2=blocksDescendants
+android:dialTintMode	E	3=src_over 5=src_in 9=src_atop 14=multiply 15=screen 16=add
+android:direction	F	0=top_to_bottom 1=right_to_left 2=bottom_to_top
+android:directionPriority	E	0=none 1=column 2=row
+android:displayOptions	F	0=none 1=useLogo 2=showHome 4=homeAsUp 8=showTitle 16=showCustom 32=disableHome
+android:documentLaunchMode	E	0=none 1=intoExisting 2=always 3=never
+android:drawableTintMode	E	3=src_over 5=src_in 9=src_atop 14=multiply 15=screen 16=add
+android:drawingCacheQuality	E	0=auto 1=low 2=high
+android:dreamCategory	F	0=none 1=low_light 2=home_panel
+android:dropDownHeight	E	-1=match_parent -2=wrap_content
+android:dropDownWidth	E	-1=match_parent -2=wrap_content
+android:ellipsize	E	0=none 1=start 2=middle 3=end 4=marquee
+android:fadingEdge	F	0=none 4096=horizontal 8192=vertical
+android:fadingMode	E	1=fade_in 2=fade_out 3=fade_in_out
+android:fastScrollOverlayPosition	E	0=floating 1=atThumb 2=aboveThumb
+android:fillType	E	0=nonZero 1=evenOdd
+android:focusable	E	16=auto
+android:fontStyle	E	0=normal 1=italic
+android:foregroundGravity	F	48=top 80=bottom 3=left 5=right 16=center_vertical 112=fill_vertical 1=center_horizontal 7=fill_horizontal 17=center 119=fill 128=clip_vertical 8=clip_horizontal
+android:foregroundServiceType	F	1=dataSync 2=mediaPlayback 4=phoneCall 8=location 16=connectedDevice 32=mediaProjection 64=camera 128=microphone 256=health 512=remoteMessaging 1024=systemExempted 2048=shortService 8192=mediaProcessing 1073741824=specialUse
+android:foregroundTintMode	E	3=src_over 5=src_in 9=src_atop 14=multiply 15=screen 16=add
+android:gestureStrokeType	E	0=single 1=multiple
+android:gravity	F	48=top 80=bottom 3=left 5=right 16=center_vertical 112=fill_vertical 1=center_horizontal 7=fill_horizontal 17=center 119=fill 128=clip_vertical 8=clip_horizontal 8388611=start 8388613=end
+android:gwpAsanMode	E	-1=default 0=never 1=always
+android:hand_hourTintMode	E	3=src_over 5=src_in 9=src_atop 14=multiply 15=screen 16=add
+android:hand_minuteTintMode	E	3=src_over 5=src_in 9=src_atop 14=multiply 15=screen 16=add
+android:hand_secondTintMode	E	3=src_over 5=src_in 9=src_atop 14=multiply 15=screen 16=add
+android:hyphenationFrequency	E	0=none 1=normal 2=full 3=normalFast 4=fullFast
+android:iconTintMode	E	3=src_over 5=src_in 9=src_atop 14=multiply 15=screen 16=add
+android:imeOptions	F	0=actionUnspecified 1=actionNone 2=actionGo 3=actionSearch 4=actionSend 5=actionNext 6=actionDone 7=actionPrevious 16777216=flagNoPersonalizedLearning 33554432=flagNoFullscreen 67108864=flagNavigatePrevious 134217728=flagNavigateNext 268435456=flagNoExtractUi 536870912=flagNoAccessoryAction 1073741824=flagNoEnterAction 2147483648=flagForceAscii
+android:importantForAccessibility	E	0=auto 1=yes 2=no 4=noHideDescendants
+android:importantForAutofill	F	0=auto 1=yes 2=no 4=yesExcludeDescendants 8=noExcludeDescendants
+android:importantForContentCapture	F	0=auto 1=yes 2=no 4=yesExcludeDescendants 8=noExcludeDescendants
+android:indeterminateBehavior	E	1=repeat 2=cycle
+android:indeterminateTintMode	E	3=src_over 5=src_in 9=src_atop 14=multiply 15=screen 16=add
+android:inputType	F	0=none 1=text 4097=textCapCharacters 8193=textCapWords 16385=textCapSentences 32769=textAutoCorrect 65537=textAutoComplete 131073=textMultiLine 262145=textImeMultiLine 524289=textNoSuggestions 1048577=textEnableTextConversionSuggestions 17=textUri 33=textEmailAddress 49=textEmailSubject 65=textShortMessage 81=textLongMessage 97=textPersonName 113=textPostalAddress 129=textPassword 145=textVisiblePassword 161=textWebEditText 177=textFilter 193=textPhonetic 209=textWebEmailAddress 225=textWebPassword 2=number 4098=numberSigned 8194=numberDecimal 18=numberPassword 3=phone 4=datetime 20=date 36=time
+android:installLocation	E	0=auto 1=internalOnly 2=preferExternal
+android:intentMatchingFlags	F	1=none 2=enforceIntentFilter 4=allowNullAction
+android:justificationMode	E	0=none 1=inter_word 2=inter_character
+android:keyEdgeFlags	F	1=left 2=right
+android:keyboardLayoutType	E	1=qwerty 2=qwertz 3=azerty 4=dvorak 5=colemak 6=workman 7=turkish_q 8=turkish_f 9=extended
+android:keycode	E	0=KEYCODE_UNKNOWN 1=KEYCODE_SOFT_LEFT 2=KEYCODE_SOFT_RIGHT 3=KEYCODE_HOME 4=KEYCODE_BACK 5=KEYCODE_CALL 6=KEYCODE_ENDCALL 7=KEYCODE_0 8=KEYCODE_1 9=KEYCODE_2 10=KEYCODE_3 11=KEYCODE_4 12=KEYCODE_5 13=KEYCODE_6 14=KEYCODE_7 15=KEYCODE_8 16=KEYCODE_9 17=KEYCODE_STAR 18=KEYCODE_POUND 19=KEYCODE_DPAD_UP 20=KEYCODE_DPAD_DOWN 21=KEYCODE_DPAD_LEFT 22=KEYCODE_DPAD_RIGHT 23=KEYCODE_DPAD_CENTER 24=KEYCODE_VOLUME_UP 25=KEYCODE_VOLUME_DOWN 26=KEYCODE_POWER 27=KEYCODE_CAMERA 28=KEYCODE_CLEAR 29=KEYCODE_A 30=KEYCODE_B 31=KEYCODE_C 32=KEYCODE_D 33=KEYCODE_E 34=KEYCODE_F 35=KEYCODE_G 36=KEYCODE_H 37=KEYCODE_I 38=KEYCODE_J 39=KEYCODE_K 40=KEYCODE_L 41=KEYCODE_M 42=KEYCODE_N 43=KEYCODE_O 44=KEYCODE_P 45=KEYCODE_Q 46=KEYCODE_R 47=KEYCODE_S 48=KEYCODE_T 49=KEYCODE_U 50=KEYCODE_V 51=KEYCODE_W 52=KEYCODE_X 53=KEYCODE_Y 54=KEYCODE_Z 55=KEYCODE_COMMA 56=KEYCODE_PERIOD 57=KEYCODE_ALT_LEFT 58=KEYCODE_ALT_RIGHT 59=KEYCODE_SHIFT_LEFT 60=KEYCODE_SHIFT_RIGHT 61=KEYCODE_TAB 62=KEYCODE_SPACE 63=KEYCODE_SYM 64=KEYCODE_EXPLORER 65=KEYCODE_ENVELOPE 66=KEYCODE_ENTER 67=KEYCODE_DEL 68=KEYCODE_GRAVE 69=KEYCODE_MINUS 70=KEYCODE_EQUALS 71=KEYCODE_LEFT_BRACKET 72=KEYCODE_RIGHT_BRACKET 73=KEYCODE_BACKSLASH 74=KEYCODE_SEMICOLON 75=KEYCODE_APOSTROPHE 76=KEYCODE_SLASH 77=KEYCODE_AT 78=KEYCODE_NUM 79=KEYCODE_HEADSETHOOK 80=KEYCODE_FOCUS 81=KEYCODE_PLUS 82=KEYCODE_MENU 83=KEYCODE_NOTIFICATION 84=KEYCODE_SEARCH 85=KEYCODE_MEDIA_PLAY_PAUSE 86=KEYCODE_MEDIA_STOP 87=KEYCODE_MEDIA_NEXT 88=KEYCODE_MEDIA_PREVIOUS 89=KEYCODE_MEDIA_REWIND 90=KEYCODE_MEDIA_FAST_FORWARD 91=KEYCODE_MUTE 92=KEYCODE_PAGE_UP 93=KEYCODE_PAGE_DOWN 94=KEYCODE_PICTSYMBOLS 95=KEYCODE_SWITCH_CHARSET 96=KEYCODE_BUTTON_A 97=KEYCODE_BUTTON_B 98=KEYCODE_BUTTON_C 99=KEYCODE_BUTTON_X 100=KEYCODE_BUTTON_Y 101=KEYCODE_BUTTON_Z 102=KEYCODE_BUTTON_L1 103=KEYCODE_BUTTON_R1 104=KEYCODE_BUTTON_L2 105=KEYCODE_BUTTON_R2 106=KEYCODE_BUTTON_THUMBL 107=KEYCODE_BUTTON_THUMBR 108=KEYCODE_BUTTON_START 109=KEYCODE_BUTTON_SELECT 110=KEYCODE_BUTTON_MODE 111=KEYCODE_ESCAPE 112=KEYCODE_FORWARD_DEL 113=KEYCODE_CTRL_LEFT 114=KEYCODE_CTRL_RIGHT 115=KEYCODE_CAPS_LOCK 116=KEYCODE_SCROLL_LOCK 117=KEYCODE_META_LEFT 118=KEYCODE_META_RIGHT 119=KEYCODE_FUNCTION 120=KEYCODE_SYSRQ 121=KEYCODE_BREAK 122=KEYCODE_MOVE_HOME 123=KEYCODE_MOVE_END 124=KEYCODE_INSERT 125=KEYCODE_FORWARD 126=KEYCODE_MEDIA_PLAY 127=KEYCODE_MEDIA_PAUSE 128=KEYCODE_MEDIA_CLOSE 129=KEYCODE_MEDIA_EJECT 130=KEYCODE_MEDIA_RECORD 131=KEYCODE_F1 132=KEYCODE_F2 133=KEYCODE_F3 134=KEYCODE_F4 135=KEYCODE_F5 136=KEYCODE_F6 137=KEYCODE_F7 138=KEYCODE_F8 139=KEYCODE_F9 140=KEYCODE_F10 141=KEYCODE_F11 142=KEYCODE_F12 143=KEYCODE_NUM_LOCK 144=KEYCODE_NUMPAD_0 145=KEYCODE_NUMPAD_1 146=KEYCODE_NUMPAD_2 147=KEYCODE_NUMPAD_3 148=KEYCODE_NUMPAD_4 149=KEYCODE_NUMPAD_5 150=KEYCODE_NUMPAD_6 151=KEYCODE_NUMPAD_7 152=KEYCODE_NUMPAD_8 153=KEYCODE_NUMPAD_9 154=KEYCODE_NUMPAD_DIVIDE 155=KEYCODE_NUMPAD_MULTIPLY 156=KEYCODE_NUMPAD_SUBTRACT 157=KEYCODE_NUMPAD_ADD 158=KEYCODE_NUMPAD_DOT 159=KEYCODE_NUMPAD_COMMA 160=KEYCODE_NUMPAD_ENTER 161=KEYCODE_NUMPAD_EQUALS 162=KEYCODE_NUMPAD_LEFT_PAREN 163=KEYCODE_NUMPAD_RIGHT_PAREN 164=KEYCODE_VOLUME_MUTE 165=KEYCODE_INFO 166=KEYCODE_CHANNEL_UP 167=KEYCODE_CHANNEL_DOWN 168=KEYCODE_ZOOM_IN 169=KEYCODE_ZOOM_OUT 170=KEYCODE_TV 171=KEYCODE_WINDOW 172=KEYCODE_GUIDE 173=KEYCODE_DVR 174=KEYCODE_BOOKMARK 175=KEYCODE_CAPTIONS 176=KEYCODE_SETTINGS 177=KEYCODE_TV_POWER 178=KEYCODE_TV_INPUT 179=KEYCODE_STB_POWER 180=KEYCODE_STB_INPUT 181=KEYCODE_AVR_POWER 182=KEYCODE_AVR_INPUT 183=KEYCODE_PROG_GRED 184=KEYCODE_PROG_GREEN 185=KEYCODE_PROG_YELLOW 186=KEYCODE_PROG_BLUE 187=KEYCODE_APP_SWITCH 188=KEYCODE_BUTTON_1 189=KEYCODE_BUTTON_2 190=KEYCODE_BUTTON_3 191=KEYCODE_BUTTON_4 192=KEYCODE_BUTTON_5 193=KEYCODE_BUTTON_6 194=KEYCODE_BUTTON_7 195=KEYCODE_BUTTON_8 196=KEYCODE_BUTTON_9 197=KEYCODE_BUTTON_10 198=KEYCODE_BUTTON_11 199=KEYCODE_BUTTON_12 200=KEYCODE_BUTTON_13 201=KEYCODE_BUTTON_14 202=KEYCODE_BUTTON_15 203=KEYCODE_BUTTON_16 204=KEYCODE_LANGUAGE_SWITCH 205=KEYCODE_MANNER_MODE 206=KEYCODE_3D_MODE 207=KEYCODE_CONTACTS 208=KEYCODE_CALENDAR 209=KEYCODE_MUSIC 210=KEYCODE_CALCULATOR 211=KEYCODE_ZENKAKU_HANKAKU 212=KEYCODE_EISU 213=KEYCODE_MUHENKAN 214=KEYCODE_HENKAN 215=KEYCODE_KATAKANA_HIRAGANA 216=KEYCODE_YEN 217=KEYCODE_RO 218=KEYCODE_KANA 219=KEYCODE_ASSIST 220=KEYCODE_BRIGHTNESS_DOWN 221=KEYCODE_BRIGHTNESS_UP 222=KEYCODE_MEDIA_AUDIO_TRACK 223=KEYCODE_MEDIA_SLEEP 224=KEYCODE_MEDIA_WAKEUP 225=KEYCODE_PAIRING 226=KEYCODE_MEDIA_TOP_MENU 227=KEYCODE_11 228=KEYCODE_12 229=KEYCODE_LAST_CHANNEL 230=KEYCODE_TV_DATA_SERVICE 231=KEYCODE_VOICE_ASSIST 232=KEYCODE_TV_RADIO_SERVICE 233=KEYCODE_TV_TELETEXT 234=KEYCODE_TV_NUMBER_ENTRY 235=KEYCODE_TV_TERRESTRIAL_ANALOG 236=KEYCODE_TV_TERRESTRIAL_DIGITAL 237=KEYCODE_TV_SATELLITE 238=KEYCODE_TV_SATELLITE_BS 239=KEYCODE_TV_SATELLITE_CS 240=KEYCODE_TV_SATELLITE_SERVICE 241=KEYCODE_TV_NETWORK 242=KEYCODE_TV_ANTENNA_CABLE 243=KEYCODE_TV_INPUT_HDMI_1 244=KEYCODE_TV_INPUT_HDMI_2 245=KEYCODE_TV_INPUT_HDMI_3 246=KEYCODE_TV_INPUT_HDMI_4 247=KEYCODE_TV_INPUT_COMPOSITE_1 248=KEYCODE_TV_INPUT_COMPOSITE_2 249=KEYCODE_TV_INPUT_COMPONENT_1 250=KEYCODE_TV_INPUT_COMPONENT_2 251=KEYCODE_TV_INPUT_VGA_1 252=KEYCODE_TV_AUDIO_DESCRIPTION 253=KEYCODE_TV_AUDIO_DESCRIPTION_MIX_UP 254=KEYCODE_TV_AUDIO_DESCRIPTION_MIX_DOWN 255=KEYCODE_TV_ZOOM_MODE 256=KEYCODE_TV_CONTENTS_MENU 257=KEYCODE_TV_MEDIA_CONTEXT_MENU 258=KEYCODE_TV_TIMER_PROGRAMMING 259=KEYCODE_HELP 260=KEYCODE_NAVIGATE_PREVIOUS 261=KEYCODE_NAVIGATE_NEXT 262=KEYCODE_NAVIGATE_IN 263=KEYCODE_NAVIGATE_OUT 264=KEYCODE_STEM_PRIMARY 265=KEYCODE_STEM_1 266=KEYCODE_STEM_2 267=KEYCODE_STEM_3 268=KEYCODE_DPAD_UP_LEFT 269=KEYCODE_DPAD_DOWN_LEFT 270=KEYCODE_DPAD_UP_RIGHT 271=KEYCODE_DPAD_DOWN_RIGHT 272=KEYCODE_MEDIA_SKIP_FORWARD 273=KEYCODE_MEDIA_SKIP_BACKWARD 274=KEYCODE_MEDIA_STEP_FORWARD 275=KEYCODE_MEDIA_STEP_BACKWARD 276=KEYCODE_SOFT_SLEEP 277=KEYCODE_CUT 278=KEYCODE_COPY 279=KEYCODE_PASTE 280=KEYCODE_SYSTEM_NAVIGATION_UP 281=KEYCODE_SYSTEM_NAVIGATION_DOWN 282=KEYCODE_SYSTEM_NAVIGATION_LEFT 283=KEYCODE_SYSTEM_NAVIGATION_RIGHT 284=KEYCODE_ALL_APPS 285=KEYCODE_REFRESH 286=KEYCODE_THUMBS_UP 287=KEYCODE_THUMBS_DOWN 288=KEYCODE_PROFILE_SWITCH 289=KEYCODE_VIDEO_APP_1 290=KEYCODE_VIDEO_APP_2 291=KEYCODE_VIDEO_APP_3 292=KEYCODE_VIDEO_APP_4 293=KEYCODE_VIDEO_APP_5 294=KEYCODE_VIDEO_APP_6 295=KEYCODE_VIDEO_APP_7 296=KEYCODE_VIDEO_APP_8 297=KEYCODE_FEATURED_APP_1 298=KEYCODE_FEATURED_APP_2 299=KEYCODE_FEATURED_APP_3 300=KEYCODE_FEATURED_APP_4 301=KEYCODE_DEMO_APP_1 302=KEYCODE_DEMO_APP_2 303=KEYCODE_DEMO_APP_3 304=KEYCODE_DEMO_APP_4 305=KEYCODE_KEYBOARD_BACKLIGHT_DOWN 306=KEYCODE_KEYBOARD_BACKLIGHT_UP 307=KEYCODE_KEYBOARD_BACKLIGHT_TOGGLE 308=KEYCODE_STYLUS_BUTTON_PRIMARY 309=KEYCODE_STYLUS_BUTTON_SECONDARY 310=KEYCODE_STYLUS_BUTTON_TERTIARY 311=KEYCODE_STYLUS_BUTTON_TAIL 312=KEYCODE_RECENT_APPS 313=KEYCODE_MACRO_1 314=KEYCODE_MACRO_2 315=KEYCODE_MACRO_3 316=KEYCODE_MACRO_4 317=KEYCODE_EMOJI_PICKER 318=KEYCODE_SCREENSHOT
+android:launchMode	E	0=standard 1=singleTop 2=singleTask 3=singleInstance 4=singleInstancePerTask
+android:layerType	E	0=none 1=software 2=hardware
+android:layoutDirection	E	0=ltr 1=rtl 2=inherit 3=locale
+android:layoutMode	E	0=clipBounds 1=opticalBounds
+android:layout_childType	E	0=none 1=widget 2=challenge 3=userSwitcher 4=scrim 5=widgets 6=expandChallengeHandle 7=pageDeleteDropTarget
+android:layout_gravity	F	48=top 80=bottom 3=left 5=right 16=center_vertical 112=fill_vertical 1=center_horizontal 7=fill_horizontal 17=center 119=fill 128=clip_vertical 8=clip_horizontal 8388611=start 8388613=end
+android:layout_height	E	-1=match_parent -2=wrap_content
+android:layout_width	E	-1=match_parent -2=wrap_content
+android:lineBreakStyle	E	0=none 1=loose 2=normal 3=strict
+android:lineBreakWordStyle	E	0=none 1=phrase
+android:lockTaskMode	E	0=normal 1=never 2=always 3=if_whitelisted
+android:marqueeRepeatLimit	E	-1=marquee_forever
+android:mediaRouteTypes	E	1=liveAudio 8388608=user
+android:memtagMode	E	-1=default 0=off 1=async 2=sync
+android:menuCategory	E	65536=container 131072=system 196608=secondary 262144=alternative
+android:mode	E	1=oneLine 2=collapsing 3=twoLine
+android:modifier	E	65536=META 4096=CTRL 2=ALT 1=SHIFT 4=SYM 8=FUNCTION 1048576=CAPS_LOCK 2097152=NUM_LOCK 4194304=SCROLL_LOCK
+android:modifierState	F	65536=META 4096=CTRL 2=ALT 1=SHIFT 4=SYM 8=FUNCTION 1048576=CAPS_LOCK 2097152=NUM_LOCK 4194304=SCROLL_LOCK
+android:navigationMode	E	0=normal 1=listMode 2=tabMode
+android:notificationHeaderAppNameVisibility	E	0=visible 1=invisible 2=gone
+android:numColumns	E	-1=auto_fit
+android:numeric	F	1=integer 3=signed 5=decimal
+android:numericModifiers	F	65536=META 4096=CTRL 2=ALT 1=SHIFT 4=SYM 8=FUNCTION
+android:opacity	E	-1=opaque -2=transparent -3=translucent
+android:ordering	E	0=together 1=sequentially
+android:orientation	E	0=horizontal 1=vertical
+android:outKeycode	E	0=KEYCODE_UNKNOWN 1=KEYCODE_SOFT_LEFT 2=KEYCODE_SOFT_RIGHT 3=KEYCODE_HOME 4=KEYCODE_BACK 5=KEYCODE_CALL 6=KEYCODE_ENDCALL 7=KEYCODE_0 8=KEYCODE_1 9=KEYCODE_2 10=KEYCODE_3 11=KEYCODE_4 12=KEYCODE_5 13=KEYCODE_6 14=KEYCODE_7 15=KEYCODE_8 16=KEYCODE_9 17=KEYCODE_STAR 18=KEYCODE_POUND 19=KEYCODE_DPAD_UP 20=KEYCODE_DPAD_DOWN 21=KEYCODE_DPAD_LEFT 22=KEYCODE_DPAD_RIGHT 23=KEYCODE_DPAD_CENTER 24=KEYCODE_VOLUME_UP 25=KEYCODE_VOLUME_DOWN 26=KEYCODE_POWER 27=KEYCODE_CAMERA 28=KEYCODE_CLEAR 29=KEYCODE_A 30=KEYCODE_B 31=KEYCODE_C 32=KEYCODE_D 33=KEYCODE_E 34=KEYCODE_F 35=KEYCODE_G 36=KEYCODE_H 37=KEYCODE_I 38=KEYCODE_J 39=KEYCODE_K 40=KEYCODE_L 41=KEYCODE_M 42=KEYCODE_N 43=KEYCODE_O 44=KEYCODE_P 45=KEYCODE_Q 46=KEYCODE_R 47=KEYCODE_S 48=KEYCODE_T 49=KEYCODE_U 50=KEYCODE_V 51=KEYCODE_W 52=KEYCODE_X 53=KEYCODE_Y 54=KEYCODE_Z 55=KEYCODE_COMMA 56=KEYCODE_PERIOD 57=KEYCODE_ALT_LEFT 58=KEYCODE_ALT_RIGHT 59=KEYCODE_SHIFT_LEFT 60=KEYCODE_SHIFT_RIGHT 61=KEYCODE_TAB 62=KEYCODE_SPACE 63=KEYCODE_SYM 64=KEYCODE_EXPLORER 65=KEYCODE_ENVELOPE 66=KEYCODE_ENTER 67=KEYCODE_DEL 68=KEYCODE_GRAVE 69=KEYCODE_MINUS 70=KEYCODE_EQUALS 71=KEYCODE_LEFT_BRACKET 72=KEYCODE_RIGHT_BRACKET 73=KEYCODE_BACKSLASH 74=KEYCODE_SEMICOLON 75=KEYCODE_APOSTROPHE 76=KEYCODE_SLASH 77=KEYCODE_AT 78=KEYCODE_NUM 79=KEYCODE_HEADSETHOOK 80=KEYCODE_FOCUS 81=KEYCODE_PLUS 82=KEYCODE_MENU 83=KEYCODE_NOTIFICATION 84=KEYCODE_SEARCH 85=KEYCODE_MEDIA_PLAY_PAUSE 86=KEYCODE_MEDIA_STOP 87=KEYCODE_MEDIA_NEXT 88=KEYCODE_MEDIA_PREVIOUS 89=KEYCODE_MEDIA_REWIND 90=KEYCODE_MEDIA_FAST_FORWARD 91=KEYCODE_MUTE 92=KEYCODE_PAGE_UP 93=KEYCODE_PAGE_DOWN 94=KEYCODE_PICTSYMBOLS 95=KEYCODE_SWITCH_CHARSET 96=KEYCODE_BUTTON_A 97=KEYCODE_BUTTON_B 98=KEYCODE_BUTTON_C 99=KEYCODE_BUTTON_X 100=KEYCODE_BUTTON_Y 101=KEYCODE_BUTTON_Z 102=KEYCODE_BUTTON_L1 103=KEYCODE_BUTTON_R1 104=KEYCODE_BUTTON_L2 105=KEYCODE_BUTTON_R2 106=KEYCODE_BUTTON_THUMBL 107=KEYCODE_BUTTON_THUMBR 108=KEYCODE_BUTTON_START 109=KEYCODE_BUTTON_SELECT 110=KEYCODE_BUTTON_MODE 111=KEYCODE_ESCAPE 112=KEYCODE_FORWARD_DEL 113=KEYCODE_CTRL_LEFT 114=KEYCODE_CTRL_RIGHT 115=KEYCODE_CAPS_LOCK 116=KEYCODE_SCROLL_LOCK 117=KEYCODE_META_LEFT 118=KEYCODE_META_RIGHT 119=KEYCODE_FUNCTION 120=KEYCODE_SYSRQ 121=KEYCODE_BREAK 122=KEYCODE_MOVE_HOME 123=KEYCODE_MOVE_END 124=KEYCODE_INSERT 125=KEYCODE_FORWARD 126=KEYCODE_MEDIA_PLAY 127=KEYCODE_MEDIA_PAUSE 128=KEYCODE_MEDIA_CLOSE 129=KEYCODE_MEDIA_EJECT 130=KEYCODE_MEDIA_RECORD 131=KEYCODE_F1 132=KEYCODE_F2 133=KEYCODE_F3 134=KEYCODE_F4 135=KEYCODE_F5 136=KEYCODE_F6 137=KEYCODE_F7 138=KEYCODE_F8 139=KEYCODE_F9 140=KEYCODE_F10 141=KEYCODE_F11 142=KEYCODE_F12 143=KEYCODE_NUM_LOCK 144=KEYCODE_NUMPAD_0 145=KEYCODE_NUMPAD_1 146=KEYCODE_NUMPAD_2 147=KEYCODE_NUMPAD_3 148=KEYCODE_NUMPAD_4 149=KEYCODE_NUMPAD_5 150=KEYCODE_NUMPAD_6 151=KEYCODE_NUMPAD_7 152=KEYCODE_NUMPAD_8 153=KEYCODE_NUMPAD_9 154=KEYCODE_NUMPAD_DIVIDE 155=KEYCODE_NUMPAD_MULTIPLY 156=KEYCODE_NUMPAD_SUBTRACT 157=KEYCODE_NUMPAD_ADD 158=KEYCODE_NUMPAD_DOT 159=KEYCODE_NUMPAD_COMMA 160=KEYCODE_NUMPAD_ENTER 161=KEYCODE_NUMPAD_EQUALS 162=KEYCODE_NUMPAD_LEFT_PAREN 163=KEYCODE_NUMPAD_RIGHT_PAREN 164=KEYCODE_VOLUME_MUTE 165=KEYCODE_INFO 166=KEYCODE_CHANNEL_UP 167=KEYCODE_CHANNEL_DOWN 168=KEYCODE_ZOOM_IN 169=KEYCODE_ZOOM_OUT 170=KEYCODE_TV 171=KEYCODE_WINDOW 172=KEYCODE_GUIDE 173=KEYCODE_DVR 174=KEYCODE_BOOKMARK 175=KEYCODE_CAPTIONS 176=KEYCODE_SETTINGS 177=KEYCODE_TV_POWER 178=KEYCODE_TV_INPUT 179=KEYCODE_STB_POWER 180=KEYCODE_STB_INPUT 181=KEYCODE_AVR_POWER 182=KEYCODE_AVR_INPUT 183=KEYCODE_PROG_GRED 184=KEYCODE_PROG_GREEN 185=KEYCODE_PROG_YELLOW 186=KEYCODE_PROG_BLUE 187=KEYCODE_APP_SWITCH 188=KEYCODE_BUTTON_1 189=KEYCODE_BUTTON_2 190=KEYCODE_BUTTON_3 191=KEYCODE_BUTTON_4 192=KEYCODE_BUTTON_5 193=KEYCODE_BUTTON_6 194=KEYCODE_BUTTON_7 195=KEYCODE_BUTTON_8 196=KEYCODE_BUTTON_9 197=KEYCODE_BUTTON_10 198=KEYCODE_BUTTON_11 199=KEYCODE_BUTTON_12 200=KEYCODE_BUTTON_13 201=KEYCODE_BUTTON_14 202=KEYCODE_BUTTON_15 203=KEYCODE_BUTTON_16 204=KEYCODE_LANGUAGE_SWITCH 205=KEYCODE_MANNER_MODE 206=KEYCODE_3D_MODE 207=KEYCODE_CONTACTS 208=KEYCODE_CALENDAR 209=KEYCODE_MUSIC 210=KEYCODE_CALCULATOR 211=KEYCODE_ZENKAKU_HANKAKU 212=KEYCODE_EISU 213=KEYCODE_MUHENKAN 214=KEYCODE_HENKAN 215=KEYCODE_KATAKANA_HIRAGANA 216=KEYCODE_YEN 217=KEYCODE_RO 218=KEYCODE_KANA 219=KEYCODE_ASSIST 220=KEYCODE_BRIGHTNESS_DOWN 221=KEYCODE_BRIGHTNESS_UP 222=KEYCODE_MEDIA_AUDIO_TRACK 223=KEYCODE_MEDIA_SLEEP 224=KEYCODE_MEDIA_WAKEUP 225=KEYCODE_PAIRING 226=KEYCODE_MEDIA_TOP_MENU 227=KEYCODE_11 228=KEYCODE_12 229=KEYCODE_LAST_CHANNEL 230=KEYCODE_TV_DATA_SERVICE 231=KEYCODE_VOICE_ASSIST 232=KEYCODE_TV_RADIO_SERVICE 233=KEYCODE_TV_TELETEXT 234=KEYCODE_TV_NUMBER_ENTRY 235=KEYCODE_TV_TERRESTRIAL_ANALOG 236=KEYCODE_TV_TERRESTRIAL_DIGITAL 237=KEYCODE_TV_SATELLITE 238=KEYCODE_TV_SATELLITE_BS 239=KEYCODE_TV_SATELLITE_CS 240=KEYCODE_TV_SATELLITE_SERVICE 241=KEYCODE_TV_NETWORK 242=KEYCODE_TV_ANTENNA_CABLE 243=KEYCODE_TV_INPUT_HDMI_1 244=KEYCODE_TV_INPUT_HDMI_2 245=KEYCODE_TV_INPUT_HDMI_3 246=KEYCODE_TV_INPUT_HDMI_4 247=KEYCODE_TV_INPUT_COMPOSITE_1 248=KEYCODE_TV_INPUT_COMPOSITE_2 249=KEYCODE_TV_INPUT_COMPONENT_1 250=KEYCODE_TV_INPUT_COMPONENT_2 251=KEYCODE_TV_INPUT_VGA_1 252=KEYCODE_TV_AUDIO_DESCRIPTION 253=KEYCODE_TV_AUDIO_DESCRIPTION_MIX_UP 254=KEYCODE_TV_AUDIO_DESCRIPTION_MIX_DOWN 255=KEYCODE_TV_ZOOM_MODE 256=KEYCODE_TV_CONTENTS_MENU 257=KEYCODE_TV_MEDIA_CONTEXT_MENU 258=KEYCODE_TV_TIMER_PROGRAMMING 259=KEYCODE_HELP 260=KEYCODE_NAVIGATE_PREVIOUS 261=KEYCODE_NAVIGATE_NEXT 262=KEYCODE_NAVIGATE_IN 263=KEYCODE_NAVIGATE_OUT 264=KEYCODE_STEM_PRIMARY 265=KEYCODE_STEM_1 266=KEYCODE_STEM_2 267=KEYCODE_STEM_3 268=KEYCODE_DPAD_UP_LEFT 269=KEYCODE_DPAD_DOWN_LEFT 270=KEYCODE_DPAD_UP_RIGHT 271=KEYCODE_DPAD_DOWN_RIGHT 272=KEYCODE_MEDIA_SKIP_FORWARD 273=KEYCODE_MEDIA_SKIP_BACKWARD 274=KEYCODE_MEDIA_STEP_FORWARD 275=KEYCODE_MEDIA_STEP_BACKWARD 276=KEYCODE_SOFT_SLEEP 277=KEYCODE_CUT 278=KEYCODE_COPY 279=KEYCODE_PASTE 280=KEYCODE_SYSTEM_NAVIGATION_UP 281=KEYCODE_SYSTEM_NAVIGATION_DOWN 282=KEYCODE_SYSTEM_NAVIGATION_LEFT 283=KEYCODE_SYSTEM_NAVIGATION_RIGHT 284=KEYCODE_ALL_APPS 285=KEYCODE_REFRESH 286=KEYCODE_THUMBS_UP 287=KEYCODE_THUMBS_DOWN 288=KEYCODE_PROFILE_SWITCH 289=KEYCODE_VIDEO_APP_1 290=KEYCODE_VIDEO_APP_2 291=KEYCODE_VIDEO_APP_3 292=KEYCODE_VIDEO_APP_4 293=KEYCODE_VIDEO_APP_5 294=KEYCODE_VIDEO_APP_6 295=KEYCODE_VIDEO_APP_7 296=KEYCODE_VIDEO_APP_8 297=KEYCODE_FEATURED_APP_1 298=KEYCODE_FEATURED_APP_2 299=KEYCODE_FEATURED_APP_3 300=KEYCODE_FEATURED_APP_4 301=KEYCODE_DEMO_APP_1 302=KEYCODE_DEMO_APP_2 303=KEYCODE_DEMO_APP_3 304=KEYCODE_DEMO_APP_4 305=KEYCODE_KEYBOARD_BACKLIGHT_DOWN 306=KEYCODE_KEYBOARD_BACKLIGHT_UP 307=KEYCODE_KEYBOARD_BACKLIGHT_TOGGLE 308=KEYCODE_STYLUS_BUTTON_PRIMARY 309=KEYCODE_STYLUS_BUTTON_SECONDARY 310=KEYCODE_STYLUS_BUTTON_TERTIARY 311=KEYCODE_STYLUS_BUTTON_TAIL 312=KEYCODE_RECENT_APPS 313=KEYCODE_MACRO_1 314=KEYCODE_MACRO_2 315=KEYCODE_MACRO_3 316=KEYCODE_MACRO_4 317=KEYCODE_EMOJI_PICKER 318=KEYCODE_SCREENSHOT
+android:outlineProvider	E	0=background 1=none 2=bounds 3=paddedBounds
+android:overScrollMode	E	0=always 1=ifContentScrolls 2=never
+android:paddingMode	E	0=nest 1=stack
+android:pageSizeCompat	E	32=enabled 64=disabled
+android:permissionFlags	F	1=costsMoney 2=removed 4=hardRestricted 8=softRestricted 16=immutablyRestricted 32=installerExemptIgnored
+android:permissionGroupFlags	F	1=personalInfo
+android:persistableMode	E	0=persistRootOnly 1=persistNever 2=persistAcrossReboots
+android:persistentDrawingCache	F	0=none 1=animation 2=scrolling 3=all
+android:pointerIcon	E	0=none 1000=arrow 1001=context_menu 1002=hand 1003=help 1004=wait 1006=cell 1007=crosshair 1008=text 1009=vertical_text 1010=alias 1011=copy 1012=no_drop 1013=all_scroll 1014=horizontal_double_arrow 1015=vertical_double_arrow 1016=top_right_diagonal_double_arrow 1017=top_left_diagonal_double_arrow 1018=zoom_in 1019=zoom_out 1020=grab 1021=grabbing 1022=handwriting
+android:position	E	0=floating 1=atThumb 2=aboveThumb
+android:progressBackgroundTintMode	E	3=src_over 5=src_in 9=src_atop 14=multiply 15=screen 16=add
+android:progressTintMode	E	3=src_over 5=src_in 9=src_atop 14=multiply 15=screen 16=add
+android:protectionLevel	F	0=normal 1=dangerous 2=signature 3=signatureOrSystem 4=internal 16=system 32=development 64=appop 128=pre23 256=installer 512=verifier 1024=preinstalled 2048=setup 4096=instant 8192=runtime 16384=oem 32768=vendorPrivileged 65536=textClassifier 524288=configurator 1048576=incidentReportApprover 2097152=appPredictor 4194304=module 8388608=companion 16777216=retailDemo 33554432=recents 67108864=role 134217728=knownSigner
+android:quickContactWindowSize	E	1=modeSmall 2=modeMedium 3=modeLarge
+android:recreateOnConfigChanges	F	1=mcc 2=mnc
+android:relativeTimeDisambiguationText	F	1=past 2=future
+android:relativeTimeUnitDisplayLength	E	0=shortest 1=medium
+android:repeatCount	E	-1=infinite
+android:repeatMode	E	1=restart 2=reverse
+android:reqKeyboardType	E	0=undefined 1=nokeys 2=qwerty 3=twelvekey
+android:reqNavigation	E	0=undefined 1=nonav 2=dpad 3=trackball 4=wheel
+android:reqTouchScreen	E	0=undefined 1=notouch 2=stylus 3=finger
+android:requireContentUriPermissionFromCaller	E	0=none 1=read 2=write 3=readOrWrite 4=readAndWrite
+android:requiresFadingEdge	F	0=none 4096=horizontal 8192=vertical
+android:resizeMode	F	0=none 1=horizontal 2=vertical
+android:restrictionType	E	0=hidden 1=bool 2=choice 4=multi-select 5=integer 6=string 7=bundle 8=bundle_array
+android:ringtoneType	F	1=ringtone 2=notification 4=alarm 7=all
+android:rollbackDataPolicy	E	0=restore 1=wipe 2=retain
+android:rotationAnimation	F	0=rotate 1=crossfade 2=jumpcut 3=seamless
+android:rowEdgeFlags	F	4=top 8=bottom
+android:scaleGravity	F	48=top 80=bottom 3=left 5=right 16=center_vertical 112=fill_vertical 1=center_horizontal 7=fill_horizontal 17=center 119=fill 128=clip_vertical 8=clip_horizontal 8388611=start 8388613=end
+android:scaleType	E	0=matrix 1=fitXY 2=fitStart 3=fitCenter 4=fitEnd 5=center 6=centerCrop 7=centerInside
+android:screenDensity	E	120=ldpi 160=mdpi 240=hdpi 320=xhdpi 480=xxhdpi 640=xxxhdpi
+android:screenOrientation	E	-1=unspecified 0=landscape 1=portrait 2=user 3=behind 4=sensor 5=nosensor 6=sensorLandscape 7=sensorPortrait 8=reverseLandscape 9=reversePortrait 10=fullSensor 11=userLandscape 12=userPortrait 13=fullUser 14=locked
+android:screenSize	E	200=small 300=normal 400=large 500=xlarge
+android:scrollCaptureHint	F	0=auto 1=include 2=exclude 4=excludeDescendants
+android:scrollIndicators	F	0=none 1=top 2=bottom 4=left 8=right 16=start 32=end
+android:scrollbarStyle	E	0=insideOverlay 16777216=insideInset 33554432=outsideOverlay 50331648=outsideInset
+android:scrollbars	F	0=none 256=horizontal 512=vertical
+android:searchKeyphraseRecognitionFlags	F	0=none 1=voiceTrigger 2=userIdentification
+android:searchMode	F	4=showSearchLabelAsBadge 8=showSearchIconAsBadge 16=queryRewriteFromData 32=queryRewriteFromText
+android:secondaryProgressTintMode	E	3=src_over 5=src_in 9=src_atop 14=multiply 15=screen 16=add
+android:shape	E	0=rectangle 1=oval 2=line 3=ring 4=arc
+android:showAsAction	F	0=never 1=ifRoom 2=always 4=withText 8=collapseActionView
+android:showDividers	F	0=none 1=beginning 2=middle 4=end
+android:slideEdge	E	3=left 48=top 5=right 80=bottom 8388611=start 8388613=end
+android:spinnerMode	E	0=dialog 1=dropdown
+android:streamType	E	0=voice 1=system 2=ring 3=music 4=alarm
+android:stretchMode	E	0=none 1=spacingWidth 2=columnWidth 3=spacingWidthUniform
+android:strokeCap	E	0=butt 1=round 2=square
+android:strokeLineCap	E	0=butt 1=round 2=square
+android:strokeLineJoin	E	0=miter 1=round 2=bevel
+android:textAlignment	E	0=inherit 1=gravity 2=textStart 3=textEnd 4=center 5=viewStart 6=viewEnd
+android:textDirection	E	0=inherit 1=firstStrong 2=anyRtl 3=ltr 4=rtl 5=locale 6=firstStrongLtr 7=firstStrongRtl
+android:textStyle	F	0=normal 1=bold 2=italic
+android:thumbPosition	E	0=midpoint 1=inside
+android:thumbTintMode	E	3=src_over 5=src_in 9=src_atop 14=multiply 15=screen 16=add
+android:tickMarkTintMode	E	3=src_over 5=src_in 9=src_atop 14=multiply 15=screen 16=add
+android:tileMode	E	-1=disabled 0=clamp 1=repeat 2=mirror
+android:tileModeX	E	-1=disabled 0=clamp 1=repeat 2=mirror
+android:tileModeY	E	-1=disabled 0=clamp 1=repeat 2=mirror
+android:timePickerMode	E	1=spinner 2=clock
+android:tintMode	E	3=src_over 5=src_in 9=src_atop 14=multiply 15=screen 16=add
+android:trackTintMode	E	3=src_over 5=src_in 9=src_atop 14=multiply 15=screen 16=add
+android:transcriptMode	E	0=disabled 1=normal 2=alwaysScroll
+android:transitionOrdering	E	0=together 1=sequential
+android:transitionVisibilityMode	F	1=mode_in 2=mode_out
+android:type	E	0=linear 1=radial 2=sweep
+android:typeface	E	0=normal 1=sans 2=serif 3=monospace
+android:uiOptions	F	0=none 1=splitActionBarWhenNarrow
+android:usesPermissionFlags	F	65536=neverForLocation
+android:valueType	E	0=floatType 1=intType 2=pathType 3=colorType
+android:verticalScrollbarPosition	E	0=defaultPosition 1=left 2=right
+android:viewType	E	0=surfaceView 1=textureView
+android:visibility	E	0=visible 1=invisible 2=gone
+android:voiceSearchMode	F	1=showVoiceSearchButton 2=launchWebSearch 4=launchRecognizer
+android:widgetCategory	F	1=home_screen 2=keyguard 4=searchbox 8=not_keyguard
+android:widgetFeatures	F	1=reconfigurable 2=hide_from_picker 4=configuration_optional
+android:windowLayoutInDisplayCutoutMode	E	0=default 1=shortEdges 2=never 3=always
+android:windowSoftInputMode	F	0=adjustUnspecified 1=stateUnchanged 2=stateHidden 3=stateAlwaysHidden 4=stateVisible 5=stateAlwaysVisible 16=adjustResize 32=adjustPan 48=adjustNothing
+android:windowSplashScreenBehavior	E	0=default 1=icon_preferred
+android:zAdjustment	E	0=normal 1=top -1=bottom

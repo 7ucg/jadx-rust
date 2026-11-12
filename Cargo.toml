@@ -5,6 +5,7 @@ members = [
     "crates/jadx-api",
     "crates/jadx-input-api",
     "crates/jadx-dex-input",
+    "crates/jadx-resources",
     "crates/jadx-java-input",
     "crates/jadx-cli",
     "crates/jadx-mcp",
@@ -26,6 +27,7 @@ jadx-core = { path = "crates/jadx-core" }
 jadx-api = { path = "crates/jadx-api" }
 jadx-input-api = { path = "crates/jadx-input-api" }
 jadx-dex-input = { path = "crates/jadx-dex-input" }
+jadx-resources = { path = "crates/jadx-resources" }
 
 [profile.release]
 lto = "thin"
