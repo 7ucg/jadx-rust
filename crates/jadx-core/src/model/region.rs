@@ -34,7 +34,7 @@ impl CaseKey {
     pub fn text(&self) -> String {
         match self {
             CaseKey::Int(i) => i.to_string(),
-            CaseKey::Str(s) => format!("{s:?}"),
+            CaseKey::Str(s) => s.clone(),
             CaseKey::Default => "default".to_string(),
         }
     }

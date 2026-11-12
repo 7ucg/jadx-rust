@@ -184,9 +184,23 @@ public class RegionDump {
 			SwitchRegion r = (SwitchRegion) c;
 			sb.append("SWITCH header=").append(r.getHeader().getCId()).append(" flags=[").append(flags).append(']').append(exh)
 					.append('\n');
+			// keys replaced by constant fields (ModVisitor) are printed as their int values
+			java.util.IdentityHashMap<Object, Integer> keyValues = new java.util.IdentityHashMap<>();
+			InsnNode swLast = r.getHeader().getInstructions().isEmpty() ? null
+					: r.getHeader().getInstructions().get(r.getHeader().getInstructions().size() - 1);
+			if (swLast instanceof SwitchInsn) {
+				SwitchInsn si = (SwitchInsn) swLast;
+				int[] ks = si.getKeys();
+				for (int i = 0; i < ks.length; i++) {
+					keyValues.put(si.getKey(i), ks[i]);
+				}
+			}
 			for (SwitchRegion.CaseInfo ci : r.getCases()) {
 				indent(sb, ind + 1);
-				sb.append("CASE [").append(ci.getKeys().stream().map(k -> k == SwitchRegion.DEFAULT_CASE_KEY ? "default" : k.toString())
+				sb.append("CASE [").append(ci.getKeys().stream()
+						.map(k -> k == SwitchRegion.DEFAULT_CASE_KEY ? "default"
+								: (k instanceof Integer || k instanceof String || !keyValues.containsKey(k) ? k.toString()
+										: Integer.toString(keyValues.get(k))))
 						.collect(Collectors.joining(","))).append("]\n");
 				container(sb, ci.getContainer(), ind + 2);
 			}
