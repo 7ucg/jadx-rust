@@ -6,6 +6,7 @@ pub mod clean;
 pub mod if_maker;
 pub mod if_visitor;
 pub mod loop_maker;
+pub mod loop_visitor;
 pub mod maker;
 pub mod post_process;
 pub mod switch_break;
@@ -43,6 +44,9 @@ pub fn run_region_stages(cfg: &mut MethodCfg, env: &MethodEnv, stage: u32) -> Re
     }
     if stage >= 17 {
         check::check_regions(cfg)?;
+    }
+    if stage >= 18 {
+        loop_visitor::loop_region_visitor(cfg, env)?;
     }
     if stage >= 19 {
         switch_break::switch_break_visitor(cfg, env)?;

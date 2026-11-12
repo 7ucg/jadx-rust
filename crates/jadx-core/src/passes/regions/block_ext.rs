@@ -545,6 +545,89 @@ pub fn get_path_cross2(
     }
 }
 
+/// `BlockUtils.foundWrappedInsn`: the (parent instruction, argument index) wrapping `insn`.
+pub fn found_wrapped_insn(
+    cfg: &MethodCfg,
+    container: InsnId,
+    insn: InsnId,
+) -> Option<(InsnId, usize)> {
+    for (k, arg) in cfg.insn(container).args.iter().enumerate() {
+        if let InsnArg::Wrapped(w) = arg {
+            if w.insn == insn {
+                return Some((container, k));
+            }
+            if let Some(r) = found_wrapped_insn(cfg, w.insn, insn) {
+                return Some(r);
+            }
+        }
+    }
+    match &cfg.insn(container).kind {
+        InsnKind::TernaryCond(c) => found_wrapped_in_condition(cfg, c, insn),
+        InsnKind::Ternary { cond } => found_wrapped_insn(cfg, *cond, insn),
+        _ => None,
+    }
+}
+
+fn found_wrapped_in_condition(
+    cfg: &MethodCfg,
+    cond: &crate::model::condition::IfCondition,
+    insn: InsnId,
+) -> Option<(InsnId, usize)> {
+    if let Some(cmp) = cond.compare {
+        return found_wrapped_insn(cfg, cmp, insn);
+    }
+    cond.args
+        .iter()
+        .find_map(|c| found_wrapped_in_condition(cfg, c, insn))
+}
+
+/// `BlockUtils.searchWrappedInsnParent`
+pub fn search_wrapped_insn_parent(cfg: &MethodCfg, insn: InsnId) -> Option<(InsnId, usize)> {
+    if !cfg
+        .insn(insn)
+        .contains_flag(crate::model::insn::iflag::WRAPPED)
+    {
+        return None;
+    }
+    for &bn in &cfg.blocks {
+        for &bi in &cfg.block(bn).insns {
+            if let Some(r) = found_wrapped_insn(cfg, bi, insn) {
+                return Some(r);
+            }
+        }
+    }
+    None
+}
+
+/// `BlockUtils.getBlockByInsn` (also finds the block of wrapped instructions).
+pub fn block_by_insn_full(cfg: &MethodCfg, insn: InsnId) -> Option<BlockId> {
+    if cfg.insn(insn).ty == crate::model::insn::InsnType::Phi {
+        return cfg.blocks.iter().copied().find(|b| {
+            cfg.block(*b)
+                .phi_list
+                .as_ref()
+                .is_some_and(|l| l.contains(&insn))
+        });
+    }
+    if cfg
+        .insn(insn)
+        .contains_flag(crate::model::insn::iflag::WRAPPED)
+    {
+        for &bn in &cfg.blocks {
+            for &bi in &cfg.block(bn).insns {
+                if bi == insn || found_wrapped_insn(cfg, bi, insn).is_some() {
+                    return Some(bn);
+                }
+            }
+        }
+        return None;
+    }
+    cfg.blocks
+        .iter()
+        .copied()
+        .find(|b| cfg.block(*b).insns.contains(&insn))
+}
+
 /// Iteration order of a `HashSet<BlockNode>` filled with `items` in this order.
 pub fn java_hash_order(items: &[BlockId]) -> Vec<BlockId> {
     let mut set = crate::model::bitset::JavaIntSet::new();

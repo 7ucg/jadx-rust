@@ -39,7 +39,7 @@ fn init_code_var_for(cfg: &mut MethodCfg, at: ArgRef) {
     let _ = init_code_var(cfg, var);
 }
 
-fn init_code_var(cfg: &mut MethodCfg, var: SsaId) -> Result<(), String> {
+pub fn init_code_var(cfg: &mut MethodCfg, var: SsaId) -> Result<(), String> {
     if cfg.svars[var].code_var.is_some() {
         return Ok(());
     }
