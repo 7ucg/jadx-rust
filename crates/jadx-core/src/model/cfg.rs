@@ -265,6 +265,8 @@ pub struct MethodCfg {
     pub compute_post_dom: bool,
     /// `CodeFeature.SWITCH`
     pub has_switch: bool,
+    /// `CodeFeature.NEW_ARRAY`
+    pub has_new_array: bool,
     /// Method returns `void` (original, erased signature).
     pub void_return: bool,
     pub loop_infos: Vec<LoopInfo>,
@@ -300,6 +302,11 @@ pub struct MethodCfg {
     pub types_fixed: bool,
     /// Region tree and region related attributes.
     pub regions: super::region::Regions,
+    /// Arguments that the reference shares between two instructions (`IfCondition` splitting
+    /// moves an argument object into a new `if` and leaves it in the old instruction): old
+    /// location to the location of the parent the shared object belongs to.
+    pub arg_alias:
+        std::collections::HashMap<(super::insn::InsnId, usize), (super::insn::InsnId, usize)>,
 }
 
 /// Warnings added by `addWarn` (they also mark the method code as inconsistent), identified by

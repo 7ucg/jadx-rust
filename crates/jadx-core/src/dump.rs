@@ -32,7 +32,12 @@ fn reg(r: &RegisterArg, ctx: Ctx) -> String {
 fn arg(a: &InsnArg, ctx: Ctx) -> String {
     match a {
         InsnArg::Register(r) => reg(r, ctx),
-        InsnArg::Literal(l) => format!("#{}:{}", l.literal, l.ty),
+        InsnArg::Literal(l) => format!(
+            "#{}:{}{}",
+            l.literal,
+            l.ty,
+            if l.explicit_primitive { "^" } else { "" }
+        ),
         InsnArg::Wrapped(w) => {
             let inner = ctx
                 .cfg

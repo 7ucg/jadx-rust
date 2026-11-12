@@ -7,6 +7,7 @@
 mod cli;
 mod code_dump;
 mod dev;
+mod driver_dump;
 mod index_dump;
 mod input_dump;
 mod java_dump;

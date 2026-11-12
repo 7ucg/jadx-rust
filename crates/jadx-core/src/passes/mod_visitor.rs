@@ -442,7 +442,7 @@ fn check_arr_sizes(cfg: &MethodCfg, env: &MethodEnv, new_arr: InsnId, fill: Insn
 }
 
 /// `InsnUtils.getConstValueByArg`, only literal values are of interest here.
-fn const_literal_by_arg(cfg: &MethodCfg, env: &MethodEnv, arg: &InsnArg) -> Option<i64> {
+pub(crate) fn const_literal_by_arg(cfg: &MethodCfg, env: &MethodEnv, arg: &InsnArg) -> Option<i64> {
     match arg {
         InsnArg::Literal(l) => Some(l.literal),
         InsnArg::Register(r) => {
@@ -637,7 +637,7 @@ fn remove_check_cast(
 }
 
 /// `ArgType.isCastNeeded`
-fn is_cast_needed(env: &MethodEnv, from: &ArgType, to: &ArgType) -> bool {
+pub(crate) fn is_cast_needed(env: &MethodEnv, from: &ArgType, to: &ArgType) -> bool {
     if from == to {
         return false;
     }
@@ -646,7 +646,7 @@ fn is_cast_needed(env: &MethodEnv, from: &ArgType, to: &ArgType) -> bool {
         .is_narrow()
 }
 
-fn is_cast_duplicate(cfg: &MethodCfg, cast: InsnId) -> Option<InsnId> {
+pub(crate) fn is_cast_duplicate(cfg: &MethodCfg, cast: InsnId) -> Option<InsnId> {
     let InsnArg::Register(r) = cfg.insn(cast).args.first()? else {
         return None;
     };

@@ -94,7 +94,7 @@ public class InsnNodeDump {
 		}
 		if (a instanceof LiteralArg) {
 			LiteralArg l = (LiteralArg) a;
-			return "#" + l.getLiteral() + ":" + l.getType();
+			return "#" + l.getLiteral() + ":" + l.getType() + (l.contains(jadx.core.dex.attributes.AFlag.EXPLICIT_PRIMITIVE_TYPE) ? "^" : "");
 		}
 		return "?" + a;
 	}

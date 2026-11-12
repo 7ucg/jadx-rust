@@ -2,6 +2,7 @@
 
 pub mod access;
 pub mod class_dump;
+pub mod class_state_dump;
 pub mod clsp;
 pub mod codegen;
 pub mod decode;

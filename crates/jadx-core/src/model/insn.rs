@@ -258,6 +258,12 @@ pub struct RegisterArg {
     pub dont_inline: bool,
     /// `AFlag.SUPER`
     pub is_super: bool,
+    /// `AFlag.SYNTHETIC`
+    pub synthetic: bool,
+    /// `AFlag.REMOVE` on the argument (removed method argument)
+    pub remove: bool,
+    /// `AFlag.DONT_GENERATE` on the argument
+    pub dont_generate: bool,
     /// SSA variable this register belongs to (`RegisterArg.getSVar`).
     pub svar: Option<super::ssa::SsaId>,
 }
@@ -274,6 +280,9 @@ impl RegisterArg {
             dont_inline_const: false,
             dont_inline: false,
             is_super: false,
+            synthetic: false,
+            remove: false,
+            dont_generate: false,
             svar: None,
         }
     }
@@ -288,6 +297,9 @@ impl RegisterArg {
             dont_inline_const: false,
             dont_inline: false,
             is_super: false,
+            synthetic: false,
+            remove: false,
+            dont_generate: false,
             svar: None,
         }
     }
@@ -559,6 +571,15 @@ pub struct InsnNode {
     /// `AType.METHOD_DETAILS` (attached by `AttachMethodDetails`): the method the details were
     /// resolved for.
     pub details: Option<MethodInfo>,
+    /// `AType.GENERIC_INFO` (set by `GenericTypesVisitor` on constructor calls).
+    pub generic_info: Option<GenericInfo>,
+}
+
+/// `GenericInfoAttr`
+#[derive(Debug, Clone, PartialEq)]
+pub struct GenericInfo {
+    pub types: Vec<ArgType>,
+    pub explicit: bool,
 }
 
 impl InsnNode {
@@ -575,6 +596,7 @@ impl InsnNode {
             catch: None,
             exc_handler: None,
             details: None,
+            generic_info: None,
         }
     }
     pub fn plain(ty: InsnType) -> Self {
@@ -592,6 +614,7 @@ impl InsnNode {
             && self.catch.is_none()
             && self.exc_handler.is_none()
             && self.details.is_none()
+            && self.generic_info.is_none()
     }
 
     /// `copyAttributesFrom`: flags are merged, attributes of the other node replace ours.
@@ -611,6 +634,9 @@ impl InsnNode {
         }
         if other.details.is_some() {
             self.details = other.details.clone();
+        }
+        if other.generic_info.is_some() {
+            self.generic_info = other.generic_info.clone();
         }
     }
 

@@ -206,7 +206,15 @@ fn make_name_from_invoke(
     let InsnKind::Invoke { mth: call_mth, .. } = &insn.kind else {
         return None;
     };
-    let method_name = root.method_name(call_mth);
+    // the alias belongs to the `MethodInfo` of the declaring method only: a call through another
+    // class keeps the name of the call
+    let method_name = match root
+        .class_index(&call_mth.decl_class.raw_name())
+        .and_then(|c| root.classes[c].methods.iter().find(|m| m.info == *call_mth))
+    {
+        Some(m) => m.alias.clone().unwrap_or_else(|| m.info.name.clone()),
+        None => call_mth.name.clone(),
+    };
     let name = method_name.as_str();
     let decl_class = &call_mth.decl_class;
     if name == "getInstance" {

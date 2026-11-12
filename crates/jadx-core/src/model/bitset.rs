@@ -197,7 +197,13 @@ pub fn java_string_hash(s: &str) -> i32 {
 /// new keys are prepended to their bucket (unlike `put`) and the table is resized before an
 /// insertion when `size > threshold`. Returns indexes into `hashes`.
 pub fn java_hash_map_order_compute(hashes: &[i32]) -> Vec<usize> {
-    let mut cap = 16usize;
+    java_hash_map_order_compute_cap(hashes, 16)
+}
+
+/// Like [`java_hash_map_order_compute`] for a map created with `new HashMap<>(n)` (`initial_cap`
+/// is the table size selected by `HashMap.tableSizeFor(n)`).
+pub fn java_hash_map_order_compute_cap(hashes: &[i32], initial_cap: usize) -> Vec<usize> {
+    let mut cap = initial_cap.max(1);
     let mut table: Vec<Vec<usize>> = vec![Vec::new(); cap];
     let bucket = |h: i32, cap: usize| {
         let h = h as u32;

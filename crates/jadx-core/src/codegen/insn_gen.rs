@@ -977,6 +977,7 @@ impl<'m, 'a> InsnGen<'m, 'a> {
                 mode: CondMode::Compare,
                 args: Vec::new(),
                 compare: Some(*cond),
+                dont_wrap: false,
             },
             InsnKind::TernaryCond(c) => (**c).clone(),
             _ => return Err(CodegenError::new("Missing ternary condition")),

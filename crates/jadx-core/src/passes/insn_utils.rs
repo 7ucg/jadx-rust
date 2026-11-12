@@ -341,6 +341,84 @@ pub fn check_last_insn_type(cfg: &MethodCfg, block: BlockId, ty: InsnType) -> bo
     cfg.last_insn(block).is_some_and(|i| i.ty == ty)
 }
 
+/// `InsnArg.wrapInstruction(mth, insn)` for the argument (of any kind) at `parent[index]`.
+pub fn wrap_instruction_in_place(
+    cfg: &mut MethodCfg,
+    parent: InsnId,
+    index: usize,
+    insn: InsnId,
+) -> Result<(), String> {
+    if parent == insn {
+        return Ok(());
+    }
+    let had_result = cfg.insn(insn).result.is_some();
+    let old_ty = cfg.arg_type(ArgRef::Arg(parent, index));
+    let mut arg = wrap_insn_into_arg(cfg, insn)?;
+    let unknown = ArgType::unknown_any();
+    match &mut arg {
+        InsnArg::Literal(l) if l.ty == unknown => l.ty = old_ty,
+        InsnArg::Wrapped(w) if w.ty == unknown => w.ty = old_ty,
+        InsnArg::Named(n) if n.ty == unknown => n.ty = old_ty,
+        InsnArg::Register(r) => {
+            if let Some(v) = r.svar {
+                if cfg.svars[v].ty == unknown {
+                    cfg.svar_set_type(v, old_ty)?;
+                }
+            }
+        }
+        _ => {}
+    }
+    cfg.replace_arg(parent, index, arg);
+    if had_result && !cfg.insn(insn).contains_flag(iflag::FORCE_ASSIGN_INLINE) {
+        // result not needed in wrapped insn
+        cfg.unbind_result(insn)?;
+    }
+    Ok(())
+}
+
+/// `RegisterArg.sameRegAndSVar` for two register arguments.
+pub fn same_reg_and_svar(a: &RegisterArg, b: &RegisterArg) -> bool {
+    a.reg_num == b.reg_num && a.svar == b.svar
+}
+
+/// `InsnUtils.containsVar(InsnArg, RegisterArg)`
+pub fn arg_contains_var(cfg: &MethodCfg, arg: &InsnArg, var: &RegisterArg) -> bool {
+    match arg {
+        InsnArg::Register(r) => same_reg_and_svar(r, var),
+        InsnArg::Wrapped(w) => insn_contains_var(cfg, w.insn, var),
+        _ => false,
+    }
+}
+
+/// `InsnUtils.containsVar(InsnNode, RegisterArg)`
+pub fn insn_contains_var(cfg: &MethodCfg, insn: InsnId, var: &RegisterArg) -> bool {
+    let n = cfg.insn(insn);
+    if let Some(r) = &n.result {
+        if same_reg_and_svar(r, var) {
+            return true;
+        }
+    }
+    n.args.iter().any(|a| arg_contains_var(cfg, a, var))
+}
+
+/// `InsnList.getIndex`
+pub fn insn_index(cfg: &MethodCfg, block: BlockId, insn: InsnId) -> Option<usize> {
+    cfg.block(block).insns.iter().position(|i| *i == insn)
+}
+
+/// `InsnNode.addArg`: append an argument and attach register arguments to their variable.
+pub fn add_arg(cfg: &mut MethodCfg, insn: InsnId, arg: InsnArg) {
+    let var = match &arg {
+        InsnArg::Register(r) => r.svar,
+        _ => None,
+    };
+    cfg.insns[insn].args.push(arg);
+    if let Some(v) = var {
+        let k = cfg.insns[insn].args.len() - 1;
+        cfg.svar_use(v, ArgRef::Arg(insn, k));
+    }
+}
+
 /// `InsnRemover` bound to a block: removal is collected and performed with [`Remover::perform`].
 #[derive(Default)]
 pub struct Remover {
@@ -348,6 +426,10 @@ pub struct Remover {
 }
 
 impl Remover {
+    pub fn add_without_unbind(&mut self, insn: InsnId) {
+        self.to_remove.push(insn);
+    }
+
     pub fn add_and_unbind(&mut self, cfg: &mut MethodCfg, insn: InsnId) -> Result<(), String> {
         self.to_remove.push(insn);
         cfg.unbind_insn(insn)

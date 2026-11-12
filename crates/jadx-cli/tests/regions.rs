@@ -44,6 +44,36 @@ fn all_region_stages_build_a_tree_for_every_method() {
 }
 
 #[test]
+fn driver_stages_run_over_the_corpus() {
+    let known_errors = dump_with("insn-ssa", 11).matches("LOAD_ERROR").count();
+    for stage in [20, 25, 29, 30, 32, 33] {
+        let text = dump(stage);
+        assert_eq!(
+            text.matches("LOAD_ERROR").count(),
+            known_errors,
+            "stage {stage} failed a method"
+        );
+        let methods = text
+            .lines()
+            .filter(|l| {
+                l.starts_with("M ") && !l.starts_with("M CLASS") && !l.ends_with("LOAD_ERROR")
+            })
+            .count();
+        assert!(methods > 0, "no methods dumped at stage {stage}");
+        if stage >= 30 {
+            // code variables are dumped from the variable processing stage on
+            assert!(text.lines().any(|l| l.starts_with("V ")), "no variables");
+        }
+        if stage >= 33 {
+            assert!(
+                text.lines().any(|l| l.starts_with("M CLASS ")),
+                "no class state"
+            );
+        }
+    }
+}
+
+#[test]
 fn try_catch_and_if_regions_are_built() {
     let text = dump(19);
     assert!(text.contains("R   TRY id="), "no try/catch region");

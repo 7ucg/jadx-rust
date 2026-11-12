@@ -11,6 +11,7 @@ pub mod maker;
 pub mod post_process;
 pub mod switch_break;
 pub mod switch_maker;
+pub mod switch_over_string;
 pub mod sync_maker;
 pub mod ternary_mod;
 pub mod traversal;

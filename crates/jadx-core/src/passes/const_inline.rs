@@ -273,7 +273,11 @@ fn replace_arg(
             if arg_type.is_object() && literal != 0 {
                 arg_type = ArgType::narrow_numbers();
             }
-            let lit = InsnArg::lit(literal, arg_type);
+            let mut lit = InsnArg::lit(literal, arg_type);
+            // `litArg.copyAttributesFrom(constArg)`
+            if let InsnArg::Literal(nl) = &mut lit {
+                nl.explicit_primitive |= l.explicit_primitive;
+            }
             let lit_type = match &lit {
                 InsnArg::Literal(l) => l.ty.clone(),
                 _ => ArgType::unknown_any(),

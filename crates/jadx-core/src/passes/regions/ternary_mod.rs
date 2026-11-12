@@ -149,7 +149,7 @@ fn new_ternary(
 }
 
 /// `TernaryInsn.simplifyCondition`
-fn simplify_ternary_condition(cfg: &mut MethodCfg, ternary: InsnId) {
+pub(crate) fn simplify_ternary_condition(cfg: &mut MethodCfg, ternary: InsnId) {
     let cond = match &cfg.insn(ternary).kind {
         InsnKind::TernaryCond(c) => (**c).clone(),
         _ => return,

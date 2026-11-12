@@ -43,6 +43,8 @@ pub struct FieldNode {
     pub attrs: FieldAttrs,
     /// `AFlag.DONT_GENERATE`: the field is not part of the output.
     pub dont_generate: bool,
+    /// `AType.FIELD_REPLACE`
+    pub replace: Option<FieldReplace>,
     /// Why the field was renamed (`RenameReasonAttr`).
     pub alias_reason: Option<String>,
     /// `AType.FIELD_INIT_INSN`: instruction that initializes the field.
@@ -59,6 +61,15 @@ pub struct FieldNode {
 pub struct FieldInitInsn {
     pub mth: usize,
     pub insn: usize,
+}
+
+/// `FieldReplaceAttr`: what replaces the use of a field in the code.
+#[derive(Debug, Clone, PartialEq)]
+pub enum FieldReplace {
+    /// The argument `arg` of the constructor `ctor` (method index) of the same class.
+    Var { ctor: usize, arg: usize },
+    /// The instance of a class.
+    ClassInstance(ClassInfo),
 }
 
 #[derive(Debug, Clone)]
@@ -173,6 +184,9 @@ pub struct ClassNode {
     pub inlined_into: Option<usize>,
     /// Class is not generated as separate class.
     pub dont_generate: bool,
+    /// Display order of the fields (indexes into `fields`) when it differs from the order of the
+    /// input (`ExtractFieldInit`).
+    pub fields_order: Option<Vec<usize>>,
     /// Short name used in the output when it differs from the name in the bytecode.
     pub alias: Option<String>,
     /// Source file, input file and annotations of the input.
@@ -238,6 +252,17 @@ pub struct Root {
     pub override_sets: Vec<Vec<MethodId>>,
     /// Renamed packages: full package name to the new name of its last segment.
     pub pkg_aliases: HashMap<String, String>,
+    /// Shadowed fields per class index (`ShadowFieldVisitor.init`), computed on first use.
+    pub shadow_fields: std::sync::OnceLock<HashMap<usize, HashMap<FieldInfo, ShadowFix>>>,
+    /// Kotlin intrinsic methods that carry variable names (`ProcessKotlinInternals.init`).
+    pub kotlin_name_methods: std::sync::OnceLock<Option<std::collections::HashSet<MethodInfo>>>,
+}
+
+/// `ShadowFieldVisitor.FieldFixType`
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShadowFix {
+    Super,
+    Cast,
 }
 
 fn parse(desc: &str) -> ArgType {
@@ -277,6 +302,7 @@ impl Root {
                     alias: None,
                     attrs: f.attrs,
                     dont_generate: false,
+                    replace: None,
                     alias_reason: None,
                     init_insn: None,
                     zero_init: false,
@@ -345,6 +371,7 @@ impl Root {
                 inlined_classes: Vec::new(),
                 inlined_into: None,
                 dont_generate: false,
+                fields_order: None,
                 alias: None,
                 attrs: c.attrs,
                 enum_class: None,
@@ -371,6 +398,8 @@ impl Root {
             by_raw,
             override_sets: Vec::new(),
             pkg_aliases: HashMap::new(),
+            shadow_fields: std::sync::OnceLock::new(),
+            kotlin_name_methods: std::sync::OnceLock::new(),
         };
         let mut clsp = crate::clsp::ClspGraph::load_core()?;
         clsp.add_app(&root);

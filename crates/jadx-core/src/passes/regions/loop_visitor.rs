@@ -286,6 +286,15 @@ fn check_array_for_each(
         }
     };
     // array for each loop confirmed
+    if let Some(r) = cfg.insns[incr_insn].result.as_mut() {
+        r.dont_generate = true;
+    }
+    if let Some(r) = cfg.try_reg_mut(cond_arg) {
+        r.dont_generate = true;
+    }
+    if let Some(InsnArg::Register(r)) = cfg.insns[compare].args.get_mut(1) {
+        r.dont_generate = true;
+    }
     cfg.insns[arr_get_insn].flags |= iflag::DONT_GENERATE;
     cfg.insns[compare].flags |= iflag::DONT_GENERATE;
     let for_each = make_for_each(cfg, &iter_var, &array_arg)?;
@@ -493,9 +502,17 @@ fn check_iterable_for_each(
         to_skip.push(next_call);
     }
     cfg.insns[assign_insn].flags |= iflag::DONT_GENERATE;
+    if let Some(r) = cfg.insns[assign_insn].result.as_mut() {
+        r.dont_generate = true;
+    }
     for insn in to_skip {
         cfg.insns[insn].result = None;
         cfg.insns[insn].flags |= iflag::DONT_GENERATE;
+    }
+    for u in it_use_list {
+        if let Some(r) = cfg.try_reg_mut(u) {
+            r.dont_generate = true;
+        }
     }
     let for_each = make_for_each(cfg, &iter_var, &iterable_arg)?;
     inject_fake_insns(cfg, region, &for_each)?;

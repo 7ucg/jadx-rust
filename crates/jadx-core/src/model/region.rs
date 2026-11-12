@@ -115,6 +115,8 @@ pub struct Region {
     pub flags: u64,
     /// `AType.EXC_HANDLER` attribute of a handler region.
     pub exc_handler: Option<HandlerId>,
+    /// `AType.DECLARE_VARIABLES`: code variables declared at the start of the region.
+    pub declare_vars: Vec<super::ssa::CodeVarId>,
     pub kind: RegionKind,
 }
 
@@ -165,6 +167,7 @@ impl Regions {
             parent,
             flags: 0,
             exc_handler: None,
+            declare_vars: Vec::new(),
             kind,
         });
         self.arena.len() - 1

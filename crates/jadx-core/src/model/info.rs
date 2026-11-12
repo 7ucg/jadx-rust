@@ -269,6 +269,12 @@ impl MethodInfo {
     pub fn is_class_init(&self) -> bool {
         self.name == "<clinit>"
     }
+    /// `isOverloadedBy`: same name and arguments count, different signature.
+    pub fn is_overloaded_by(&self, other: &MethodInfo) -> bool {
+        self.arg_types.len() == other.arg_types.len()
+            && self.name == other.name
+            && self.short_id() != other.short_id()
+    }
 }
 
 pub fn make_short_id(name: &str, args: &[ArgType], ret: Option<&ArgType>) -> String {

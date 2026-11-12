@@ -112,14 +112,82 @@ pub fn method_origin_decl_class(root: &Root, cls: usize, mth: usize) -> ArgType 
 pub fn has_instance_arg(insn: &InsnNode) -> bool {
     matches!(
         &insn.kind,
-        InsnKind::Invoke { invoke_type, .. } if *invoke_type != InvokeType::Static
+        InsnKind::Invoke { invoke_type, .. } if !matches!(
+            invoke_type,
+            InvokeType::Static | InvokeType::Custom | InvokeType::CustomRaw
+        )
     ) && !insn.args.is_empty()
 }
 
 /// `BaseInvokeNode.getFirstArgOffset`
 pub fn first_arg_offset(insn: &InsnNode) -> usize {
     match &insn.kind {
-        InsnKind::Invoke { invoke_type, .. } => usize::from(*invoke_type != InvokeType::Static),
+        InsnKind::Invoke { invoke_type, .. } => usize::from(!matches!(
+            invoke_type,
+            InvokeType::Static | InvokeType::Custom | InvokeType::CustomRaw
+        )),
         _ => 0,
+    }
+}
+
+/// `MethodUtils.collectOverloadedMethods`: methods with the same name and arguments count in the
+/// class hierarchy starting from `start_cls`.
+pub fn collect_overloaded_methods(
+    root: &Root,
+    start_cls: &ArgType,
+    mth_info: &MethodInfo,
+) -> Vec<MethodDetails> {
+    let mut list = Vec::new();
+    process_args_overloaded(root, start_cls, mth_info, &mut list);
+    list
+}
+
+fn process_args_overloaded(
+    root: &Root,
+    start_cls: &ArgType,
+    mth_info: &MethodInfo,
+    collected: &mut Vec<MethodDetails>,
+) {
+    if !start_cls.is_object() {
+        return;
+    }
+    let is_mth_constructor = mth_info.is_constructor() || mth_info.is_class_init();
+    if let Some(ci) = root.resolve_class(start_cls) {
+        let cls = &root.classes[ci];
+        for (mi, m) in cls.methods.iter().enumerate() {
+            if mth_info.is_overloaded_by(&m.info) {
+                collected.push(MethodDetails::App(ci, mi));
+            }
+        }
+        if !is_mth_constructor {
+            if let Some(sup) = &cls.super_class {
+                process_args_overloaded(root, sup, mth_info, collected);
+            }
+            for iface in &cls.interfaces {
+                process_args_overloaded(root, iface, mth_info, collected);
+            }
+        }
+    } else {
+        let Some(name) = start_cls.object_name() else {
+            return;
+        };
+        let Some(details) = root.clsp.cls_details(&name) else {
+            // class info not available
+            return;
+        };
+        let call_id = mth_info.short_id();
+        for m in &details.methods {
+            if m.raw_arg_types.len() == mth_info.arg_types.len()
+                && m.name == mth_info.name
+                && m.short_id() != call_id
+            {
+                collected.push(MethodDetails::Clsp(m.clone()));
+            }
+        }
+        if !is_mth_constructor {
+            for p in details.parents() {
+                process_args_overloaded(root, p, mth_info, collected);
+            }
+        }
     }
 }

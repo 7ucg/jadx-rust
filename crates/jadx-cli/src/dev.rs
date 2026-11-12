@@ -354,6 +354,15 @@ fn insn_nodes(
     use jadx_core::passes::process_insns::process_instructions;
     use std::io::Write;
 
+    if regions {
+        let stage: u32 = std::env::var("JADX_RS_STAGE")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(12);
+        if stage >= 20 {
+            return crate::driver_dump::insn_regions_driver(dexes, stage);
+        }
+    }
     let stdout = std::io::stdout();
     let mut out = std::io::BufWriter::new(stdout.lock());
     let (root, class_dex) = build_root(dexes)?;

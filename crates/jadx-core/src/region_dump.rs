@@ -18,6 +18,10 @@ fn block_flags(flags: u64) -> String {
 fn insn_flags(flags: u64) -> String {
     let mut names: Vec<(u64, &str)> = iflag::NAMES.to_vec();
     names.push((iflag::FORCE_ASSIGN_INLINE, "FORCE_ASSIGN_INLINE"));
+    names.push((iflag::DECLARE_VAR, "DECLARE_VAR"));
+    names.push((iflag::ARITH_ONEARG, "ARITH_ONEARG"));
+    names.push((iflag::DONT_WRAP, "DONT_WRAP"));
+    names.push((iflag::VARARG_CALL, "VARARG_CALL"));
     flag_names(flags, &names)
 }
 
@@ -130,6 +134,7 @@ pub fn insn_line(cfg: &MethodCfg, iid: InsnId) -> String {
                 mode: CondMode::Compare,
                 args: Vec::new(),
                 compare: Some(*cond),
+                dont_wrap: false,
             };
             let _ = write!(out, " cond={}", cond_string(cfg, &c));
         }
@@ -144,6 +149,13 @@ pub fn insn_line(cfg: &MethodCfg, iid: InsnId) -> String {
     }
     if let Some(l) = cfg.regions.insn_loop_label.get(&iid) {
         let _ = write!(out, " label={}", cfg.loop_infos[*l].id);
+    }
+    if let Some(g) = &insn.generic_info {
+        let types: Vec<String> = g.types.iter().map(|t| t.to_string()).collect();
+        let _ = write!(out, " generics=[{}]", types.join(","));
+        if g.explicit {
+            out.push_str(" explicit");
+        }
     }
     out
 }
@@ -323,6 +335,66 @@ fn dump_region(cfg: &MethodCfg, r: RegionId, ind: usize, out: &mut String) {
 }
 
 /// Region tree of the method (including exception handler regions).
+fn ssa_name(cfg: &MethodCfg, v: usize) -> String {
+    format!("r{}v{}", cfg.svars[v].reg_num, cfg.svars[v].version)
+}
+
+/// Code variables (name, declaration, type) and the variables declared at the method start
+/// (stage 39 and up).
+fn dump_vars(cfg: &MethodCfg, out: &mut String) {
+    let mut order: Vec<usize> = Vec::new();
+    let mut map: std::collections::HashMap<usize, Vec<usize>> = std::collections::HashMap::new();
+    for &v in &cfg.svar_list {
+        if let Some(cv) = cfg.svars[v].code_var {
+            map.entry(cv)
+                .or_insert_with(|| {
+                    order.push(cv);
+                    Vec::new()
+                })
+                .push(v);
+        }
+    }
+    for cv in order {
+        let c = &cfg.code_vars[cv];
+        let names: Vec<String> = map[&cv].iter().map(|v| ssa_name(cfg, *v)).collect();
+        let _ = writeln!(
+            out,
+            "V {} name={} declared={} final={} this={} type={}",
+            names.join(","),
+            c.name.as_deref().unwrap_or("-"),
+            u8::from(c.is_declared),
+            u8::from(c.is_final),
+            u8::from(c.is_this),
+            c.ty.as_ref()
+                .map_or_else(|| "null".to_string(), |t| t.to_string())
+        );
+    }
+    if let Some(r) = cfg.regions.method_region {
+        let decl = &cfg.regions.arena[r].declare_vars;
+        if !decl.is_empty() {
+            let names: Vec<String> = decl
+                .iter()
+                .map(|cv| {
+                    cfg.code_vars[*cv]
+                        .ssa_vars
+                        .first()
+                        .map_or_else(|| "?".to_string(), |v| ssa_name(cfg, *v))
+                })
+                .collect();
+            let _ = writeln!(out, "R DECL {}", names.join(","));
+        }
+    }
+}
+
+/// [`dump_regions`] followed by the variable information when `with_vars` is set.
+pub fn dump_regions_stage(id: &str, cfg: &MethodCfg, with_vars: bool) -> String {
+    let mut out = dump_regions(id, cfg);
+    if with_vars {
+        dump_vars(cfg, &mut out);
+    }
+    out
+}
+
 pub fn dump_regions(id: &str, cfg: &MethodCfg) -> String {
     let mut out = format!("M {id}\n");
     if let Some(r) = cfg.regions.method_region {

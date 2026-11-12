@@ -36,7 +36,7 @@ import jadx.core.dex.trycatch.ExceptionHandler;
 public class RegionDump {
 	static final AFlag[] INSN_FLAGS = { AFlag.TRY_ENTER, AFlag.TRY_LEAVE, AFlag.SYNTHETIC, AFlag.DONT_GENERATE, AFlag.HIDDEN,
 			AFlag.REMOVE, AFlag.WRAPPED, AFlag.FALL_THROUGH, AFlag.DONT_INLINE, AFlag.EXPLICIT_CAST, AFlag.SOFT_CAST,
-			AFlag.FINALLY_INSNS, AFlag.FORCE_ASSIGN_INLINE };
+			AFlag.FINALLY_INSNS, AFlag.FORCE_ASSIGN_INLINE, AFlag.DECLARE_VAR, AFlag.ARITH_ONEARG, AFlag.DONT_WRAP, AFlag.VARARG_CALL };
 	static final AFlag[] BLOCK_FLAGS = { AFlag.MTH_ENTER_BLOCK, AFlag.MTH_EXIT_BLOCK, AFlag.SYNTHETIC, AFlag.RETURN, AFlag.REMOVE,
 			AFlag.LOOP_START, AFlag.LOOP_END, AFlag.EXC_TOP_SPLITTER, AFlag.EXC_BOTTOM_SPLITTER, AFlag.ADDED_TO_REGION,
 			AFlag.DONT_GENERATE, AFlag.FALL_THROUGH, AFlag.ORIG_RETURN, AFlag.IGNORE_THROW_SPLIT, AFlag.TRY_ENTER, AFlag.TRY_LEAVE,
@@ -114,6 +114,14 @@ public class RegionDump {
 		LoopLabelAttr label = insn.get(AType.LOOP_LABEL);
 		if (label != null) {
 			sb.append(" label=").append(label.getLoop().getId());
+		}
+		jadx.core.dex.attributes.nodes.GenericInfoAttr gi = insn.get(AType.GENERIC_INFO);
+		if (gi != null) {
+			sb.append(" generics=[").append(gi.getGenericTypes().stream().map(Object::toString).collect(Collectors.joining(",")))
+					.append(']');
+			if (gi.isExplicit()) {
+				sb.append(" explicit");
+			}
 		}
 		return sb.toString();
 	}
@@ -246,6 +254,37 @@ public class RegionDump {
 		}
 	}
 
+	/** Also dump the code variables and the variables declared at the method start (stage 39 and up). */
+	public static boolean WITH_VARS = false;
+
+	static String ssaName(jadx.core.dex.instructions.args.SSAVar v) {
+		return "r" + v.getRegNum() + "v" + v.getVersion();
+	}
+
+	static void dumpVars(StringBuilder sb, MethodNode mth) {
+		java.util.Map<jadx.core.dex.instructions.args.CodeVar, List<jadx.core.dex.instructions.args.SSAVar>> map = new java.util.LinkedHashMap<>();
+		for (jadx.core.dex.instructions.args.SSAVar v : mth.getSVars()) {
+			map.computeIfAbsent(v.getCodeVar(), k -> new ArrayList<>()).add(v);
+		}
+		jadx.core.dex.attributes.nodes.DeclareVariablesAttr decl = mth.getRegion() == null ? null
+				: mth.getRegion().get(AType.DECLARE_VARIABLES);
+		for (java.util.Map.Entry<jadx.core.dex.instructions.args.CodeVar, List<jadx.core.dex.instructions.args.SSAVar>> e : map.entrySet()) {
+			jadx.core.dex.instructions.args.CodeVar cv = e.getKey();
+			sb.append("V ").append(e.getValue().stream().map(RegionDump::ssaName).collect(Collectors.joining(",")))
+					.append(" name=").append(cv.getName() == null ? "-" : cv.getName())
+					.append(" declared=").append(cv.isDeclared() ? 1 : 0).append(" final=").append(cv.isFinal() ? 1 : 0)
+					.append(" this=").append(cv.isThis() ? 1 : 0)
+					.append(" type=").append(cv.getType()).append('\n');
+		}
+		if (decl != null) {
+			List<String> names = new ArrayList<>();
+			for (jadx.core.dex.instructions.args.CodeVar cv : decl.getVars()) {
+				names.add(cv.getSsaVars().isEmpty() ? "?" : ssaName(cv.getSsaVars().get(0)));
+			}
+			sb.append("R DECL ").append(String.join(",", names)).append('\n');
+		}
+	}
+
 	public static void dump(StringBuilder sb, MethodNode mth) {
 		sb.append("M ").append(mth.getMethodInfo().getRawFullId()).append('\n');
 		if (mth.getRegion() != null) {
@@ -258,6 +297,9 @@ public class RegionDump {
 			if (hr != null) {
 				container(sb, hr, 1);
 			}
+		}
+		if (WITH_VARS) {
+			dumpVars(sb, mth);
 		}
 	}
 }

@@ -26,6 +26,8 @@ pub struct IfCondition {
     pub args: Vec<IfCondition>,
     /// `IF` instruction of a [`CondMode::Compare`].
     pub compare: Option<InsnId>,
+    /// `AFlag.DONT_WRAP`
+    pub dont_wrap: bool,
 }
 
 /// `IfNode.getOp`
@@ -87,6 +89,7 @@ impl IfCondition {
             mode: CondMode::Compare,
             args: Vec::new(),
             compare: Some(insn),
+            dont_wrap: false,
         }
     }
 
@@ -95,6 +98,7 @@ impl IfCondition {
             mode,
             args,
             compare: None,
+            dont_wrap: false,
         }
     }
 
@@ -372,4 +376,6 @@ pub fn move_arg(cfg: &mut MethodCfg, from: InsnId, from_idx: usize, to: InsnId, 
         }
     }
     cfg.insns[to].args[to_idx] = arg;
+    // the argument object stays in the old instruction and its parent is the new one
+    cfg.arg_alias.insert((from, from_idx), (to, to_idx));
 }

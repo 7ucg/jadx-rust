@@ -60,6 +60,11 @@ pub fn build_blocks(
         .iter()
         .flatten()
         .any(|i| i.ty == InsnType::Switch);
+    let has_new_array = decoded
+        .insns
+        .iter()
+        .flatten()
+        .any(|i| i.ty == InsnType::NewArray);
     let has_move_exc = decoded
         .insns
         .iter()
@@ -74,6 +79,7 @@ pub fn build_blocks(
         handler_list,
         compute_post_dom: has_switch || has_move_exc,
         has_switch,
+        has_new_array,
         void_return,
         ..Default::default()
     };

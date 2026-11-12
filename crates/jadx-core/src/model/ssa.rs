@@ -272,6 +272,24 @@ impl MethodCfg {
         (at, var)
     }
 
+    /// `MethodNode.makeSyntheticRegArg`: a new register with its own variable and code variable.
+    pub fn make_synthetic_reg_arg(&mut self, ty: ArgType) -> Result<RegisterArg, String> {
+        let mut reg = RegisterArg::new(0, ty.clone());
+        reg.synthetic = true;
+        let at = self.add_floating(reg);
+        let mut v: i64 = -1;
+        for id in &self.svar_list {
+            let sv = &self.svars[*id];
+            if sv.reg_num == 0 {
+                v = v.max(i64::from(sv.version));
+            }
+        }
+        let var = self.make_new_svar(0, (v + 1) as u32, at);
+        crate::passes::init_code_vars::init_code_var(self, var)?;
+        self.svar_set_type(var, ty)?;
+        Ok(self.reg(at).clone())
+    }
+
     pub fn var(&self, id: SsaId) -> &SsaVar {
         &self.svars[id]
     }
