@@ -66,11 +66,20 @@ pub fn dump_class_state<'a>(
             .unwrap_or_default();
         let _ = writeln!(
             out,
-            "R M {} acc={:x} dont={} noskip={} skip=[{skip}]",
+            "R M {} acc={:x} dont={} noskip={} skip=[{skip}] skipfirst={} mrepl={}",
             m.info.short_id(),
             m.access,
             u8::from(m.dont_generate),
-            u8::from(m.no_skip_args)
+            u8::from(m.no_skip_args),
+            u8::from(m.skip_first_arg),
+            match m.replace {
+                None => "-".to_string(),
+                Some((c, i)) => format!(
+                    "{}.{}",
+                    root.classes[c].methods[i].info.decl_class.raw_name(),
+                    root.classes[c].methods[i].info.short_id()
+                ),
+            }
         );
     }
     out

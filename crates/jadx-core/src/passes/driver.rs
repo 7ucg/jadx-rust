@@ -277,7 +277,11 @@ impl<'s> ClassDriver<'s> {
         let mut order = Vec::new();
         post(&self.children, top, &mut order);
         for c in order {
-            let _ = f(&mut self.root, &mut self.methods, c);
+            if let Err(e) = f(&mut self.root, &mut self.methods, c) {
+                if std::env::var("JADX_RS_ERRORS").is_ok() {
+                    eprintln!("CLASS ERROR {}: {e}", self.root.classes[c].info.raw_name());
+                }
+            }
         }
     }
 
@@ -379,6 +383,13 @@ impl<'s> ClassDriver<'s> {
                 });
             }
         }
+        if on(pass_stage::CLASS_MODIFIER) {
+            if let Some(Visit::Class(top)) = visits.first().copied() {
+                self.class_pass_post(top, &|root, methods, c| {
+                    crate::passes::class_modifier::class_modifier(root, methods, c)
+                });
+            }
+        }
         if on(pass_stage::LOOP_REGION) {
             self.method_pass(visits, &|cfg, env, _| {
                 rg::loop_visitor::loop_region_visitor(cfg, env)
@@ -436,4 +447,5 @@ pub mod pass_stage {
     pub const PREPARE_FOR_CODEGEN: u32 = 32;
     pub const ANONYMOUS_CLASS: u32 = 33;
     pub const EXTRACT_FIELD_INIT: u32 = 34;
+    pub const CLASS_MODIFIER: u32 = 35;
 }

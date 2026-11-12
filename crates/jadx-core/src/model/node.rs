@@ -122,6 +122,8 @@ pub struct MethodNode {
     pub attrs: MethodAttrs,
     /// Why the method was renamed (`RenameReasonAttr`).
     pub alias_reason: Option<String>,
+    /// `AType.METHOD_REPLACE`: the method this method is merged with.
+    pub replace: Option<MethodId>,
 }
 
 impl MethodNode {
@@ -253,6 +255,7 @@ pub struct Root {
     /// Renamed packages: full package name to the new name of its last segment.
     pub pkg_aliases: HashMap<String, String>,
     /// Shadowed fields per class index (`ShadowFieldVisitor.init`), computed on first use.
+    pub inner_cache: std::sync::OnceLock<Vec<Vec<usize>>>,
     pub shadow_fields: std::sync::OnceLock<HashMap<usize, HashMap<FieldInfo, ShadowFix>>>,
     /// Kotlin intrinsic methods that carry variable names (`ProcessKotlinInternals.init`).
     pub kotlin_name_methods: std::sync::OnceLock<Option<std::collections::HashSet<MethodInfo>>>,
@@ -349,6 +352,7 @@ impl Root {
                     dont_rename: false,
                     attrs: m.attrs,
                     alias_reason: None,
+                    replace: None,
                 });
             }
             by_raw.insert(info.raw_name(), classes.len());
@@ -398,6 +402,7 @@ impl Root {
             by_raw,
             override_sets: Vec::new(),
             pkg_aliases: HashMap::new(),
+            inner_cache: std::sync::OnceLock::new(),
             shadow_fields: std::sync::OnceLock::new(),
             kotlin_name_methods: std::sync::OnceLock::new(),
         };
@@ -556,6 +561,24 @@ impl Root {
             }
         }
         None
+    }
+
+    /// `ClassNode.getInnerClasses`: inner classes sorted by raw name.
+    pub fn inner_classes(&self, idx: usize) -> &[usize] {
+        let all = self.inner_cache.get_or_init(|| {
+            let mut sorted: Vec<usize> = (0..self.classes.len()).collect();
+            sorted.sort_by_cached_key(|i| self.classes[*i].info.raw_name());
+            let mut children: Vec<Vec<usize>> = vec![Vec::new(); self.classes.len()];
+            for &i in &sorted {
+                if let Some(p) = self.parent_index_of(&self.classes[i]) {
+                    if p != i {
+                        children[p].push(i);
+                    }
+                }
+            }
+            children
+        });
+        &all[idx]
     }
 
     pub fn parent_index_of(&self, cls: &ClassNode) -> Option<usize> {

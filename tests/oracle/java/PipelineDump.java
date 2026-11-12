@@ -39,8 +39,8 @@ public class PipelineDump {
 				{ "MethodThrowsVisitor", "26" }, { "MethodInvokeVisitor", "27" }, { "SimplifyVisitor", "28" },
 				{ "FixInstructionsVisitor", "29" }, { "ProcessVariables", "30" }, { "ApplyVariableNames", "31" },
 				{ "PrepareForCodeGen", "32" }, { "AnonymousClassVisitor", "33" }, { "ExtractFieldInit", "34" },
-				{ "InlineMethods", "35" }, { "EnumVisitor", "36" }, { "FixSwitchOverEnum", "37" },
-				{ "NonFinalResIdsVisitor", "38" }, { "FixAccessModifiers", "39" }, { "ClassModifier", "40" },
+				{ "ClassModifier", "35" }, { "InlineMethods", "36" }, { "EnumVisitor", "37" }, { "FixSwitchOverEnum", "38" },
+				{ "NonFinalResIdsVisitor", "39" }, { "FixAccessModifiers", "40" },
 				{ "MarkMethodsForInline", "41" }
 		};
 		for (String[] e : table) {

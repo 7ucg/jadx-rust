@@ -50,7 +50,9 @@ public class ClassStateDump {
 					.append(" acc=").append(Integer.toHexString(m.getAccessFlags().rawValue()))
 					.append(" dont=").append(m.contains(AFlag.DONT_GENERATE) ? 1 : 0)
 					.append(" noskip=").append(m.contains(AFlag.NO_SKIP_ARGS) ? 1 : 0)
-					.append(" skip=[").append(skipStr).append(']').append(extraMethodAttrs(m)).append('\n');
+					.append(" skip=[").append(skipStr).append(']')
+					.append(" skipfirst=").append(m.contains(AFlag.SKIP_FIRST_ARG) ? 1 : 0)
+					.append(" mrepl=").append(m.get(AType.METHOD_REPLACE) == null ? "-" : m.get(AType.METHOD_REPLACE).getReplaceMth().getMethodInfo().getRawFullId()).append(extraMethodAttrs(m)).append('\n');
 		}
 	}
 

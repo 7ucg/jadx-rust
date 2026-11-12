@@ -6,6 +6,7 @@ pub mod attach_try_catch;
 pub mod block_processor;
 pub mod block_splitter;
 pub mod block_utils;
+pub mod class_modifier;
 pub mod code_shrink;
 pub mod collect_const_values;
 pub mod const_inline;
