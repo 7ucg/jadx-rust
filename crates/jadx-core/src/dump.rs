@@ -174,6 +174,12 @@ pub fn dump_insn_ssa(n: &InsnNode, if_target: Option<i32>, cfg: Option<&MethodCf
         InsnKind::Phi { binds } => {
             let _ = write!(s, " binds=[{}]", cids(binds));
         }
+        InsnKind::Constructor {
+            call_mth,
+            call_type,
+        } => {
+            let _ = write!(s, " ctor {call_mth} {}", call_type.name());
+        }
     }
     if !n.jumps.is_empty() {
         let j: Vec<String> = n
@@ -265,6 +271,7 @@ fn arg_location(
     match r {
         ArgRef::This => "this".into(),
         ArgRef::Method(k) => format!("m{k}"),
+        ArgRef::Floating(_) => "floating".into(),
         ArgRef::Result(i) => format!("{}:res", l(&i)),
         ArgRef::Arg(i, k) => format!("{}:{k}", l(&i)),
     }

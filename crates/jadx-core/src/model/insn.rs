@@ -404,6 +404,35 @@ pub enum InsnKind {
     Phi {
         binds: Vec<BlockId>,
     },
+    /// `ConstructorInsn`
+    Constructor {
+        call_mth: MethodInfo,
+        call_type: CallType,
+    },
+}
+
+/// `ConstructorInsn.CallType`
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CallType {
+    /// Just a new instance.
+    Constructor,
+    /// Super constructor call.
+    Super,
+    /// Call of another constructor of the same class.
+    This,
+    /// Call of itself.
+    SelfCall,
+}
+
+impl CallType {
+    pub fn name(self) -> &'static str {
+        match self {
+            CallType::Constructor => "CONSTRUCTOR",
+            CallType::Super => "SUPER",
+            CallType::This => "THIS",
+            CallType::SelfCall => "SELF",
+        }
+    }
 }
 
 /// Block identifier: index into the method's block arena (the block's `cid`).

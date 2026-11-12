@@ -217,6 +217,42 @@ impl Root {
         None
     }
 
+    /// `RootNode.resolveMethod`: exact method, then a search through super types by signature.
+    pub fn resolve_method(&self, m: &MethodInfo) -> Option<(usize, usize)> {
+        let ci = self.class_index(&m.decl_class.raw_name())?;
+        if let Some(mi) = self.classes[ci].methods.iter().position(|x| x.info == *m) {
+            return Some((ci, mi));
+        }
+        let sig = super::info::make_short_id(&m.name, &m.arg_types, None);
+        self.deep_resolve_method(ci, &sig)
+    }
+
+    fn deep_resolve_method(&self, ci: usize, sig: &str) -> Option<(usize, usize)> {
+        let cls = &self.classes[ci];
+        if let Some(mi) = cls
+            .methods
+            .iter()
+            .position(|m| m.info.short_id().starts_with(sig))
+        {
+            return Some((ci, mi));
+        }
+        if let Some(sup) = &cls.super_class {
+            if let Some(si) = self.resolve_class(sup) {
+                if let Some(f) = self.deep_resolve_method(si, sig) {
+                    return Some(f);
+                }
+            }
+        }
+        for iface in &cls.interfaces {
+            if let Some(ii) = self.resolve_class(iface) {
+                if let Some(f) = self.deep_resolve_method(ii, sig) {
+                    return Some(f);
+                }
+            }
+        }
+        None
+    }
+
     pub fn parent_index_of(&self, cls: &ClassNode) -> Option<usize> {
         let parent = cls.info.parent_class()?;
         self.class_index(&parent.raw_name())

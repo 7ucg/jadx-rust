@@ -66,17 +66,18 @@ pub struct FrameInfo {
 }
 
 /// [`build_processed_blocks`] followed by `SSATransform` and, depending on `stage`, the later
-/// SSA passes (3 = `MoveInlineVisitor`).
+/// SSA passes (3 = `MoveInlineVisitor`, 4 = `ConstructorVisitor`).
 pub fn build_ssa(
     decoded: DecodedMethod,
     tries: &[TryData],
-    root: &RootCtx,
-    clsp: &crate::clsp::ClspGraph,
-    void_return: bool,
+    root: &crate::model::node::Root,
+    cls: usize,
+    mth: usize,
     frame: &FrameInfo,
     stage: u32,
 ) -> Result<MethodCfg, String> {
-    let mut cfg = build_processed_blocks(decoded, tries, root, clsp, void_return)?;
+    let void_return = root.classes[cls].methods[mth].info.return_type.is_void();
+    let mut cfg = build_processed_blocks(decoded, tries, &root.ctx, &root.clsp, void_return)?;
     crate::passes::ssa::init_arguments(
         &mut cfg,
         frame.regs_count,
@@ -87,6 +88,12 @@ pub fn build_ssa(
     crate::passes::ssa::ssa_transform(&mut cfg)?;
     if stage >= 3 {
         crate::passes::move_inline::move_inline(&mut cfg)?;
+    }
+    if stage >= 4 {
+        let env = crate::passes::constructor::MethodEnv { root, cls, mth };
+        if crate::passes::constructor::replace_invoke(&mut cfg, &env)? {
+            crate::passes::move_inline::move_inline(&mut cfg)?;
+        }
     }
     Ok(cfg)
 }

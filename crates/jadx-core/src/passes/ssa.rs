@@ -167,7 +167,7 @@ fn place_phi(cfg: &mut MethodCfg, reg: usize, la: &LiveVarAnalysis) -> Result<()
             }
             if !has_phi.get(id) && la.is_live(id, reg) {
                 let df = cfg.blocks[id];
-                let phi = add_phi(cfg, df, reg as u32);
+                let phi = add_phi_attr(cfg, df, reg as u32);
                 cfg.arena[df].insns.insert(0, phi);
                 has_phi.set(id);
                 if !processed.get(id) {
@@ -181,7 +181,7 @@ fn place_phi(cfg: &mut MethodCfg, reg: usize, la: &LiveVarAnalysis) -> Result<()
 }
 
 /// `SSATransform.addPhi`
-fn add_phi(cfg: &mut MethodCfg, block: BlockId, reg: u32) -> InsnId {
+pub fn add_phi_attr(cfg: &mut MethodCfg, block: BlockId, reg: u32) -> InsnId {
     let mut phi = MethodCfg::new_phi(reg);
     phi.offset = cfg.block(block).start_offset;
     let id = cfg.add_insn(phi);
@@ -579,7 +579,7 @@ fn inline_phi_insn(
     let uses = cfg.svars[res_var].uses.clone();
     // the reference places one shared argument object into every use: only the last
     // placement stays registered as a use
-    let mut placed: Option<ArgRef> = None;
+    let mut placed: Option<(InsnId, usize)> = None;
     for use_arg in uses {
         let Some(use_insn) = use_arg.parent_insn() else {
             return Ok(false);
@@ -598,16 +598,25 @@ fn inline_phi_insn(
             if in_phi {
                 cfg.svar_add_used_in_phi(inline_var, use_insn);
             }
-            if let Some(p) = placed.take() {
-                cfg.svar_remove_use(inline_var, p);
+            let mut slot = k;
+            if let Some((pi, pk)) = placed.take() {
+                cfg.svar_remove_use(inline_var, ArgRef::Arg(pi, pk));
+                if pi == use_insn {
+                    // the shared object is found at its first slot of the instruction
+                    slot = slot.min(pk);
+                }
             }
             cfg.svar_remove_use(res_var, use_arg);
             cfg.insns[use_insn].args[k] = InsnArg::Register(inline_arg.clone());
             cfg.svar_use(inline_var, use_arg);
+            if slot != k {
+                cfg.svar_remove_use(inline_var, use_arg);
+                cfg.svars[inline_var].uses.push(ArgRef::Arg(use_insn, slot));
+            }
             if in_phi {
                 cfg.svar_update_used_in_phi_list(res_var);
             }
-            placed = Some(use_arg);
+            placed = Some((use_insn, slot));
         }
     }
     if cfg.block(block).exc_handler.is_some() {

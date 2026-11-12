@@ -278,7 +278,7 @@ fn insn_nodes(dexes: &[DexFile], blocks: bool, analysis: bool, ssa: bool) -> Res
     let root = std::sync::Arc::new(root);
     for (ci, cls) in root.classes.iter().enumerate() {
         let dex = &dexes[class_dex[ci]];
-        for m in &cls.methods {
+        for (mi, m) in cls.methods.iter().enumerate() {
             let Some(code_off) = m.code_offset else {
                 continue;
             };
@@ -313,7 +313,7 @@ fn insn_nodes(dexes: &[DexFile], blocks: bool, analysis: bool, ssa: bool) -> Res
                         arg_types: m.arg_types.clone(),
                     };
                     jadx_core::passes::pipeline::build_ssa(
-                        decoded, &tries, &root.ctx, &root.clsp, void, &frame, stage,
+                        decoded, &tries, &root, ci, mi, &frame, stage,
                     )
                 } else if analysis {
                     jadx_core::passes::pipeline::build_processed_blocks(

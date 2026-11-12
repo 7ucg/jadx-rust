@@ -8,6 +8,7 @@ import jadx.core.dex.attributes.nodes.JumpInfo;
 import jadx.core.dex.info.FieldInfo;
 import jadx.core.dex.instructions.ArithNode;
 import jadx.core.dex.instructions.ConstClassNode;
+import jadx.core.dex.instructions.mods.ConstructorInsn;
 import jadx.core.dex.instructions.ConstStringNode;
 import jadx.core.dex.instructions.FillArrayData;
 import jadx.core.dex.instructions.FillArrayInsn;
@@ -155,6 +156,9 @@ public class InsnNodeDump {
 		} else if (n instanceof InvokeNode) {
 			InvokeNode in = (InvokeNode) n;
 			sb.append(" invoke=").append(in.getInvokeType()).append(' ').append(in.getCallMth());
+		} else if (n instanceof ConstructorInsn) {
+			ConstructorInsn c = (ConstructorInsn) n;
+			sb.append(" ctor ").append(c.getCallMth()).append(' ').append(c.getCallType());
 		} else if (n instanceof ArithNode) {
 			sb.append(" op=").append(((ArithNode) n).getOp());
 		} else if (n instanceof NewArrayNode) {

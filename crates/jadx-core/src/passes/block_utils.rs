@@ -241,3 +241,79 @@ pub fn get_block_with_flag(cfg: &MethodCfg, blocks: &[BlockId], flag: u64) -> Op
         .copied()
         .find(|b| cfg.block(*b).contains(flag))
 }
+
+/// `getPathCross(mth, b1, b2)`
+pub fn get_path_cross_pair(cfg: &MethodCfg, b1: BlockId, b2: BlockId) -> Option<BlockId> {
+    if b1 == b2 {
+        return Some(b1);
+    }
+    get_path_cross(cfg, &[b1, b2])
+}
+
+/// `DFSIteration`: depth first walk preserving successor order.
+pub struct DfsIteration {
+    queue: Vec<BlockId>,
+    visited: BitSet,
+    clean: bool,
+}
+
+impl DfsIteration {
+    pub fn new(cfg: &MethodCfg, start: BlockId, clean: bool) -> Self {
+        let mut visited = BitSet::new();
+        visited.set(cfg.block(start).pos);
+        DfsIteration {
+            queue: vec![start],
+            visited,
+            clean,
+        }
+    }
+
+    pub fn next(&mut self, cfg: &MethodCfg) -> Option<BlockId> {
+        let current = self.queue.pop()?;
+        let next_blocks: Vec<BlockId> = if self.clean {
+            cfg.block(current)
+                .clean_succs()
+                .cloned()
+                .unwrap_or_default()
+        } else {
+            cfg.block(current).succs.clone()
+        };
+        for &n in next_blocks.iter().rev() {
+            let pos = cfg.block(n).pos;
+            if !self.visited.get(pos) {
+                self.visited.set(pos);
+                self.queue.push(n);
+            }
+        }
+        Some(current)
+    }
+}
+
+/// `collectAllSuccessors`
+pub fn collect_all_successors(cfg: &MethodCfg, start: BlockId, clean: bool) -> Vec<BlockId> {
+    let mut dfs = DfsIteration::new(cfg, start, clean);
+    let mut list = Vec::new();
+    while let Some(b) = dfs.next(cfg) {
+        list.push(b);
+    }
+    list
+}
+
+/// `getPrevBlockOnPath`: predecessor of `block` on the path from `path_start`.
+pub fn get_prev_block_on_path(
+    cfg: &MethodCfg,
+    block: BlockId,
+    path_start: BlockId,
+) -> Option<BlockId> {
+    let preds = &cfg.block(block).preds;
+    if preds.contains(&path_start) {
+        return Some(path_start);
+    }
+    let mut dfs = DfsIteration::new(cfg, path_start, true);
+    while let Some(next) = dfs.next(cfg) {
+        if preds.contains(&next) {
+            return Some(next);
+        }
+    }
+    None
+}

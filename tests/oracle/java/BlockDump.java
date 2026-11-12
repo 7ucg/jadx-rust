@@ -23,6 +23,7 @@ import jadx.core.dex.visitors.blocks.BlockProcessor;
 import jadx.core.dex.visitors.blocks.BlockFinisher;
 import jadx.core.dex.visitors.ssa.SSATransform;
 import jadx.core.dex.visitors.MoveInlineVisitor;
+import jadx.core.dex.visitors.ConstructorVisitor;
 import jadx.core.dex.instructions.PhiInsn;
 import jadx.core.dex.instructions.args.RegisterArg;
 import jadx.core.dex.instructions.args.SSAVar;
@@ -47,6 +48,10 @@ public class BlockDump {
 		JadxArgs jargs = new JadxArgs();
 		jargs.setInputFile(new File(args[0]));
 		jargs.setSkipResources(true);
+		if (args.length > 1 && Integer.parseInt(args[1]) >= 4) {
+			// anonymous class inlining is not ported yet
+			jargs.setInlineAnonymousClasses(false);
+		}
 		int stage = args.length > 1 ? Integer.parseInt(args[1]) : 0;
 		StringBuilder sb = new StringBuilder();
 		try (JadxDecompiler jadx = new JadxDecompiler(jargs)) {
@@ -72,6 +77,9 @@ public class BlockDump {
 						}
 						if (stage >= 3) {
 							new MoveInlineVisitor().visit(mth);
+						}
+						if (stage >= 4) {
+							new ConstructorVisitor().visit(mth);
 						}
 					} catch (Throwable e) {
 						sb.append("M ").append(mth.getMethodInfo().getRawFullId()).append(" LOAD_ERROR\n");

@@ -262,6 +262,8 @@ pub struct MethodCfg {
     /// SSA variable arena; `svar_list` is `mth.getSVars()` (live variables in creation order).
     pub svars: Vec<SsaVar>,
     pub svar_list: Vec<SsaId>,
+    /// Register arguments not placed in an instruction (duplicates under construction).
+    pub floating: Vec<RegisterArg>,
     /// Warning comments attached to the method (`addWarnComment`).
     pub warnings: Vec<String>,
 }

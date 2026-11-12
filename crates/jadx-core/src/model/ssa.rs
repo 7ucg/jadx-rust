@@ -22,6 +22,8 @@ pub enum ArgRef {
     This,
     /// Method argument register `n` (`getArgRegs`).
     Method(usize),
+    /// Register argument that is not (yet) placed in an instruction (`MethodCfg::floating`).
+    Floating(usize),
 }
 
 impl ArgRef {
@@ -29,7 +31,7 @@ impl ArgRef {
     pub fn parent_insn(self) -> Option<InsnId> {
         match self {
             ArgRef::Result(i) | ArgRef::Arg(i, _) => Some(i),
-            ArgRef::This | ArgRef::Method(_) => None,
+            ArgRef::This | ArgRef::Method(_) | ArgRef::Floating(_) => None,
         }
     }
 }
@@ -65,6 +67,7 @@ impl MethodCfg {
             },
             ArgRef::This => self.this_arg.as_ref().expect("this register"),
             ArgRef::Method(k) => &self.arg_regs[k],
+            ArgRef::Floating(k) => &self.floating[k],
         }
     }
 
@@ -77,7 +80,86 @@ impl MethodCfg {
             },
             ArgRef::This => self.this_arg.as_mut().expect("this register"),
             ArgRef::Method(k) => &mut self.arg_regs[k],
+            ArgRef::Floating(k) => &mut self.floating[k],
         }
+    }
+
+    /// Register at `r` if the location still holds one.
+    pub fn try_reg_mut(&mut self, r: ArgRef) -> Option<&mut RegisterArg> {
+        match r {
+            ArgRef::Result(i) => self.insns[i].result.as_mut(),
+            ArgRef::Arg(i, k) => match self.insns[i].args.get_mut(k) {
+                Some(InsnArg::Register(reg)) => Some(reg),
+                _ => None,
+            },
+            ArgRef::This => self.this_arg.as_mut(),
+            ArgRef::Method(k) => self.arg_regs.get_mut(k),
+            ArgRef::Floating(k) => self.floating.get_mut(k),
+        }
+    }
+
+    /// Park a register argument that is not part of an instruction yet.
+    pub fn add_floating(&mut self, reg: RegisterArg) -> ArgRef {
+        self.floating.push(reg);
+        ArgRef::Floating(self.floating.len() - 1)
+    }
+
+    /// `SSAVar.setAssign`: the previous assign argument is detached from the variable.
+    pub fn svar_set_assign(&mut self, var: SsaId, assign: ArgRef) {
+        let old = self.svars[var].assign;
+        if old != assign {
+            if let Some(r) = self.try_reg_mut(old) {
+                r.svar = None;
+            }
+            self.svars[var].assign = assign;
+        }
+    }
+
+    /// `InsnNode.setResult`
+    pub fn set_result(&mut self, insn: InsnId, res: Option<RegisterArg>) {
+        let var = res.as_ref().and_then(|r| r.svar);
+        self.insns[insn].result = res;
+        if let Some(v) = var {
+            self.svar_set_assign(v, ArgRef::Result(insn));
+        }
+    }
+
+    /// `InsnNode.rebindArgs`
+    pub fn rebind_args(&mut self, insn: InsnId) -> Result<(), String> {
+        if let Some(res) = &self.insns[insn].result {
+            let Some(v) = res.svar else {
+                return Err("No SSA var for result arg".into());
+            };
+            self.svar_set_assign(v, ArgRef::Result(insn));
+        }
+        for k in 0..self.insns[insn].args.len() {
+            if let InsnArg::Register(r) = &self.insns[insn].args[k] {
+                let Some(v) = r.svar else {
+                    return Err("No SSA var for argument".into());
+                };
+                self.svar_use(v, ArgRef::Arg(insn, k));
+                self.svar_update_used_in_phi_list(v);
+            }
+        }
+        Ok(())
+    }
+
+    /// `RegisterArg.duplicateWithNewSSAVar`: a new floating register with its own SSA variable
+    /// (version = highest live version of the register + 1).
+    pub fn duplicate_with_new_svar(&mut self, src: &RegisterArg) -> (ArgRef, SsaId) {
+        let mut dup = src.clone();
+        dup.svar = None;
+        let reg = dup.reg_num;
+        let at = self.add_floating(dup);
+        let mut v: i64 = -1;
+        for id in &self.svar_list {
+            let sv = &self.svars[*id];
+            if sv.reg_num == reg {
+                v = v.max(sv.version as i64);
+            }
+        }
+        let var = self.make_new_svar(reg, (v + 1) as u32, at);
+        (at, var)
     }
 
     pub fn var(&self, id: SsaId) -> &SsaVar {
@@ -195,6 +277,26 @@ impl MethodCfg {
         self.insns[phi].args.push(InsnArg::Register(arg));
         self.phi_binds_mut(phi).push(pred);
         Ok(ArgRef::Arg(phi, self.insns[phi].args.len() - 1))
+    }
+
+    /// `PhiInsn.bindArg(arg, pred)`
+    pub fn phi_bind_arg_reg(
+        &mut self,
+        phi: InsnId,
+        arg: RegisterArg,
+        pred: BlockId,
+    ) -> Result<ArgRef, String> {
+        if self.phi_binds(phi).contains(&pred) {
+            return Err(format!("Duplicate predecessors in PHI insn: {pred}"));
+        }
+        let var = arg.svar;
+        self.insns[phi].args.push(InsnArg::Register(arg));
+        self.phi_binds_mut(phi).push(pred);
+        let at = ArgRef::Arg(phi, self.insns[phi].args.len() - 1);
+        if let Some(v) = var {
+            self.svar_use(v, at);
+        }
+        Ok(at)
     }
 
     /// `PhiInsn.getArgByBlock`
@@ -385,6 +487,27 @@ impl MethodCfg {
     /// `InsnNode.replaceArg(from, to)` for a direct argument: unbinds the old register's use and
     /// attaches the new argument to its SSA variable.
     pub fn replace_arg(&mut self, insn: InsnId, index: usize, to: InsnArg) {
+        if self.insns[insn].ty == InsnType::Phi {
+            // `PhiInsn.replaceArg`
+            let (InsnArg::Register(new), InsnArg::Register(old)) =
+                (&to, &self.insns[insn].args[index])
+            else {
+                return;
+            };
+            let (new_var, old_var) = (new.svar, old.svar);
+            if let Some(v) = new_var {
+                self.svar_add_used_in_phi(v, insn);
+            }
+            self.insns[insn].args[index] = to;
+            if let Some(v) = new_var {
+                self.svar_use(v, ArgRef::Arg(insn, index));
+            }
+            if let Some(v) = old_var {
+                self.svar_remove_use(v, ArgRef::Arg(insn, index));
+                self.svar_update_used_in_phi_list(v);
+            }
+            return;
+        }
         self.unbind_arg_usage(insn, index);
         let var = match &to {
             InsnArg::Register(r) => r.svar,
