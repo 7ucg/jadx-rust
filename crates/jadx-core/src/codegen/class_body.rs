@@ -26,7 +26,9 @@ impl<'a> ClassGen<'a> {
 
     /// `makeClass`
     pub fn make_class(&self) -> Res<CodeInfo> {
-        let env = self.env();
+        if self.node().package_info {
+            return self.make_package_info();
+        }
         let mut body = new_writer(self);
         self.add_class_code(&mut body)?;
 
@@ -35,6 +37,16 @@ impl<'a> ClassGen<'a> {
         code.new_line();
         self.add_imports(&mut code);
         code.add_writer(&body);
+        Ok(code.finish())
+    }
+
+    fn make_package_info(&self) -> Res<CodeInfo> {
+        let mut code = new_writer(self);
+        annotation_gen::add_annotations(self, &mut code, &self.node().attrs.annotations)?;
+        code.new_line();
+        self.add_package(&mut code);
+        code.new_line();
+        self.add_imports(&mut code);
         Ok(code.finish())
     }
 

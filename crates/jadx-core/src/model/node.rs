@@ -177,6 +177,8 @@ pub struct ClassNode {
     pub enum_class: Option<EnumClassAttr>,
     /// `AFlag.REMOVE_SUPER_CLASS`
     pub remove_super_class: bool,
+    /// `AFlag.PACKAGE_INFO`: the class is a `package-info` holder.
+    pub package_info: bool,
     /// Why the class was renamed (`RenameReasonAttr`).
     pub alias_reason: Option<String>,
 }
@@ -342,8 +344,14 @@ impl Root {
                 attrs: c.attrs,
                 enum_class: None,
                 remove_super_class: false,
+                package_info: false,
                 alias_reason: None,
             });
+        }
+        for c in &mut classes {
+            c.package_info = c.info.short_name() == "package-info"
+                && c.fields.is_empty()
+                && c.methods.is_empty();
         }
         let mut root = Root {
             ctx,

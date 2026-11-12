@@ -7,7 +7,7 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::Mutex;
 
 use jadx_core::codegen::method_gen::no_code_cfg;
-use jadx_core::codegen::prepare::prepare_variables;
+use jadx_core::codegen::prepare::{apply_method_parameters, prepare_variables};
 use jadx_core::codegen::string_utils::{IntegerFormat as CoreIntegerFormat, StringUtils};
 use jadx_core::codegen::{
     code_gen, CommentsLevel as CoreCommentsLevel, DecompilationMode as CoreMode, GenEnv,
@@ -151,6 +151,7 @@ impl DexMethodLoader<'_> {
             LAST_STAGE,
             self.ctx.args.extract_finally,
         )?;
+        apply_method_parameters(&mut cfg, root, cls, mth);
         prepare_variables(&mut cfg, root);
         Ok(cfg)
     }

@@ -512,6 +512,47 @@ impl DexFile {
         Ok(Vec::new())
     }
 
+    /// Parameter names and flags (`dalvik.annotation.MethodParameters`).
+    fn method_parameters_of(&self, anns: &[Annotation]) -> Result<Vec<(Option<String>, u32)>> {
+        for a in anns {
+            if a.visibility != Visibility::System
+                || self.type_descriptor(a.annotation.type_idx)?
+                    != "Ldalvik/annotation/MethodParameters;"
+            {
+                continue;
+            }
+            let mut names: Vec<Option<String>> = Vec::new();
+            let mut flags: Vec<u32> = Vec::new();
+            for (name_idx, value) in &a.annotation.elements {
+                let EncodedValue::Array(items) = value else {
+                    continue;
+                };
+                match self.string(*name_idx)?.as_str() {
+                    "names" => {
+                        for i in items {
+                            names.push(match i {
+                                EncodedValue::String(s) => Some(self.string(*s)?),
+                                _ => None,
+                            });
+                        }
+                    }
+                    "accessFlags" => {
+                        for i in items {
+                            if let EncodedValue::Int(v) = i {
+                                flags.push(*v as u32);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if !names.is_empty() && names.len() == flags.len() {
+                return Ok(names.into_iter().zip(flags).collect());
+            }
+        }
+        Ok(Vec::new())
+    }
+
     /// Default values of the annotation methods (`dalvik.annotation.AnnotationDefault`).
     fn annotation_defaults_of(
         &self,
@@ -621,6 +662,7 @@ impl DexFile {
                 param_annotations,
                 throws: self.throws_of(own)?,
                 annotation_default,
+                method_parameters: self.method_parameters_of(own)?,
             };
             methods.push(MethodData {
                 attrs,

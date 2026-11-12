@@ -374,4 +374,6 @@ pub struct MethodAttrs {
     pub throws: Vec<String>,
     /// Default value of an annotation method.
     pub annotation_default: Option<EncodedValueData>,
+    /// Names and access flags of the parameters (`dalvik.annotation.MethodParameters`).
+    pub method_parameters: Vec<(Option<String>, u32)>,
 }

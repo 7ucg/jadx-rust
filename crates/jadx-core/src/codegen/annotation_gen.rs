@@ -1,7 +1,7 @@
 //! `AnnotationGen`: annotations of classes, methods, fields and parameters, `throws` lists and
 //! encoded values.
 
-use jadx_input_api::{AnnotationData, ConstValue, EncodedValueData};
+use jadx_input_api::{AnnotationData, ConstValue, EncodedValueData, FieldRefData};
 
 use super::class_gen::ClassGen;
 use super::code_writer::CodeWriter;
@@ -9,7 +9,9 @@ use super::insn_gen::make_static_field_access;
 use super::string_utils::{
     format_double, format_float, java_double_to_string, java_float_to_string,
 };
+use super::type_gen::signature;
 use super::CodegenError;
+use crate::model::const_storage::FieldRef;
 use crate::model::info::FieldInfo;
 use crate::model::types::ArgType;
 
@@ -69,7 +71,8 @@ fn format_annotation(cls_gen: &ClassGen<'_>, code: &mut CodeWriter, a: &Annotati
                 code.add(&param_name);
                 code.add(" = ");
             }
-            encode_value(cls_gen, code, Some(value))?;
+            let value = replace_const_value(cls_gen, value);
+            encode_value(cls_gen, code, Some(&value))?;
             if i + 1 < n {
                 code.add(", ");
             }
@@ -77,6 +80,56 @@ fn format_annotation(cls_gen: &ClassGen<'_>, code: &mut CodeWriter, a: &Annotati
         code.add(")");
     }
     Ok(())
+}
+
+/// `ModVisitor.replaceConstValue`: constant values of annotations are replaced by references to
+/// constant fields.
+fn replace_const_value(cls_gen: &ClassGen<'_>, v: &EncodedValueData) -> EncodedValueData {
+    match v {
+        EncodedValueData::Annotation(a) => EncodedValueData::Annotation(AnnotationData {
+            type_desc: a.type_desc.clone(),
+            visibility: a.visibility,
+            values: a
+                .values
+                .iter()
+                .map(|(k, x)| (k.clone(), replace_const_value(cls_gen, x)))
+                .collect(),
+        }),
+        EncodedValueData::Array(items) => EncodedValueData::Array(
+            items
+                .iter()
+                .map(|i| replace_const_value(cls_gen, i))
+                .collect(),
+        ),
+        other => {
+            let cv = match other {
+                EncodedValueData::Boolean(b) => ConstValue::Boolean(*b),
+                EncodedValueData::Byte(x) => ConstValue::Byte(*x),
+                EncodedValueData::Short(x) => ConstValue::Short(*x),
+                EncodedValueData::Char(x) => ConstValue::Char(*x),
+                EncodedValueData::Int(x) => ConstValue::Int(*x),
+                EncodedValueData::Long(x) => ConstValue::Long(*x),
+                EncodedValueData::Float(b) => ConstValue::from_f32(f32::from_bits(*b)),
+                EncodedValueData::Double(b) => ConstValue::from_f64(f64::from_bits(*b)),
+                EncodedValueData::Str(u) => ConstValue::Str(u.clone()),
+                _ => return other.clone(),
+            };
+            let root = cls_gen.env().root;
+            let found = root
+                .const_storage
+                .get_const_field(root, cls_gen.class_index(), &cv, true);
+            let info = match found {
+                Some(FieldRef::Node(c, f)) => root.classes[*c].fields[*f].info.clone(),
+                Some(FieldRef::Info(i)) => i.clone(),
+                None => return other.clone(),
+            };
+            EncodedValueData::Field(FieldRefData {
+                parent_class: signature(info.decl_class.arg_type()),
+                name: info.name.clone(),
+                ty: signature(&info.ty),
+            })
+        }
+    }
 }
 
 fn param_name(cls_gen: &ClassGen<'_>, ann_cls: Option<usize>, name: &str) -> String {

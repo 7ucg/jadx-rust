@@ -56,6 +56,25 @@ pub fn class_file_path(info: &ClassInfo, rename_default_pkg: bool) -> String {
     format!("{}/{}", pkg.replace('.', "/"), name)
 }
 
+/// Like [`class_file_path`] with the output names (aliases) of the classes and packages.
+pub fn class_alias_file_path(
+    root: &jadx_core::model::node::Root,
+    info: &ClassInfo,
+    rename_default_pkg: bool,
+) -> String {
+    let name = root.class_name_without_package(info).replace('.', "_");
+    let pkg = root.class_package(info);
+    let pkg = if pkg.is_empty() && rename_default_pkg {
+        DEFAULT_PACKAGE_NAME.to_string()
+    } else {
+        pkg
+    };
+    if pkg.is_empty() {
+        return name;
+    }
+    format!("{}/{}", pkg.replace('.', "/"), name)
+}
+
 /// Create the parent directories of `file`.
 pub fn prepare_file(file: &Path) -> io::Result<()> {
     if let Some(parent) = file.parent() {

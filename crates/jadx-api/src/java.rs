@@ -23,6 +23,10 @@ impl<'a> JavaClass<'a> {
         JavaClass { dec, idx }
     }
 
+    pub(crate) fn decompiler(&self) -> &'a JadxDecompiler {
+        self.dec
+    }
+
     /// Index of the class in `Root::classes`.
     pub fn index(&self) -> usize {
         self.idx

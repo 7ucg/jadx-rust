@@ -10,7 +10,7 @@ use crate::model::cfg::MethodCfg;
 use crate::model::condition::{CondMode, IfCondition};
 use crate::model::info::{ClassInfo, FieldInfo, MethodInfo};
 use crate::model::insn::{
-    iflag, ArithOp, CallType, IfOp, IndexValue, InsnArg, InsnId, InsnKind, InsnNode, InsnType,
+    iflag, ArithOp, CallType, IndexValue, InsnArg, InsnId, InsnKind, InsnNode, InsnType,
     InvokeType, LiteralArg, RegisterArg, WrapArg,
 };
 use crate::model::node::{MethodNode, Root};

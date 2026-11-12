@@ -40,6 +40,8 @@ pub fn no_code_cfg(root: &crate::model::node::Root, cls: usize, mth: usize) -> M
         &frame.arg_types,
     );
     let _ = crate::passes::init_code_vars::init_code_vars(&mut cfg);
+    super::prepare::apply_method_parameters(&mut cfg, root, cls, mth);
+    super::var_names::apply_variable_names(&mut cfg, root);
     cfg
 }
 

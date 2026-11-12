@@ -236,9 +236,16 @@ impl CodeWriter {
         &self.buf
     }
 
+    /// `finish`: the code without the first empty line.
     pub fn finish(self) -> CodeInfo {
+        let nl = self.new_line_str.len();
+        let code = if self.buf.len() > nl && self.buf.starts_with(&self.new_line_str) {
+            self.buf[nl..].to_string()
+        } else {
+            self.buf
+        };
         CodeInfo {
-            code: self.buf,
+            code,
             line_map: self.line_map,
         }
     }

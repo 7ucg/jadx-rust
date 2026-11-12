@@ -18,7 +18,7 @@ use crate::generator::{generate_declarations, ClassCodeGenerator, ClassDiagnosti
 use crate::java::{JavaClass, JavaMethod, JavaPackage};
 use crate::log::{Level, LogSink, NullLog};
 use crate::parallel::run_indexed;
-use crate::paths::{class_file_path, safe_join, save_text};
+use crate::paths::{class_alias_file_path, safe_join, save_text};
 use crate::resources::{
     load_resources, save_resources, AndroidResourceDecoder, ResourceDecoder, ResourceFile,
     SaveResources,
@@ -612,7 +612,7 @@ impl JadxDecompiler {
         }
         let rel = format!(
             "{}{}",
-            class_file_path(&node.info, self.args.is_rename_valid()),
+            class_alias_file_path(&l.root, &node.info, self.args.is_rename_valid()),
             self.args.output_format.file_extension()
         );
         let Some(path) = safe_join(src_dir, &rel) else {
@@ -644,7 +644,11 @@ impl JadxDecompiler {
 pub fn class_output_path(cls: &JavaClass<'_>, args: &JadxArgs) -> String {
     format!(
         "{}{}",
-        class_file_path(&cls.class_node().info, args.is_rename_valid()),
+        class_alias_file_path(
+            cls.decompiler().loaded_root(),
+            &cls.class_node().info,
+            args.is_rename_valid()
+        ),
         args.output_format.file_extension()
     )
 }

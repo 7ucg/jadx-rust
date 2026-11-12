@@ -82,6 +82,10 @@ pub fn rename_all(root: &mut Root, opts: &RenameOptions) {
             if !paths.insert(alias_full_path(root, ci).to_lowercase()) {
                 let name = for_class(root, &mut provider, ci);
                 set_class_short_name(root, ci, &name);
+                append_reason(
+                    &mut root.classes[ci].alias_reason,
+                    "case insensitive filesystem",
+                );
                 // verify the new name also doesn't conflict
                 if !paths.insert(alias_full_path(root, ci).to_lowercase()) {
                     let name = for_class(root, &mut provider, ci);
@@ -123,16 +127,35 @@ fn set_class_short_name(root: &mut Root, ci: usize, name: &str) {
     };
 }
 
+/// `RenameReasonAttr.append`
+fn append_reason(reason: &mut Option<String>, text: &str) {
+    match reason {
+        Some(r) if !r.is_empty() => {
+            r.push_str(" and ");
+            r.push_str(text);
+        }
+        _ => *reason = Some(text.to_string()),
+    }
+}
+
+const REASON_NOT_VALID: &str = "not valid java name";
+const REASON_NOT_PRINTABLE: &str = "contains not printable characters";
+
 fn check_class_name(root: &mut Root, provider: &mut AliasProvider, ci: usize) {
+    if root.classes[ci].package_info {
+        return;
+    }
     let cls_name = class_short_name(root, ci);
     let Some(new_short_name) = fix_cls_short_name(&cls_name) else {
         // rename failed, use deobfuscator
         let name = for_class(root, provider, ci);
         set_class_short_name(root, ci, &name);
+        append_reason(&mut root.classes[ci].alias_reason, REASON_NOT_PRINTABLE);
         return;
     };
     if new_short_name != cls_name {
         set_class_short_name(root, ci, &new_short_name);
+        append_reason(&mut root.classes[ci].alias_reason, "invalid class name");
     }
     if root.classes[ci].info.is_inner() {
         // check inner classes names
@@ -141,6 +164,10 @@ fn check_class_name(root: &mut Root, provider: &mut AliasProvider, ci: usize) {
             if root.class_short_name(&p) == new_short_name {
                 let name = for_class(root, provider, ci);
                 set_class_short_name(root, ci, &name);
+                append_reason(
+                    &mut root.classes[ci].alias_reason,
+                    "collision with other inner class name",
+                );
                 break;
             }
             parent = p.parent_class().cloned();
@@ -182,7 +209,17 @@ fn check_fields(root: &mut Root, provider: &mut AliasProvider, ci: usize) {
         let not_printable = !is_all_chars_printable(&name);
         if not_unique || not_valid || not_printable {
             let new = for_field(provider, &f.info.name);
-            root.classes[ci].fields[fi].alias = Some(new);
+            let f = &mut root.classes[ci].fields[fi];
+            f.alias = Some(new);
+            if not_valid {
+                append_reason(&mut f.alias_reason, REASON_NOT_VALID);
+            }
+            if not_printable {
+                append_reason(&mut f.alias_reason, REASON_NOT_PRINTABLE);
+            }
+            if not_unique {
+                append_reason(&mut f.alias_reason, "collision with other field name");
+            }
         }
     }
 }
@@ -198,9 +235,18 @@ fn check_methods(root: &mut Root, provider: &mut AliasProvider, ci: usize) {
         .collect();
     for &mi in &methods {
         let name = mth_name(root, ci, mi);
-        if !is_valid_identifier(&name) || !is_all_chars_printable(&name) {
+        let not_valid = !is_valid_identifier(&name);
+        let not_printable = !is_all_chars_printable(&name);
+        if not_valid || not_printable {
             let new = for_method(root, provider, ci, mi);
             rename_method(root, ci, mi, &new);
+            let m = &mut root.classes[ci].methods[mi];
+            if not_valid {
+                append_reason(&mut m.alias_reason, REASON_NOT_VALID);
+            }
+            if not_printable {
+                append_reason(&mut m.alias_reason, REASON_NOT_PRINTABLE);
+            }
         }
     }
     // rename methods with same signature
@@ -212,6 +258,8 @@ fn check_methods(root: &mut Root, provider: &mut AliasProvider, ci: usize) {
         if !names.insert(signature) && can_rename(root, ci, mi) {
             let new = for_method(root, provider, ci, mi);
             rename_method(root, ci, mi, &new);
+            root.classes[ci].methods[mi].alias_reason =
+                Some("collision with other method in class".to_string());
         }
     }
 }
@@ -341,7 +389,9 @@ fn process_root_packages(root: &mut Root, provider: &mut AliasProvider, classes:
             let name = f.alias.as_deref().unwrap_or(&f.info.name);
             if root_pkgs.contains(name) {
                 let new = for_field(provider, &f.info.name);
-                root.classes[ci].fields[fi].alias = Some(new);
+                let f = &mut root.classes[ci].fields[fi];
+                f.alias = Some(new);
+                f.alias_reason = Some("collision with root package name".to_string());
             }
         }
     }
