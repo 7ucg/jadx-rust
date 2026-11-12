@@ -51,6 +51,7 @@ pub(crate) fn insn_regions_driver(dexes: &[DexFile], stage: u32) -> Result<()> {
     let opts = DriverOptions {
         stage,
         extract_finally: std::env::var("JADX_RS_FINALLY").is_ok_and(|v| v == "1"),
+        ..DriverOptions::default()
     };
     let mut driver = ClassDriver::new(root, &src, opts);
     driver.process_all();

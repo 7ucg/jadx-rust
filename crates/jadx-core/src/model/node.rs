@@ -124,6 +124,99 @@ pub struct MethodNode {
     pub alias_reason: Option<String>,
     /// `AType.METHOD_REPLACE`: the method this method is merged with.
     pub replace: Option<MethodId>,
+    /// First method of the override list (`getOverrideList().get(0)`).
+    pub override_first: Option<OverrideFirst>,
+    /// `AType.METHOD_THROWS`: exceptions the method throws (set by `MethodThrowsVisitor`).
+    pub throws_attr: Option<ThrowsAttr>,
+    /// `AType.METHOD_INLINE`: how calls of the method are inlined (set by `MarkMethodsForInline`).
+    pub inline: Option<InlineAttr>,
+}
+
+/// `MethodThrowsAttr`: a `HashSet<String>` of the thrown exceptions, kept in insertion order.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ThrowsAttr {
+    items: Vec<String>,
+    /// Largest size of the set (the table of the reference never shrinks).
+    max_size: usize,
+    pub visited: bool,
+}
+
+impl ThrowsAttr {
+    pub fn add(&mut self, name: &str) {
+        if !self.items.iter().any(|i| i == name) {
+            self.items.push(name.to_string());
+            self.max_size = self.max_size.max(self.items.len());
+        }
+    }
+
+    pub fn contains(&self, name: &str) -> bool {
+        self.items.iter().any(|i| i == name)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+
+    pub fn retain(&mut self, f: impl Fn(&str) -> bool) {
+        self.items.retain(|i| f(i));
+    }
+
+    /// Elements in insertion order.
+    pub fn items(&self) -> &[String] {
+        &self.items
+    }
+
+    /// Elements in the iteration order of the `HashSet` of the reference.
+    pub fn java_order(&self) -> Vec<String> {
+        let mut cap = 16usize;
+        while self.max_size > cap * 3 / 4 {
+            cap *= 2;
+        }
+        let bucket = |s: &String| {
+            let h = super::bitset::java_string_hash(s) as u32;
+            ((h ^ (h >> 16)) as usize) & (cap - 1)
+        };
+        let mut v = self.items.clone();
+        v.sort_by_key(bucket);
+        v
+    }
+}
+
+/// A method of the override list: a method of the input or the raw access flags of a framework
+/// method.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OverrideFirst {
+    App(MethodId),
+    Clsp(u32),
+}
+
+/// `MethodInlineAttr`: the instruction that replaces a call of the method, stored with its own
+/// instruction arena (the argument registers are not bound to variables).
+#[derive(Debug, Clone, PartialEq)]
+pub struct InlineAttr {
+    /// Instructions of the inlined code (wrapped instructions refer to indexes of this list).
+    pub insns: Vec<super::insn::InsnNode>,
+    /// The instruction to inline, `None` if the method must not be inlined.
+    pub root: Option<super::insn::InsnId>,
+    /// Register numbers of the method arguments (`this` first).
+    pub args_regs: Vec<u32>,
+    /// Register count of the method code (`getRegsCount`).
+    pub regs_count: usize,
+}
+
+impl InlineAttr {
+    pub fn not_needed() -> InlineAttr {
+        InlineAttr {
+            insns: Vec::new(),
+            root: None,
+            args_regs: Vec::new(),
+            regs_count: 0,
+        }
+    }
+
+    pub fn is_not_needed(&self) -> bool {
+        self.root.is_none()
+    }
 }
 
 impl MethodNode {
@@ -356,6 +449,9 @@ impl Root {
                     attrs: m.attrs,
                     alias_reason: None,
                     replace: None,
+                    inline: None,
+                    throws_attr: None,
+                    override_first: None,
                 });
             }
             by_raw.insert(info.raw_name(), classes.len());

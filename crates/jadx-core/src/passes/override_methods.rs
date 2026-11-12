@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-use crate::model::node::Root;
+use crate::model::node::{OverrideFirst, Root};
 use crate::model::types::ArgType;
 use crate::type_compare::{TypeCompare, TypeCompareEnum};
 use crate::type_utils::TypeUtils;
@@ -122,7 +122,20 @@ pub fn process_overrides(root: &mut Root) {
                 .filter_map(|o| details(root, o).map(|d| d.decl_class))
                 .collect();
             let is_base = attr.base_methods.contains(m);
+            let first = attr
+                .override_list
+                .iter()
+                .find(|o| details(root, o).is_some())
+                .and_then(|o| match o {
+                    MthRef::App(c, i) => Some(OverrideFirst::App((*c, *i))),
+                    MthRef::Clsp(cls, id) => root
+                        .clsp
+                        .cls_details(cls)
+                        .and_then(|d| d.method_by_short_id(id))
+                        .map(|m| OverrideFirst::Clsp(m.access_flags)),
+                });
             let node = &mut root.classes[*c].methods[*i];
+            node.override_first = first;
             node.override_decls = decls;
             node.override_is_base = is_base;
             if let [base] = attr.base_methods.as_slice() {

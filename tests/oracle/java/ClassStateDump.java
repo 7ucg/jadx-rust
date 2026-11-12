@@ -52,8 +52,24 @@ public class ClassStateDump {
 					.append(" noskip=").append(m.contains(AFlag.NO_SKIP_ARGS) ? 1 : 0)
 					.append(" skip=[").append(skipStr).append(']')
 					.append(" skipfirst=").append(m.contains(AFlag.SKIP_FIRST_ARG) ? 1 : 0)
-					.append(" mrepl=").append(m.get(AType.METHOD_REPLACE) == null ? "-" : m.get(AType.METHOD_REPLACE).getReplaceMth().getMethodInfo().getRawFullId()).append(extraMethodAttrs(m)).append('\n');
+					.append(" mrepl=").append(m.get(AType.METHOD_REPLACE) == null ? "-" : m.get(AType.METHOD_REPLACE).getReplaceMth().getMethodInfo().getRawFullId()).append(" inl=").append(inline(m)).append(" thr=").append(throwsList(m)).append(extraMethodAttrs(m)).append('\n');
 		}
+	}
+
+	private static String throwsList(MethodNode m) {
+		jadx.core.dex.attributes.nodes.MethodThrowsAttr ta = m.get(AType.METHOD_THROWS);
+		if (ta == null) {
+			return "-";
+		}
+		return String.join(",", ta.getList());
+	}
+
+	private static String inline(MethodNode m) {
+		jadx.core.dex.attributes.nodes.MethodInlineAttr ia = m.get(AType.METHOD_INLINE);
+		if (ia == null) {
+			return "-";
+		}
+		return ia.notNeeded() ? "none" : RegionDump.insnLine(ia.getInsn());
 	}
 
 	private static String replace(ClassNode cls, FieldNode f) {

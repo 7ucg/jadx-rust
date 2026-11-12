@@ -95,7 +95,7 @@ pub fn dump_class_state<'a>(
             .unwrap_or_default();
         let _ = writeln!(
             out,
-            "R M {} acc={:x} dont={} noskip={} skip=[{skip}] skipfirst={} mrepl={}",
+            "R M {} acc={:x} dont={} noskip={} skip=[{skip}] skipfirst={} mrepl={} inl={} thr={}",
             m.info.short_id(),
             m.access,
             u8::from(m.dont_generate),
@@ -108,6 +108,23 @@ pub fn dump_class_state<'a>(
                     root.classes[c].methods[i].info.decl_class.raw_name(),
                     root.classes[c].methods[i].info.short_id()
                 ),
+            },
+            match &m.inline {
+                None => "-".to_string(),
+                Some(a) => match a.root {
+                    None => "none".to_string(),
+                    Some(r) => {
+                        let tmp = MethodCfg {
+                            insns: a.insns.clone(),
+                            ..MethodCfg::default()
+                        };
+                        crate::region_dump::insn_line(&tmp, r)
+                    }
+                },
+            },
+            match &m.throws_attr {
+                None => "-".to_string(),
+                Some(a) => a.java_order().join(","),
             }
         );
     }

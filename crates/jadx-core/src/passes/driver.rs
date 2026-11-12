@@ -12,6 +12,7 @@ use jadx_input_api::TryData;
 use crate::decode::DecodedMethod;
 use crate::model::cfg::MethodCfg;
 use crate::model::node::{MethodId, Root};
+use crate::model::types::ArgType;
 use crate::passes::constructor::MethodEnv;
 use crate::passes::pipeline::{build_ssa, FrameInfo};
 
@@ -33,6 +34,10 @@ pub trait CodeSource {
 pub struct DriverOptions {
     pub stage: u32,
     pub extract_finally: bool,
+    /// `JadxArgs.isInlineMethods`
+    pub inline_methods: bool,
+    /// `JadxArgs.isRespectBytecodeAccModifiers`
+    pub respect_bytecode_acc_modifiers: bool,
 }
 
 impl Default for DriverOptions {
@@ -40,6 +45,8 @@ impl Default for DriverOptions {
         DriverOptions {
             stage: u32::MAX,
             extract_finally: true,
+            inline_methods: true,
+            respect_bytecode_acc_modifiers: false,
         }
     }
 }
@@ -268,6 +275,233 @@ impl<'s> ClassDriver<'s> {
         }
     }
 
+    /// `MethodThrowsVisitor.visit`
+    fn throws_visit(&mut self, id: MethodId) {
+        use crate::passes::method_throws as mt;
+        let (c, m) = id;
+        if self.root.classes[c].methods[m].throws_attr.is_none() {
+            self.root.classes[c].methods[m].throws_attr = Some(Default::default());
+        }
+        let visited = self.root.classes[c].methods[m]
+            .throws_attr
+            .as_ref()
+            .is_some_and(|a| a.visited);
+        let no_code = self.root.classes[c].methods[m].code_offset.is_none();
+        let has_blocks = self.methods.get(&id).is_some_and(|s| s.cfg.is_some());
+        if !visited && (no_code || has_blocks) {
+            if let Some(a) = self.root.classes[c].methods[m].throws_attr.as_mut() {
+                a.visited = true;
+            }
+            self.throws_process(id);
+        }
+        let declared = self.root.classes[c].methods[m].attrs.throws.clone();
+        let mut add = Vec::new();
+        for d in &declared {
+            let ty = ArgType::object(d);
+            if mt::validate_exception(&self.root, &ty) != mt::ExceptionType::NoException {
+                if let Some(n) = ty.object_name() {
+                    add.push(n);
+                }
+            }
+        }
+        let mut attr = self.root.classes[c].methods[m]
+            .throws_attr
+            .take()
+            .unwrap_or_default();
+        for n in &add {
+            attr.add(n);
+        }
+        mt::merge_exceptions(&self.root, &mut attr);
+        self.root.classes[c].methods[m].throws_attr = Some(attr);
+    }
+
+    fn throws_process(&mut self, id: MethodId) {
+        use crate::passes::method_throws as mt;
+        let plan = match self.methods.get(&id).and_then(|s| s.cfg.as_ref()) {
+            Some(cfg) => mt::plan(&self.root, cfg),
+            None => return,
+        };
+        for p in plan {
+            match p.step {
+                mt::Step::Throw(ty) => self.visit_throws(id, &ty, &p.excluded),
+                mt::Step::CallApp(callee) => {
+                    self.throws_visit(callee);
+                    let list = self.root.classes[callee.0].methods[callee.1]
+                        .throws_attr
+                        .as_ref()
+                        .filter(|a| !a.is_empty())
+                        .map(|a| a.java_order())
+                        .unwrap_or_default();
+                    for s in list {
+                        self.visit_throws(id, &ArgType::object(&s), &p.excluded);
+                    }
+                }
+                mt::Step::CallClsp(types) => {
+                    for t in types {
+                        self.visit_throws(id, &t, &p.excluded);
+                    }
+                }
+            }
+        }
+    }
+
+    /// `visitThrows`
+    fn visit_throws(&mut self, id: MethodId, ty: &ArgType, excluded: &[String]) {
+        use crate::passes::method_throws as mt;
+        if !ty.is_type_known() {
+            return;
+        }
+        // an unknown type hierarchy is assumed to be an exception
+        let required = match mt::validate_exception(&self.root, ty) {
+            mt::ExceptionType::UnknownType | mt::ExceptionType::ThrowsRequired => true,
+            mt::ExceptionType::Runtime | mt::ExceptionType::NoException => false,
+        };
+        if !required {
+            return;
+        }
+        let Some(name) = ty.object_name() else {
+            return;
+        };
+        if excluded
+            .iter()
+            .any(|e| mt::is_base_exception(&self.root, &name, e))
+        {
+            return;
+        }
+        if let Some(a) = self.root.classes[id.0].methods[id.1].throws_attr.as_mut() {
+            a.add(&name);
+        }
+    }
+
+    /// `MarkMethodsForInline.process`: set the inline attribute of a method if it has none.
+    /// `own` is the code of the method if it is currently taken out of the state. Returns false
+    /// if the method can't be analyzed because it is not loaded.
+    fn mark_process(&mut self, id: MethodId, own: Option<&MethodCfg>) -> bool {
+        if self.root.classes[id.0].methods[id.1].inline.is_some() {
+            return true;
+        }
+        let cfg = own.or_else(|| self.methods.get(&id).and_then(|s| s.cfg.as_ref()));
+        let respect = self.opts.respect_bytecode_acc_modifiers;
+        match crate::passes::mark_methods_for_inline::process(&self.root, id, cfg, respect) {
+            Some(marked) => {
+                crate::passes::mark_methods_for_inline::apply_visibility(
+                    &mut self.root,
+                    &marked.make_public,
+                );
+                self.root.classes[id.0].methods[id.1].inline = Some(marked.attr);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// `InlineMethods`
+    fn inline_methods(&mut self, visits: &[Visit]) {
+        for v in visits {
+            let Visit::Method(c, m) = *v else {
+                continue;
+            };
+            let Some(st) = self.methods.get_mut(&(c, m)) else {
+                continue;
+            };
+            if st.failed.is_some() {
+                continue;
+            }
+            let Some(mut cfg) = st.cfg.take() else {
+                continue;
+            };
+            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                self.inline_in_method((c, m), &mut cfg)
+            }));
+            let st = self.methods.get_mut(&(c, m)).expect("method state");
+            st.cfg = Some(cfg);
+            match r {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => st.failed = Some(e),
+                Err(_) => st.failed = Some("panic in pass".to_string()),
+            }
+        }
+    }
+
+    fn inline_in_method(&mut self, mth: MethodId, cfg: &mut MethodCfg) -> Result<(), String> {
+        use crate::model::insn::InsnType;
+        for block in cfg.blocks.clone() {
+            for insn in cfg.block(block).insns.clone() {
+                if cfg.insn(insn).ty != InsnType::Invoke {
+                    continue;
+                }
+                let Some(details) = cfg.insn(insn).details.clone() else {
+                    continue;
+                };
+                let Some(callee) = self.root.resolve_method(&details) else {
+                    continue;
+                };
+                self.process_invoke_for_inline(mth, cfg, block, insn, callee)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn process_invoke_for_inline(
+        &mut self,
+        mth: MethodId,
+        cfg: &mut MethodCfg,
+        block: crate::model::insn::BlockId,
+        insn: crate::model::insn::InsnId,
+        callee: MethodId,
+    ) -> Result<(), String> {
+        let own = if callee == mth { Some(&*cfg) } else { None };
+        let mut loaded = self.mark_process(callee, own);
+        if !loaded {
+            // method is not yet loaded => force process
+            let top = self.root.top_parent_index(callee.0);
+            // the code of the method in progress is visible to the processing of other classes
+            if let Some(st) = self.methods.get_mut(&mth) {
+                st.cfg = Some(cfg.clone());
+            }
+            self.process_class(top);
+            if let Some(st) = self.methods.get_mut(&mth) {
+                st.cfg = None;
+            }
+            let own = if callee == mth { Some(&*cfg) } else { None };
+            loaded = self.mark_process(callee, own);
+            if !loaded {
+                let name = format!(
+                    "{}.{}",
+                    self.root.classes[callee.0].info.full_name(),
+                    self.root.classes[callee.0].methods[callee.1]
+                        .info
+                        .short_id()
+                );
+                cfg.warnings.push(format!(
+                    "Failed to check method for inline after forced process{name}"
+                ));
+                return Ok(());
+            }
+        }
+        let Some(attr) = self.root.classes[callee.0].methods[callee.1].inline.clone() else {
+            return Ok(());
+        };
+        if attr.is_not_needed() {
+            return Ok(());
+        }
+        let (done, updates) = crate::passes::inline_methods::inline_method(
+            &self.root, cfg, callee, &attr, block, insn,
+        );
+        if let Some(stored) = self.root.classes[callee.0].methods[callee.1]
+            .inline
+            .as_mut()
+        {
+            for (i, k, arg) in updates {
+                stored.insns[i].args[k] = arg;
+            }
+        }
+        if done {
+            crate::passes::inline_methods::update_usage_info(&mut self.root, mth, callee, &attr);
+        }
+        Ok(())
+    }
+
     /// `FixSwitchOverEnum`: a pass with a class and a method part, in traversal order.
     fn fix_switch_over_enum(&mut self, visits: &[Visit]) {
         use crate::passes::fix_switch_over_enum as fse;
@@ -316,6 +550,9 @@ impl<'s> ClassDriver<'s> {
             self.method_pass(visits, &|cfg, env, _| {
                 crate::passes::kotlin_internals::process_kotlin_internals(cfg, env.root)
             });
+        }
+        if on(pass_stage::INLINE_METHODS) && self.opts.inline_methods {
+            self.inline_methods(visits);
         }
         if on(pass_stage::GENERIC_TYPES) {
             self.method_pass(visits, &|cfg, env, _| {
@@ -377,6 +614,20 @@ impl<'s> ClassDriver<'s> {
         if on(pass_stage::CLEAN_REGIONS) {
             self.method_pass(visits, &|cfg, _, _| rg::clean::clean_regions(cfg));
         }
+        if on(pass_stage::METHOD_THROWS) {
+            for v in visits {
+                if let Visit::Method(c, m) = *v {
+                    if self
+                        .methods
+                        .get(&(c, m))
+                        .is_some_and(|s| s.failed.is_some())
+                    {
+                        continue;
+                    }
+                    self.throws_visit((c, m));
+                }
+            }
+        }
         if on(pass_stage::CODE_SHRINK2) {
             self.method_pass(visits, &|cfg, _, _| rg::shrink_method(cfg));
         }
@@ -406,6 +657,21 @@ impl<'s> ClassDriver<'s> {
         if on(pass_stage::FIX_SWITCH_OVER_ENUM) {
             self.fix_switch_over_enum(visits);
         }
+        if on(pass_stage::FIX_ACCESS_MODIFIERS) && !self.opts.respect_bytecode_acc_modifiers {
+            for v in visits {
+                match *v {
+                    Visit::Class(c) => {
+                        crate::passes::fix_access_modifiers::fix_class_visibility(&mut self.root, c)
+                    }
+                    Visit::Method(c, m) => {
+                        crate::passes::fix_access_modifiers::fix_method_visibility(
+                            &mut self.root,
+                            (c, m),
+                        )
+                    }
+                }
+            }
+        }
         if on(pass_stage::EXTRACT_FIELD_INIT) {
             if let Some(Visit::Class(top)) = visits.first().copied() {
                 self.class_pass_post(top, &|root, methods, c| {
@@ -429,6 +695,20 @@ impl<'s> ClassDriver<'s> {
             self.method_pass(visits, &|cfg, env, _| {
                 rg::switch_break::switch_break_visitor(cfg, env)
             });
+        }
+        if on(pass_stage::MARK_METHODS_FOR_INLINE) && self.opts.inline_methods {
+            for v in visits {
+                if let Visit::Method(c, m) = *v {
+                    if self
+                        .methods
+                        .get(&(c, m))
+                        .is_some_and(|s| s.failed.is_some())
+                    {
+                        continue;
+                    }
+                    self.mark_process((c, m), None);
+                }
+            }
         }
         if on(pass_stage::PROCESS_VARIABLES) {
             self.method_pass(visits, &|cfg, env, methods| {
@@ -469,6 +749,7 @@ pub mod pass_stage {
     pub const GENERIC_TYPES: u32 = 23;
     pub const KOTLIN_INTERNALS: u32 = 24;
     pub const SWITCH_OVER_STRING: u32 = 25;
+    pub const METHOD_THROWS: u32 = 26;
     pub const METHOD_INVOKE: u32 = 27;
     pub const SIMPLIFY: u32 = 28;
     pub const FIX_INSTRUCTIONS: u32 = 29;
@@ -480,4 +761,7 @@ pub mod pass_stage {
     pub const CLASS_MODIFIER: u32 = 35;
     pub const ENUM_VISITOR: u32 = 36;
     pub const FIX_SWITCH_OVER_ENUM: u32 = 37;
+    pub const INLINE_METHODS: u32 = 38;
+    pub const FIX_ACCESS_MODIFIERS: u32 = 40;
+    pub const MARK_METHODS_FOR_INLINE: u32 = 41;
 }
