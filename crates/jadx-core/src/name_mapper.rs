@@ -97,3 +97,13 @@ pub fn is_valid_identifier(s: &str) -> bool {
 pub fn is_valid_full_identifier(s: &str) -> bool {
     !s.is_empty() && !is_reserved(s) && s.split('.').all(valid_ident_chars)
 }
+
+/// `NameMapper.isAllCharsPrintable`: only printable ASCII characters.
+pub fn is_all_chars_printable(s: &str) -> bool {
+    s.chars().all(|c| (' '..='~').contains(&c))
+}
+
+/// `NameMapper.isValidAndPrintable`
+pub fn is_valid_and_printable(s: &str) -> bool {
+    is_valid_identifier(s) && is_all_chars_printable(s)
+}

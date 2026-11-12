@@ -68,6 +68,10 @@ pub struct MethodNode {
     pub skip_args: Option<Vec<bool>>,
     /// Synthetic method (or constructor) that may be inlined at its usage.
     pub inline_candidate: bool,
+    /// `AFlag.SKIP_FIRST_ARG`: the first argument (outer instance) is not generated.
+    pub skip_first_arg: bool,
+    /// `AFlag.DONT_GENERATE`: the method is not part of the output.
+    pub dont_generate: bool,
 }
 
 impl MethodNode {
@@ -229,6 +233,8 @@ impl Root {
                     no_skip_args: false,
                     skip_args: None,
                     inline_candidate: false,
+                    skip_first_arg: false,
+                    dont_generate: false,
                 });
             }
             by_raw.insert(info.raw_name(), classes.len());

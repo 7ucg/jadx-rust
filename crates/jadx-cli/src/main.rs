@@ -8,6 +8,8 @@
 //!   jadx-rs dex-counts  <file>   id table counts (oracle comparison format)
 //!   jadx-rs pre-info    <file>   class level state after the pre decompile passes
 
+mod code_dump;
+
 use std::path::PathBuf;
 
 use anyhow::{bail, Context, Result};
@@ -19,8 +21,8 @@ fn main() -> Result<()> {
     let path = args.next().map(PathBuf::from);
     let no_verify = args.any(|a| a == "--no-verify-checksum");
     let path = match (cmd.as_str(), path) {
-        ("dex-info" | "dex-classes" | "dex-map" | "dex-counts" | "smali" | "dex-opcodes" | "insn-dump" | "insn-nodes" | "insn-blocks" | "insn-cfg" | "insn-ssa" | "pre-info", Some(p)) => p,
-        _ => bail!("usage: jadx-rs <dex-info|dex-classes|dex-map|dex-counts|smali|dex-opcodes|insn-dump|insn-nodes|insn-blocks|insn-cfg|insn-ssa|pre-info> <file.dex|.apk|.jar> [--no-verify-checksum]"),
+        ("dex-info" | "dex-classes" | "dex-map" | "dex-counts" | "smali" | "dex-opcodes" | "insn-dump" | "insn-nodes" | "insn-blocks" | "insn-cfg" | "insn-ssa" | "insn-code" | "pre-info", Some(p)) => p,
+        _ => bail!("usage: jadx-rs <dex-info|dex-classes|dex-map|dex-counts|smali|dex-opcodes|insn-dump|insn-nodes|insn-blocks|insn-cfg|insn-ssa|insn-code|pre-info> <file.dex|.apk|.jar> [--no-verify-checksum]"),
     };
     let opts = LoadOptions {
         verify_checksum: !no_verify,
@@ -31,6 +33,9 @@ fn main() -> Result<()> {
     }
     if cmd == "pre-info" {
         return pre_info(&res.dex_files);
+    }
+    if cmd == "insn-code" {
+        return code_dump::insn_code(&res.dex_files);
     }
     if matches!(
         cmd.as_str(),
@@ -259,7 +264,7 @@ fn insn_dump(dex: &DexFile) -> Result<()> {
 
 /// Load all classes of the dex files into a root and run the pre decompile passes. Also returns
 /// the dex file index of every class.
-fn build_root(dexes: &[DexFile]) -> Result<(jadx_core::model::node::Root, Vec<usize>)> {
+pub(crate) fn build_root(dexes: &[DexFile]) -> Result<(jadx_core::model::node::Root, Vec<usize>)> {
     use jadx_core::passes::pre_decompile::{run_pre_decompile, PreDecompileOptions};
 
     let mut classes = Vec::new();

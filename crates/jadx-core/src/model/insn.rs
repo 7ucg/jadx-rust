@@ -503,6 +503,16 @@ pub mod iflag {
     pub const SOFT_CAST: u64 = 1 << 10;
     pub const FORCE_ASSIGN_INLINE: u64 = 1 << 11;
     pub const FINALLY_INSNS: u64 = 1 << 12;
+    /// The variable assigned by the instruction is declared in its statement.
+    pub const DECLARE_VAR: u64 = 1 << 13;
+    /// Arithmetic instruction with the result as first argument (`a += b`, `a++`).
+    pub const ARITH_ONEARG: u64 = 1 << 14;
+    /// Do not wrap the instruction in brackets when used as an argument.
+    pub const DONT_WRAP: u64 = 1 << 15;
+    /// Use the raw method name instead of the alias.
+    pub const FORCE_RAW_NAME: u64 = 1 << 16;
+    /// Invoke with a variable arguments array built by a filled array instruction.
+    pub const VARARG_CALL: u64 = 1 << 17;
 
     pub const NAMES: &[(u64, &str)] = &[
         (TRY_ENTER, "TRY_ENTER"),

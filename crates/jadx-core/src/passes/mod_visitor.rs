@@ -500,7 +500,7 @@ fn get_first_use_skip_move(cfg: &MethodCfg, var: SsaId) -> Option<InsnId> {
 }
 
 /// `FillArrayData.getLiteralArgs`
-fn literal_args(data: &FillArrayData, ty: &ArgType) -> Vec<InsnArg> {
+pub(crate) fn literal_args(data: &FillArrayData, ty: &ArgType) -> Vec<InsnArg> {
     let values: Vec<i64> = match &data.data {
         ArrayData::Empty => Vec::new(),
         ArrayData::Bytes(v) => v.iter().map(|b| i64::from(*b as i8)).collect(),
