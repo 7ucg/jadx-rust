@@ -44,7 +44,10 @@ def main():
             continue
         for a, b in zip(v + ["<EOF>"], w + ["<EOF>"]):
             if a != b:
-                kinds[a.split(" ")[2] if a.startswith("I ") else a.split(" ")[0][:30]] += 1
+                if a.startswith("R "):
+                    kinds[a[2:].lstrip().split(" ")[0][:30]] += 1
+                else:
+                    kinds[a.split(" ")[2] if a.startswith("I ") else a.split(" ")[0][:30]] += 1
                 if shown < 4:
                     shown += 1
                     print(f"  {k}\n    ref: {a[:300]}\n    rs : {b[:300]}")

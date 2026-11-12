@@ -131,13 +131,20 @@ public class BlockDump {
 						if (stage >= 11) {
 							new CodeShrinkVisitor().visit(mth);
 						}
+						if (stage >= 12) {
+							RegionStages.run(mth, stage);
+						}
 					} catch (Throwable e) {
 						sb.append("M ").append(mth.getMethodInfo().getRawFullId()).append(" LOAD_ERROR\n");
 						System.out.print(sb);
 						sb.setLength(0);
 						continue;
 					}
-					dump(sb, mth, stage >= 1, stage >= 2, typed, stage >= 8);
+					if (stage >= 12) {
+						RegionDump.dump(sb, mth);
+					} else {
+						dump(sb, mth, stage >= 1, stage >= 2, typed, stage >= 8);
+					}
 					System.out.print(sb);
 					sb.setLength(0);
 					// not unloaded: unload() would also drop pre-decompile flags (e.g. inline candidates) that later methods read

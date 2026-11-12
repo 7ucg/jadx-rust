@@ -49,6 +49,10 @@ pub mod bflag {
     pub const TRY_ENTER: u64 = 1 << 14;
     pub const TRY_LEAVE: u64 = 1 << 15;
     pub const FINALLY_INSNS: u64 = 1 << 16;
+    pub const DUPLICATED: u64 = 1 << 17;
+    pub const DONT_INVERT: u64 = 1 << 18;
+    pub const ALLOW_MULTIPLE_INSNS_LOOP_COND: u64 = 1 << 19;
+    pub const ELSE_IF_CHAIN: u64 = 1 << 20;
 
     pub const NAMES: &[(u64, &str)] = &[
         (MTH_ENTER_BLOCK, "MTH_ENTER_BLOCK"),
@@ -68,6 +72,17 @@ pub mod bflag {
         (TRY_ENTER, "TRY_ENTER"),
         (TRY_LEAVE, "TRY_LEAVE"),
         (FINALLY_INSNS, "FINALLY_INSNS"),
+    ];
+
+    /// Flags added by the region stages.
+    pub const REGION_NAMES: &[(u64, &str)] = &[
+        (DUPLICATED, "DUPLICATED"),
+        (DONT_INVERT, "DONT_INVERT"),
+        (
+            ALLOW_MULTIPLE_INSNS_LOOP_COND,
+            "ALLOW_MULTIPLE_INSNS_LOOP_COND",
+        ),
+        (ELSE_IF_CHAIN, "ELSE_IF_CHAIN"),
     ];
 }
 
@@ -283,6 +298,8 @@ pub struct MethodCfg {
     pub types_done: bool,
     /// The type fixing stage ran (warnings are reported by the dump).
     pub types_fixed: bool,
+    /// Region tree and region related attributes.
+    pub regions: super::region::Regions,
 }
 
 impl MethodCfg {

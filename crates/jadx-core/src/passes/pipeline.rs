@@ -153,7 +153,22 @@ pub fn build_ssa(
     if stage >= 11 {
         crate::passes::code_shrink::code_shrink(&mut cfg)?;
     }
+    if stage >= 12 {
+        run_region_stages(&mut cfg, root, cls, mth, stage)?;
+    }
     Ok(cfg)
+}
+
+/// Region stages (12 = `RegionMakerVisitor`).
+fn run_region_stages(
+    cfg: &mut MethodCfg,
+    root: &crate::model::node::Root,
+    cls: usize,
+    mth: usize,
+    stage: u32,
+) -> Result<(), String> {
+    let env = crate::passes::constructor::MethodEnv { root, cls, mth };
+    crate::passes::regions::run_region_stages(cfg, &env, stage)
 }
 
 /// Type inference stages; a panic inside them fails only the current method.

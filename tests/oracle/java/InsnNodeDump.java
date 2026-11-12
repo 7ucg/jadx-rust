@@ -83,7 +83,7 @@ public class InsnNodeDump {
 		return s;
 	}
 
-	private static String arg(InsnArg a) {
+	static String arg(InsnArg a) {
 		if (a instanceof RegisterArg) {
 			return reg((RegisterArg) a);
 		}

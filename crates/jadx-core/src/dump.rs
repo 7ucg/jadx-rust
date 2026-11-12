@@ -116,6 +116,17 @@ pub fn dump_insn_with(n: &InsnNode, if_target: Option<i32>) -> String {
     )
 }
 
+/// One argument as printed by the dumps.
+pub fn dump_arg(a: &InsnArg, cfg: &MethodCfg, ssa: bool) -> String {
+    arg(
+        a,
+        Ctx {
+            cfg: Some(cfg),
+            versions: ssa,
+        },
+    )
+}
+
 /// Like [`dump_insn_with`] inside `cfg`; with `ssa` registers carry their SSA version
 /// (`r1:int/v0`).
 pub fn dump_insn_ssa(n: &InsnNode, if_target: Option<i32>, cfg: &MethodCfg, ssa: bool) -> String {
@@ -257,7 +268,7 @@ fn insn_line(n: &InsnNode, if_target: Option<i32>, cfg: Ctx) -> String {
     s
 }
 
-fn flag_names(flags: u64, names: &[(u64, &str)]) -> String {
+pub fn flag_names(flags: u64, names: &[(u64, &str)]) -> String {
     let mut v: Vec<&str> = names
         .iter()
         .filter(|(f, _)| flags & f != 0)

@@ -18,9 +18,21 @@ fn main() {
         .first()
         .is_some_and(|a| dev::COMMANDS.contains(&a.as_str()))
     {
-        if let Err(e) = dev::run() {
-            eprintln!("Error: {e:?}");
-            std::process::exit(1);
+        // deeply nested code recurses deeply
+        let handle = std::thread::Builder::new()
+            .stack_size(1 << 30)
+            .spawn(dev::run)
+            .expect("spawning main thread");
+        match handle.join() {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                eprintln!("Error: {e:?}");
+                std::process::exit(1);
+            }
+            Err(_) => {
+                eprintln!("Error: main thread panicked");
+                std::process::exit(1);
+            }
         }
         return;
     }

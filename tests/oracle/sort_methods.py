@@ -9,7 +9,7 @@ def main():
             if line.startswith("M "):
                 cur = line.rstrip("\n")
                 blocks.setdefault(cur, [])
-            elif cur is not None and (line.startswith(("H ", "T ", "L ", "B ", "  I ", "I ", "  P ", "V ", "E ", "W "))):
+            elif cur is not None and (line.startswith(("H ", "T ", "L ", "B ", "  I ", "I ", "  P ", "V ", "E ", "W ", "R "))):
                 blocks[cur].append(line.rstrip("\n"))
     out = sys.stdout
     for k in sorted(blocks):

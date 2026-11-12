@@ -38,6 +38,7 @@ pub const COMMANDS: &[&str] = &[
     "xref",
     "mcp",
     "insn-code",
+    "insn-regions",
 ];
 
 pub fn run() -> Result<()> {
@@ -63,8 +64,8 @@ pub fn run() -> Result<()> {
     }
     let no_verify = args.any(|a| a == "--no-verify-checksum");
     let path = match (cmd.as_str(), path) {
-        ("dex-info" | "dex-classes" | "dex-map" | "dex-counts" | "smali" | "dex-opcodes" | "insn-dump" | "insn-nodes" | "insn-blocks" | "insn-cfg" | "insn-ssa" | "insn-code" | "pre-info", Some(p)) => p,
-        _ => bail!("usage: jadx-rs <dex-info|dex-classes|dex-map|dex-counts|smali|dex-opcodes|insn-dump|insn-nodes|insn-blocks|insn-cfg|insn-ssa|insn-code|pre-info> <file.dex|.apk|.jar> [--no-verify-checksum]"),
+        ("dex-info" | "dex-classes" | "dex-map" | "dex-counts" | "smali" | "dex-opcodes" | "insn-dump" | "insn-nodes" | "insn-blocks" | "insn-cfg" | "insn-ssa" | "insn-code" | "insn-regions" | "pre-info", Some(p)) => p,
+        _ => bail!("usage: jadx-rs <dex-info|dex-classes|dex-map|dex-counts|smali|dex-opcodes|insn-dump|insn-nodes|insn-blocks|insn-cfg|insn-ssa|insn-code|insn-regions|pre-info> <file.dex|.apk|.jar> [--no-verify-checksum]"),
     };
     let opts = LoadOptions {
         verify_checksum: !no_verify,
@@ -81,13 +82,14 @@ pub fn run() -> Result<()> {
     }
     if matches!(
         cmd.as_str(),
-        "insn-nodes" | "insn-blocks" | "insn-cfg" | "insn-ssa"
+        "insn-nodes" | "insn-blocks" | "insn-cfg" | "insn-ssa" | "insn-regions"
     ) {
         return insn_nodes(
             &res.dex_files,
             cmd == "insn-blocks",
             cmd == "insn-cfg",
-            cmd == "insn-ssa",
+            cmd == "insn-ssa" || cmd == "insn-regions",
+            cmd == "insn-regions",
         );
     }
     for dex in &res.dex_files {
@@ -340,7 +342,13 @@ fn pre_info(dexes: &[DexFile]) -> Result<()> {
 
 /// Decode every method with the core decoder + `ProcessInstructions` and dump the nodes
 /// (oracle comparison format, see `jadx_core::dump`).
-fn insn_nodes(dexes: &[DexFile], blocks: bool, analysis: bool, ssa: bool) -> Result<()> {
+fn insn_nodes(
+    dexes: &[DexFile],
+    blocks: bool,
+    analysis: bool,
+    ssa: bool,
+    regions: bool,
+) -> Result<()> {
     use jadx_core::decode::{InsnDecoder, MethodCtx};
     use jadx_core::dump::dump_insn;
     use jadx_core::passes::process_insns::process_instructions;
@@ -381,7 +389,7 @@ fn insn_nodes(dexes: &[DexFile], blocks: bool, analysis: bool, ssa: bool) -> Res
                 let stage: u32 = std::env::var("JADX_RS_STAGE")
                     .ok()
                     .and_then(|v| v.parse().ok())
-                    .unwrap_or(2);
+                    .unwrap_or(if regions { 12 } else { 2 });
                 let built = if ssa {
                     let frame = jadx_core::passes::pipeline::FrameInfo::new(
                         &root,
@@ -409,7 +417,9 @@ fn insn_nodes(dexes: &[DexFile], blocks: bool, analysis: bool, ssa: bool) -> Res
                 };
                 match built {
                     Ok(cfg) => {
-                        if ssa {
+                        if regions {
+                            write!(out, "{}", jadx_core::region_dump::dump_regions(&id, &cfg))?
+                        } else if ssa {
                             write!(out, "{}", jadx_core::dump::dump_cfg_ssa(&id, &cfg))?
                         } else {
                             write!(
