@@ -242,11 +242,11 @@ impl<'a> MethodGen<'a> {
         let last_arg_num = args.len().saturating_sub(1);
         let mut first = true;
         for (arg_num, mth_arg) in args.iter().enumerate() {
-            if mth
+            let skip_by_attr = mth
                 .skip_args
                 .as_ref()
-                .is_some_and(|s| s.get(arg_num).copied().unwrap_or(false))
-            {
+                .is_some_and(|s| s.get(arg_num).copied().unwrap_or(false));
+            if skip_by_attr || (arg_num == 0 && mth.skip_first_arg) {
                 continue;
             }
             if first {
