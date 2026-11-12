@@ -482,7 +482,29 @@ pub fn is_same_insns_blocks(cfg: &MethodCfg, first: BlockId, second: BlockId) ->
     }
     a.iter()
         .zip(b.iter())
-        .all(|(x, y)| insn_deep_equals(cfg, *x, *y))
+        .all(|(x, y)| block_insn_deep_equals(cfg, *x, *y))
+}
+
+/// `BlockUtils.isInsnDeepEquals`: like `isDeepEquals` but the results only need the same register.
+fn block_insn_deep_equals(cfg: &MethodCfg, a: InsnId, b: InsnId) -> bool {
+    if a == b {
+        return true;
+    }
+    if !insn_is_same(cfg, a, b) {
+        return false;
+    }
+    let (x, y) = (cfg.insn(a), cfg.insn(b));
+    let res_eq = match (&x.result, &y.result) {
+        (None, None) => true,
+        (Some(r1), Some(r2)) => r1.reg_num == r2.reg_num,
+        _ => false,
+    };
+    res_eq
+        && x.args.len() == y.args.len()
+        && x.args
+            .iter()
+            .zip(y.args.iter())
+            .all(|(p, q)| arg_equals(cfg, p, q))
 }
 
 /// `BlockUtils.isDuplicateBlockPath`
