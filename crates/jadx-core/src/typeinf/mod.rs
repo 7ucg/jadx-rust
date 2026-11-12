@@ -1,5 +1,9 @@
 //! Type inference (`TypeInferenceVisitor` and helpers).
 
+pub mod clsp_order;
+pub mod finish;
+pub mod fix_types;
+pub mod search;
 pub mod update;
 
 use crate::method_utils::{
@@ -55,7 +59,7 @@ fn ssa_immutable_type(cfg: &MethodCfg, var: SsaId) -> Option<ArgType> {
     None
 }
 
-fn init_type_bounds(
+pub(crate) fn init_type_bounds(
     cfg: &mut MethodCfg,
     root: &Root,
     cls: usize,
@@ -318,7 +322,7 @@ fn make_invoke_use_bound(
     Ok(None)
 }
 
-fn run_type_propagation(cfg: &mut MethodCfg, upd: &TypeUpdate) -> Result<(), String> {
+pub(crate) fn run_type_propagation(cfg: &mut MethodCfg, upd: &TypeUpdate) -> Result<(), String> {
     for v in cfg.svar_list.clone() {
         set_immutable_type(cfg, upd, v)?;
     }
@@ -328,7 +332,7 @@ fn run_type_propagation(cfg: &mut MethodCfg, upd: &TypeUpdate) -> Result<(), Str
     Ok(())
 }
 
-fn is_overflow(e: &str) -> bool {
+pub(crate) fn is_overflow(e: &str) -> bool {
     e.starts_with("Type inference error: updates count limit")
 }
 
@@ -367,7 +371,11 @@ fn calculate_from_bounds(cfg: &mut MethodCfg, upd: &TypeUpdate, var: SsaId) -> R
 }
 
 /// `bounds.stream().map(getType).filter(nonNull).max(comparator)`
-fn select_best_type_from_bounds(cfg: &MethodCfg, upd: &TypeUpdate, var: SsaId) -> Option<ArgType> {
+pub(crate) fn select_best_type_from_bounds(
+    cfg: &MethodCfg,
+    upd: &TypeUpdate,
+    var: SsaId,
+) -> Option<ArgType> {
     let mut best: Option<ArgType> = None;
     for b in &cfg.svars[var].bounds {
         let Some(t) = upd.bound_type(cfg, None, b) else {

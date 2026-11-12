@@ -92,7 +92,8 @@ impl FrameInfo {
 
 /// [`build_processed_blocks`] followed by `SSATransform` and, depending on `stage`, the later
 /// SSA passes (3 = `MoveInlineVisitor`, 4 = `ConstructorVisitor`, 5 = `InitCodeVariables`,
-/// 6 = `ConstInlineVisitor`, 7 = `TypeInferenceVisitor`, 10 = `ModVisitor`,
+/// 6 = `ConstInlineVisitor`, 7 = `TypeInferenceVisitor`, 8 = `FixTypesVisitor`,
+/// 9 = `FinishTypeInference`, 10 = `ModVisitor`,
 /// 11 = `CodeShrinkVisitor`).
 ///
 /// With `extract_finally`, `MarkFinallyVisitor` runs after `InitCodeVariables` (stage 5 and up).
@@ -142,7 +143,7 @@ pub fn build_ssa(
         }
     }
     if stage >= 7 {
-        crate::typeinf::run_type_inference(&mut cfg, root, cls, mth)?;
+        run_type_stages(&mut cfg, root, cls, mth, stage)?;
     }
     if stage >= 10 {
         let env = crate::passes::constructor::MethodEnv { root, cls, mth };
@@ -152,6 +153,27 @@ pub fn build_ssa(
         crate::passes::code_shrink::code_shrink(&mut cfg)?;
     }
     Ok(cfg)
+}
+
+/// Type inference stages; a panic inside them fails only the current method.
+fn run_type_stages(
+    cfg: &mut MethodCfg,
+    root: &crate::model::node::Root,
+    cls: usize,
+    mth: usize,
+    stage: u32,
+) -> Result<(), String> {
+    let run = std::panic::AssertUnwindSafe(|| -> Result<(), String> {
+        crate::typeinf::run_type_inference(cfg, root, cls, mth)?;
+        if stage >= 8 {
+            crate::typeinf::fix_types::run_fix_types(cfg, root, cls, mth)?;
+        }
+        if stage >= 9 {
+            crate::typeinf::finish::finish_type_inference(cfg)?;
+        }
+        Ok(())
+    });
+    std::panic::catch_unwind(run).unwrap_or_else(|_| Err("panic in type inference".to_string()))
 }
 
 /// `AttachMethodDetails`: remember the resolved details of every invoke.

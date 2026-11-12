@@ -30,6 +30,10 @@ import jadx.core.dex.visitors.finaly.MarkFinallyVisitor;
 import jadx.core.dex.visitors.typeinference.TypeInferenceVisitor;
 import jadx.core.dex.visitors.ModVisitor;
 import jadx.core.dex.visitors.shrink.CodeShrinkVisitor;
+import jadx.core.dex.visitors.typeinference.FixTypesVisitor;
+import jadx.core.dex.visitors.typeinference.FinishTypeInference;
+import jadx.core.dex.attributes.nodes.JadxCommentsAttr;
+import jadx.api.CommentsLevel;
 import jadx.core.dex.visitors.typeinference.ITypeBound;
 import jadx.core.dex.visitors.typeinference.ITypeBoundDynamic;
 import jadx.core.dex.instructions.args.CodeVar;
@@ -111,7 +115,14 @@ public class BlockDump {
 							ti.visit(mth);
 							typed = true;
 						}
-						// stages 10 and 11 run without FixTypesVisitor and FinishTypeInference
+						if (stage >= 8) {
+							FixTypesVisitor fix = new FixTypesVisitor();
+							fix.init(root);
+							fix.visit(mth);
+						}
+						if (stage >= 9) {
+							new FinishTypeInference().visit(mth);
+						}
 						if (stage >= 10) {
 							new ModVisitor().visit(mth);
 						}
@@ -124,7 +135,7 @@ public class BlockDump {
 						sb.setLength(0);
 						continue;
 					}
-					dump(sb, mth, stage >= 1, stage >= 2, typed);
+					dump(sb, mth, stage >= 1, stage >= 2, typed, stage >= 8);
 					System.out.print(sb);
 					sb.setLength(0);
 					mth.unload();
@@ -189,9 +200,28 @@ public class BlockDump {
 		return l + ":?";
 	}
 
-	static void dumpSsa(StringBuilder sb, MethodNode mth, boolean typed) {
+	static void dumpSsa(StringBuilder sb, MethodNode mth, boolean typed, boolean fixed) {
 		if (typed) {
 			sb.append("E ").append(mth.getAll(jadx.core.dex.attributes.AType.JADX_ERROR).size()).append('\n');
+		}
+		if (fixed) {
+			JadxCommentsAttr comments = mth.get(AType.JADX_COMMENTS);
+			java.util.List<String> typeWarns = new java.util.ArrayList<>();
+			if (comments != null) {
+				for (String w : comments.getComments().getOrDefault(CommentsLevel.WARN, java.util.Collections.emptySet())) {
+					// only warnings of the type inference stages are compared
+					if (w.startsWith("Type inference") || w.startsWith("Multi-variable") || w.startsWith("Failed to calculate")
+							|| w.startsWith("Failed to set immutable")) {
+						typeWarns.add(w);
+					}
+				}
+			}
+			sb.append("W ").append(typeWarns.size()).append('\n');
+			if (System.getenv("DUMP_WARN") != null) {
+				for (String w : typeWarns) {
+					System.err.println("WARN " + mth.getMethodInfo().getRawFullId() + " :: " + w.replace("\n", " | ").replace("\r", ""));
+				}
+			}
 		}
 		Map<InsnNode, String> locs = locations(mth);
 		Map<CodeVar, Integer> cvIds = new IdentityHashMap<>();
@@ -237,7 +267,7 @@ public class BlockDump {
 		}
 	}
 
-	static void dump(StringBuilder sb, MethodNode mth, boolean analysis, boolean ssa, boolean typed) {
+	static void dump(StringBuilder sb, MethodNode mth, boolean analysis, boolean ssa, boolean typed, boolean fixed) {
 		sb.append("M ").append(mth.getMethodInfo().getRawFullId()).append('\n');
 		for (ExceptionHandler h : mth.getExceptionHandlers()) {
 			sb.append("H ").append(h.getHandlerOffset()).append(" types=[")
@@ -321,7 +351,7 @@ public class BlockDump {
 			}
 		}
 		if (ssa) {
-			dumpSsa(sb, mth, typed);
+			dumpSsa(sb, mth, typed, fixed);
 		}
 	}
 }

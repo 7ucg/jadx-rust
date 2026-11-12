@@ -507,6 +507,24 @@ fn dump_cfg_impl(
     if ssa && cfg.types_done {
         let _ = writeln!(out, "E {}", cfg.errors.len());
     }
+    if ssa && cfg.types_fixed {
+        // only the warnings of the type inference stages are reported
+        let distinct: std::collections::HashSet<&String> = cfg
+            .warnings
+            .iter()
+            .filter(|w| {
+                [
+                    "Type inference",
+                    "Multi-variable",
+                    "Failed to calculate",
+                    "Failed to set immutable",
+                ]
+                .iter()
+                .any(|p| w.starts_with(p))
+            })
+            .collect();
+        let _ = writeln!(out, "W {}", distinct.len());
+    }
     if ssa {
         let locs = insn_locations(cfg);
         let mut cv_ids: Vec<usize> = Vec::new();

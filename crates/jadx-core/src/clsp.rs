@@ -206,6 +206,12 @@ fn read_method(r: &mut ByteReader<'_>, names: &[String]) -> Result<ClspMethod, S
 pub struct ClspGraph {
     name_map: HashMap<String, ClspClass>,
     super_types: HashMap<String, HashSet<String>>,
+    /// Class names in insertion order and the number of classes of the loaded set (the reference
+    /// iterates a `HashMap` of these; the order is rebuilt from them).
+    insert_order: Vec<String>,
+    set_classes_count: usize,
+    /// Lazily built hierarchy caches with reference iteration order.
+    pub(crate) ordered: std::sync::OnceLock<crate::typeinf::clsp_order::OrderedClsp>,
 }
 
 impl ClspGraph {
@@ -268,8 +274,11 @@ impl ClspGraph {
                 methods_map: HashMap::new(),
             };
             cls.set_methods(methods);
-            self.name_map.insert(names[i].clone(), cls);
+            if self.name_map.insert(names[i].clone(), cls).is_none() {
+                self.insert_order.push(names[i].clone());
+            }
         }
+        self.set_classes_count = count;
         Ok(())
     }
 
@@ -278,18 +287,27 @@ impl ClspGraph {
         for c in &root.classes {
             let name = c.info.raw_name();
             let parents = make_parents(c.super_class.as_ref(), &c.interfaces);
-            self.name_map.insert(
-                name.clone(),
-                ClspClass {
-                    name,
-                    access_flags: c.access,
-                    parents: Some(parents),
-                    type_params: Vec::new(),
-                    methods: Vec::new(),
-                    methods_map: HashMap::new(),
-                },
-            );
+            let cls = ClspClass {
+                name: name.clone(),
+                access_flags: c.access,
+                parents: Some(parents),
+                type_params: Vec::new(),
+                methods: Vec::new(),
+                methods_map: HashMap::new(),
+            };
+            if self.name_map.insert(name.clone(), cls).is_none() {
+                self.insert_order.push(name);
+            }
         }
+        if self.set_classes_count == 0 {
+            // no class set loaded: the reference sizes the map by the application classes
+            self.set_classes_count = root.classes.len();
+        }
+    }
+
+    /// Class names in insertion order (for the iteration order of the reference's `HashMap`).
+    pub(crate) fn insertion_order(&self) -> (&[String], usize) {
+        (&self.insert_order, self.set_classes_count)
     }
 
     /// Build the super types cache (call after all classes are added).
