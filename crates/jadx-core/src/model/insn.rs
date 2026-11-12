@@ -250,6 +250,8 @@ pub struct RegisterArg {
     pub is_this: bool,
     /// `AFlag.METHOD_ARGUMENT`
     pub method_arg: bool,
+    /// `AFlag.CUSTOM_DECLARE`: the variable needs no declaration.
+    pub custom_declare: bool,
     /// SSA variable this register belongs to (`RegisterArg.getSVar`).
     pub svar: Option<super::ssa::SsaId>,
 }
@@ -262,6 +264,7 @@ impl RegisterArg {
             immutable_type: false,
             is_this: false,
             method_arg: false,
+            custom_declare: false,
             svar: None,
         }
     }
@@ -272,6 +275,7 @@ impl RegisterArg {
             immutable_type: true,
             is_this: false,
             method_arg: false,
+            custom_declare: false,
             svar: None,
         }
     }

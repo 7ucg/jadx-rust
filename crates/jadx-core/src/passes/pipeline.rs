@@ -65,8 +65,31 @@ pub struct FrameInfo {
     pub arg_types: Vec<crate::model::types::ArgType>,
 }
 
+impl FrameInfo {
+    /// Frame of method `mth` of class `cls` (`MethodNode.initArguments` types).
+    pub fn new(
+        root: &crate::model::node::Root,
+        cls: usize,
+        mth: usize,
+        regs_count: usize,
+    ) -> FrameInfo {
+        let tu = crate::type_utils::TypeUtils::new(root);
+        let m = &root.classes[cls].methods[mth];
+        FrameInfo {
+            regs_count,
+            is_static: m.access & crate::model::node::ACC_STATIC != 0,
+            this_type: tu.expand_type_variables(cls, mth, &tu.class_type(cls)),
+            arg_types: m
+                .arg_types
+                .iter()
+                .map(|t| tu.expand_type_variables(cls, mth, t))
+                .collect(),
+        }
+    }
+}
+
 /// [`build_processed_blocks`] followed by `SSATransform` and, depending on `stage`, the later
-/// SSA passes (3 = `MoveInlineVisitor`, 4 = `ConstructorVisitor`).
+/// SSA passes (3 = `MoveInlineVisitor`, 4 = `ConstructorVisitor`, 5 = `InitCodeVariables`).
 pub fn build_ssa(
     decoded: DecodedMethod,
     tries: &[TryData],
@@ -94,6 +117,9 @@ pub fn build_ssa(
         if crate::passes::constructor::replace_invoke(&mut cfg, &env)? {
             crate::passes::move_inline::move_inline(&mut cfg)?;
         }
+    }
+    if stage >= 5 {
+        crate::passes::init_code_vars::init_code_vars(&mut cfg)?;
     }
     Ok(cfg)
 }

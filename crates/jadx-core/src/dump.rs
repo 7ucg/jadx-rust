@@ -455,6 +455,7 @@ fn dump_cfg_impl(
     }
     if ssa {
         let locs = insn_locations(cfg);
+        let mut cv_ids: Vec<usize> = Vec::new();
         for v in &cfg.svar_list {
             let var = &cfg.svars[*v];
             let uses: Vec<String> = var.uses.iter().map(|u| arg_location(*u, &locs)).collect();
@@ -466,7 +467,7 @@ fn dump_cfg_impl(
                     .collect::<Vec<_>>()
                     .join(","),
             };
-            let _ = writeln!(
+            let _ = write!(
                 out,
                 "V r{}/v{} assign={} uses=[{}] phis=[{}]",
                 var.reg_num,
@@ -475,6 +476,36 @@ fn dump_cfg_impl(
                 uses.join(","),
                 phis
             );
+            if let Some(cv) = var.code_var {
+                let n = match cv_ids.iter().position(|c| *c == cv) {
+                    Some(n) => n,
+                    None => {
+                        cv_ids.push(cv);
+                        cv_ids.len() - 1
+                    }
+                };
+                let c = &cfg.code_vars[cv];
+                let mut flags = Vec::new();
+                if c.is_declared {
+                    flags.push("declared");
+                }
+                if c.is_final {
+                    flags.push("final");
+                }
+                if c.is_this {
+                    flags.push("this");
+                }
+                let _ = write!(
+                    out,
+                    " cv={n}[{}] cvty={} cvname={}",
+                    flags.join(","),
+                    c.ty.as_ref()
+                        .map(|t| t.to_string())
+                        .unwrap_or_else(|| "-".into()),
+                    c.name.clone().unwrap_or_else(|| "-".into())
+                );
+            }
+            out.push('\n');
         }
     }
     out

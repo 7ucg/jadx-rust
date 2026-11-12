@@ -36,6 +36,30 @@ impl ArgRef {
     }
 }
 
+/// Index into `MethodCfg::code_vars`.
+pub type CodeVarId = usize;
+
+/// `CodeVar`: a source level variable made of one or more SSA variables.
+#[derive(Debug, Clone, Default)]
+pub struct CodeVar {
+    pub name: Option<String>,
+    /// Set before type inference only for immutable types.
+    pub ty: Option<ArgType>,
+    pub ssa_vars: Vec<SsaId>,
+    pub is_final: bool,
+    pub is_this: bool,
+    pub is_declared: bool,
+}
+
+impl CodeVar {
+    /// `mergeFlagsFrom`
+    pub fn merge_flags_from(&mut self, other: &CodeVar) {
+        self.is_declared |= other.is_declared;
+        self.is_this |= other.is_this;
+        self.is_final |= other.is_final;
+    }
+}
+
 /// `SSAVar`
 #[derive(Debug, Clone)]
 pub struct SsaVar {
@@ -45,6 +69,8 @@ pub struct SsaVar {
     pub uses: Vec<ArgRef>,
     /// `None` mirrors the reference's `null` list.
     pub used_in_phi: Option<Vec<InsnId>>,
+    /// Set by `InitCodeVariables`.
+    pub code_var: Option<CodeVarId>,
 }
 
 impl SsaVar {
@@ -175,6 +201,7 @@ impl MethodCfg {
             assign,
             uses: Vec::new(),
             used_in_phi: None,
+            code_var: None,
         });
         self.reg_mut(assign).svar = Some(id);
         self.svar_list.push(id);
@@ -227,6 +254,38 @@ impl MethodCfg {
                     self.svar_add_used_in_phi(var, i);
                 }
             }
+        }
+    }
+
+    /// `SSAVar.getImmutableType`
+    pub fn svar_immutable_type(&self, var: SsaId) -> Option<ArgType> {
+        let r = self.reg(self.svars[var].assign);
+        r.immutable_type.then(|| r.init_type.clone())
+    }
+
+    /// `SSAVar.getPhiList`
+    pub fn svar_phi_list(&self, var: SsaId) -> Vec<InsnId> {
+        let v = &self.svars[var];
+        let mut list = Vec::new();
+        if let Some(a) = v.assign.parent_insn() {
+            if self.insns[a].ty == InsnType::Phi {
+                list.push(a);
+            }
+        }
+        if let Some(u) = &v.used_in_phi {
+            list.extend(u.iter().copied());
+        }
+        list
+    }
+
+    /// `SSAVar.setCodeVar`
+    pub fn svar_set_code_var(&mut self, var: SsaId, cv: CodeVarId) {
+        self.svars[var].code_var = Some(cv);
+        if !self.code_vars[cv].ssa_vars.contains(&var) {
+            self.code_vars[cv].ssa_vars.push(var);
+        }
+        if let Some(t) = self.svar_immutable_type(var) {
+            self.code_vars[cv].ty = Some(t);
         }
     }
 

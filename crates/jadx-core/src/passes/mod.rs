@@ -7,6 +7,7 @@ pub mod block_utils;
 pub mod constructor;
 pub mod dominators;
 pub mod exception_handler;
+pub mod init_code_vars;
 pub mod move_inline;
 pub mod override_methods;
 pub mod pipeline;

@@ -3,7 +3,7 @@
 use super::bitset::{BitSet, JavaIntSet};
 use super::info::ClassInfo;
 use super::insn::{BlockId, HandlerId, InsnId, InsnNode, RegisterArg};
-use super::ssa::{SsaId, SsaVar};
+use super::ssa::{CodeVar, SsaId, SsaVar};
 
 pub type LoopId = usize;
 pub type TryId = usize;
@@ -264,6 +264,8 @@ pub struct MethodCfg {
     pub svar_list: Vec<SsaId>,
     /// Register arguments not placed in an instruction (duplicates under construction).
     pub floating: Vec<RegisterArg>,
+    /// Code variable arena (`InitCodeVariables`).
+    pub code_vars: Vec<CodeVar>,
     /// Warning comments attached to the method (`addWarnComment`).
     pub warnings: Vec<String>,
 }

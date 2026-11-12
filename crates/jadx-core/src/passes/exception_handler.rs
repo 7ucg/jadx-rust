@@ -172,7 +172,9 @@ fn fix_move_exception_insn(cfg: &mut MethodCfg, block: BlockId, handler: Handler
         if me.ty == InsnType::MoveException {
             if let Some(res) = &me.result {
                 let reg = res.reg_num;
-                me.result = Some(RegisterArg::new(reg, arg_type));
+                let mut new_res = RegisterArg::new(reg, arg_type);
+                new_res.custom_declare = true;
+                me.result = Some(new_res);
                 me.flags |= iflag::DONT_INLINE;
                 me.exc_handler = Some(handler);
                 set_reg = Some(reg);

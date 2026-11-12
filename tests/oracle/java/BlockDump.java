@@ -24,6 +24,8 @@ import jadx.core.dex.visitors.blocks.BlockFinisher;
 import jadx.core.dex.visitors.ssa.SSATransform;
 import jadx.core.dex.visitors.MoveInlineVisitor;
 import jadx.core.dex.visitors.ConstructorVisitor;
+import jadx.core.dex.visitors.InitCodeVariables;
+import jadx.core.dex.instructions.args.CodeVar;
 import jadx.core.dex.instructions.PhiInsn;
 import jadx.core.dex.instructions.args.RegisterArg;
 import jadx.core.dex.instructions.args.SSAVar;
@@ -80,6 +82,9 @@ public class BlockDump {
 						}
 						if (stage >= 4) {
 							new ConstructorVisitor().visit(mth);
+						}
+						if (stage >= 5) {
+							new InitCodeVariables().visit(mth);
 						}
 					} catch (Throwable e) {
 						sb.append("M ").append(mth.getMethodInfo().getRawFullId()).append(" LOAD_ERROR\n");
@@ -154,6 +159,7 @@ public class BlockDump {
 
 	static void dumpSsa(StringBuilder sb, MethodNode mth) {
 		Map<InsnNode, String> locs = locations(mth);
+		Map<CodeVar, Integer> cvIds = new IdentityHashMap<>();
 		for (SSAVar v : mth.getSVars()) {
 			sb.append("V r").append(v.getRegNum()).append("/v").append(v.getVersion()).append(" assign=")
 					.append(argLoc(mth, locs, v.getAssign())).append(" uses=[")
@@ -164,7 +170,25 @@ public class BlockDump {
 			} else {
 				sb.append(v.getUsedInPhi().stream().map(p -> locs.getOrDefault(p, "gone")).collect(Collectors.joining(",")));
 			}
-			sb.append("]\n");
+			sb.append(']');
+			if (v.isCodeVarSet()) {
+				CodeVar cv = v.getCodeVar();
+				int n = cvIds.computeIfAbsent(cv, k -> cvIds.size());
+				java.util.List<String> fl = new java.util.ArrayList<>();
+				if (cv.isDeclared()) {
+					fl.add("declared");
+				}
+				if (cv.isFinal()) {
+					fl.add("final");
+				}
+				if (cv.isThis()) {
+					fl.add("this");
+				}
+				sb.append(" cv=").append(n).append('[').append(String.join(",", fl)).append("] cvty=")
+						.append(cv.getType() == null ? "-" : cv.getType().toString()).append(" cvname=")
+						.append(cv.getName() == null ? "-" : cv.getName());
+			}
+			sb.append('\n');
 		}
 	}
 

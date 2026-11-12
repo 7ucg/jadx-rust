@@ -306,12 +306,12 @@ fn insn_nodes(dexes: &[DexFile], blocks: bool, analysis: bool, ssa: bool) -> Res
                     .and_then(|v| v.parse().ok())
                     .unwrap_or(2);
                 let built = if ssa {
-                    let frame = jadx_core::passes::pipeline::FrameInfo {
-                        regs_count: code.registers_size as usize,
-                        is_static: m.access & jadx_core::model::node::ACC_STATIC != 0,
-                        this_type: cls.info.arg_type().clone(),
-                        arg_types: m.arg_types.clone(),
-                    };
+                    let frame = jadx_core::passes::pipeline::FrameInfo::new(
+                        &root,
+                        ci,
+                        mi,
+                        code.registers_size as usize,
+                    );
                     jadx_core::passes::pipeline::build_ssa(
                         decoded, &tries, &root, ci, mi, &frame, stage,
                     )

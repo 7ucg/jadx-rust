@@ -31,6 +31,56 @@ impl<'a> TypeUtils<'a> {
         TypeUtils { root }
     }
 
+    /// `ClassNode.getType`: the class type with its type parameters.
+    pub fn class_type(&self, cls: usize) -> ArgType {
+        let c = &self.root.classes[cls];
+        let raw = c.info.arg_type().clone();
+        if c.generics.is_empty() {
+            raw
+        } else {
+            ArgType::generic(&raw, c.generics.clone())
+        }
+    }
+
+    /// `getKnownTypeVarsAtMethod`: type variables of the method, its class and outer classes.
+    pub fn known_type_vars_at_method(&self, cls: usize, mth: usize) -> Vec<ArgType> {
+        let mut vars: Vec<ArgType> = Vec::new();
+        let mut add = |v: &ArgType| {
+            if !vars.contains(v) {
+                vars.push(v.clone());
+            }
+        };
+        let c = &self.root.classes[cls];
+        for g in &c.generics {
+            add(g);
+        }
+        if c.is_inner() {
+            let mut cur = self.root.parent_index(cls);
+            while let Some(p) = cur {
+                for g in &self.root.classes[p].generics {
+                    add(g);
+                }
+                cur = self.root.parent_index(p);
+            }
+        }
+        for g in &c.methods[mth].type_params {
+            add(g);
+        }
+        vars
+    }
+
+    /// `expandTypeVariables(mth, type)`: type variables get the bounds of their declaration.
+    pub fn expand_type_variables(&self, cls: usize, mth: usize, ty: &ArgType) -> ArgType {
+        if !ty.contains_type_variable() {
+            return ty.clone();
+        }
+        let vars = self.known_type_vars_at_method(cls, mth);
+        if vars.is_empty() || vars.iter().all(|v| v.extend_types().is_empty()) {
+            return ty.clone();
+        }
+        expand_vars(ty, &vars)
+    }
+
     pub fn class_generics(&self, ty: &ArgType) -> Vec<ArgType> {
         if let Some(idx) = self.root.resolve_class(ty) {
             return self.root.classes[idx].generics.clone();
@@ -220,4 +270,41 @@ pub fn replace_type_variables_using_map(replace_type: &ArgType, map: &TypeMap) -
         }
     }
     None
+}
+
+fn expand_vars(ty: &ArgType, vars: &[ArgType]) -> ArgType {
+    match ty {
+        ArgType::GenericType { name, .. } => {
+            for v in vars {
+                if let ArgType::GenericType {
+                    name: vn,
+                    extend_types,
+                } = v
+                {
+                    if vn == name {
+                        return ArgType::GenericType {
+                            name: name.clone(),
+                            extend_types: extend_types.clone(),
+                        };
+                    }
+                }
+            }
+            ty.clone()
+        }
+        ArgType::Generic { name, generics } => ArgType::Generic {
+            name: name.clone(),
+            generics: generics.iter().map(|g| expand_vars(g, vars)).collect(),
+        },
+        ArgType::OuterGeneric { outer, inner } => ArgType::OuterGeneric {
+            // the reference visits only the generics of the inner type
+            outer: outer.clone(),
+            inner: Box::new(expand_vars(inner, vars)),
+        },
+        ArgType::Array(e) => ArgType::Array(Box::new(expand_vars(e, vars))),
+        ArgType::Wildcard { ty: inner, bound } => ArgType::Wildcard {
+            ty: Box::new(expand_vars(inner, vars)),
+            bound: *bound,
+        },
+        other => other.clone(),
+    }
 }
