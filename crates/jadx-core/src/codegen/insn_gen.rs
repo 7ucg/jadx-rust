@@ -568,7 +568,7 @@ impl<'m, 'a> InsnGen<'m, 'a> {
         let cls_type = call_mth.decl_class.arg_type();
         if let Some(c) = self.root().resolve_class(cls_type) {
             if self.root().classes[c].is_anonymous() && !self.fallback {
-                return Err(CodegenError::anonymous());
+                return self.inline_anonymous_constructor(code, c, id);
             }
         }
         if *call_type == CallType::SelfCall {
@@ -597,6 +597,35 @@ impl<'m, 'a> InsnGen<'m, 'a> {
             }
         }
         self.generate_method_arguments(code, insn, 0, call_mth_node)
+    }
+
+    /// `inlineAnonymousConstructor`: the body of the anonymous class is written at its use.
+    fn inline_anonymous_constructor(&self, code: &mut CodeWriter, cls: usize, id: InsnId) -> Res {
+        let insn = self.insn(id);
+        let root = self.root();
+        if self.cls_gen().class_index() == cls {
+            return Err(CodegenError::new(format!(
+                "Anonymous inner class unlimited recursion detected. Convert class to inner: {}",
+                root.classes[cls].info.full_name()
+            )));
+        }
+        let Some(anon) = &root.classes[cls].anonymous else {
+            return Err(CodegenError::new("Missing anonymous class attribute"));
+        };
+        let InsnKind::Constructor { call_mth, .. } = &insn.kind else {
+            return Err(CodegenError::new("Missing constructor data"));
+        };
+        code.add("new ");
+        self.use_type(code, &anon.base_type)?;
+        let call_node = root.resolve_method(call_mth);
+        let call_mth_node = call_node.map(|(c, m)| &root.classes[c].methods[m]);
+        self.generate_method_arguments(code, insn, 0, call_mth_node)?;
+        code.add(" ");
+
+        let cls_gen = ClassGen::with_parent(self.env(), cls, self.cls_gen().parent_gen());
+        cls_gen.set_outer_name_gen(self.mgen.name_gen().borrow().clone());
+        cls_gen.set_inlined(true);
+        cls_gen.add_class_body(code, true)
     }
 
     fn add_outer_class_instance(

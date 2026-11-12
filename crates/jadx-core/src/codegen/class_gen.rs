@@ -172,6 +172,8 @@ pub struct ClassGen<'a> {
     outer_name_gen: RefCell<Option<NameGen>>,
     /// Length of the code at the start of the class body.
     pub(super) cls_decl_offset: Cell<usize>,
+    /// The class body is written inside the code of another class (anonymous class).
+    inlined: Cell<bool>,
 }
 
 impl<'a> ClassGen<'a> {
@@ -187,6 +189,7 @@ impl<'a> ClassGen<'a> {
             use_imports: env.use_imports,
             outer_name_gen: RefCell::new(None),
             cls_decl_offset: Cell::new(0),
+            inlined: Cell::new(false),
         }
     }
 
@@ -207,6 +210,14 @@ impl<'a> ClassGen<'a> {
             use_imports: false,
             ..ClassGen::new(env, cls)
         }
+    }
+
+    pub fn set_inlined(&self, inlined: bool) {
+        self.inlined.set(inlined);
+    }
+
+    pub fn is_inlined(&self) -> bool {
+        self.inlined.get()
     }
 
     pub fn use_imports(&self) -> bool {

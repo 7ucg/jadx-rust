@@ -95,7 +95,18 @@ impl<'m, 'a> RegionGen<'m, 'a> {
         }
         let cfg = self.cfg();
         for insn in region_utils::container_insns(cfg, cont) {
-            if !cfg.insn(insn).contains_flag(iflag::DONT_GENERATE) {
+            let node = cfg.insn(insn);
+            // instructions that have no source code (removed before the code generation)
+            if matches!(
+                node.ty,
+                InsnType::Nop
+                    | InsnType::MonitorEnter
+                    | InsnType::MonitorExit
+                    | InsnType::MoveException
+            ) {
+                continue;
+            }
+            if !node.contains_flag(iflag::DONT_GENERATE) {
                 self.ig.make_insn(insn, code, None)?;
             }
         }

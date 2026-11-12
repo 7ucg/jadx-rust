@@ -314,7 +314,7 @@ impl<'a> ClassGen<'a> {
             });
         }
         for (mi, m) in self.node().methods.iter().enumerate() {
-            if !env.fallback && m.dont_generate {
+            if !env.fallback && (m.dont_generate || self.is_empty_anonymous_constructor(mi)) {
                 continue;
             }
             let line = env.loader.map_or(0, |l| l.source_line(cidx, mi));
@@ -338,6 +338,23 @@ impl<'a> ClassGen<'a> {
             }
         }
         Ok(())
+    }
+
+    /// Empty constructors of inlined anonymous classes are hidden.
+    fn is_empty_anonymous_constructor(&self, mi: usize) -> bool {
+        if !self.is_inlined() || !self.node().methods[mi].anonymous_constructor {
+            return false;
+        }
+        let cfg = self.env().method_cfg(self.class_index(), mi);
+        match cfg.as_ref() {
+            Ok(cfg) => cfg.regions.method_region.is_some_and(|r| {
+                crate::passes::regions::utils::is_empty(
+                    cfg,
+                    Some(crate::model::region::Container::Region(r)),
+                )
+            }),
+            Err(_) => false,
+        }
     }
 
     fn skip_class(&self, cls: usize) -> bool {
