@@ -5,8 +5,8 @@ mod insn;
 mod opcode;
 
 pub use insn::{
-    ArrayData, ArrayPayload, CatchData, ClassData, FieldData, FieldRefData, InsnData,
-    InsnIndexType, InsnResolver, MethodData, MethodProtoData, MethodRefData, Payload,
-    SwitchPayload, TryData,
+    AnnotationRef, ArrayData, ArrayPayload, CatchData, ClassData, CodeRef, CodeRefProvider,
+    ConstValue, FieldData, FieldRefData, InnerClassData, InsnData, InsnIndexType, InsnResolver,
+    MethodData, MethodProtoData, MethodRefData, Payload, SwitchPayload, TryData,
 };
 pub use opcode::Opcode;
