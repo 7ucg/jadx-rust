@@ -103,6 +103,13 @@ dependencies = [
 [[package]]
 name = "jadx-api"
 version = "0.1.0"
+dependencies = [
+ "jadx-core",
+ "jadx-dex-input",
+ "jadx-input-api",
+ "jadx-resources",
+ "zip",
+]
 
 [[package]]
 name = "jadx-cli"
