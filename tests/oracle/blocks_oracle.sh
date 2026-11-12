@@ -14,7 +14,7 @@ JADX_REF="${JADX_REF:-$ROOT/../jadx}"
 WORK="${WORK:-$ROOT/work}"
 JAVAC="${JDK_BIN:+$JDK_BIN/}javac"; JAVA="${JDK_BIN:+$JDK_BIN/}java"
 LIB="$JADX_REF/jadx-cli/build/install/jadx/lib/*"
-JOPTS="-Duser.language=en -Duser.country=US -Xss16m -Xmx12g"
+JOPTS="-Duser.language=en -Duser.country=US -Xss16m -Xmx${JAVA_XMX:-5g}"
 # The finally extraction iterates hash maps whose keys contain an enum (identity hash code), so its
 # result changes with unrelated changes of the running program. A constant identity hash makes the
 # reference reproducible; the port emulates it.

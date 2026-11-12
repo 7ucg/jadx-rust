@@ -22,7 +22,7 @@ if [ -n "${JDK_BIN:-}" ]; then export JAVA_HOME="$(dirname "$JDK_BIN")"; fi
 cargo build --release -p jadx-cli --manifest-path "$ROOT/Cargo.toml" 2>/dev/null
 if [ "${REUSE_REF:-1}" != "1" ] || [ ! -d "$REF/sources" ]; then
   rm -rf "$REF"
-  "$JADX_REF/jadx-cli/build/install/jadx/bin/jadx" -d "$REF" --no-res --log-level error "${EXTRA[@]}" "$INPUT" >"$WORK/ref-$KEY.log" 2>&1 || true
+  JADX_OPTS="${JADX_OPTS:--Xmx${JAVA_XMX:-5g} -XX:MaxRAMPercentage=40}" "$JADX_REF/jadx-cli/build/install/jadx/bin/jadx" -d "$REF" --no-res --log-level error "${EXTRA[@]}" "$INPUT" >"$WORK/ref-$KEY.log" 2>&1 || true
 fi
 rm -rf "$RS"
 "$ROOT/target/release/jadx-rs" -d "$RS" --no-res --log-level error "${EXTRA[@]}" "$INPUT" >"$WORK/rs-$KEY.log" 2>&1 || true

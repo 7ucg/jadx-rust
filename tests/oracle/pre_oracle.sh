@@ -9,7 +9,7 @@ JADX_REF="${JADX_REF:-$ROOT/../jadx}"
 WORK="${WORK:-$ROOT/work}"
 JAVAC="${JDK_BIN:+$JDK_BIN/}javac"; JAVA="${JDK_BIN:+$JDK_BIN/}java"
 LIB="$JADX_REF/jadx-cli/build/install/jadx/lib/*"
-JOPTS="-Duser.language=en -Duser.country=US -Xss16m -Xmx4g"
+JOPTS="-Duser.language=en -Duser.country=US -Xss16m -Xmx${JAVA_XMX:-4g}"
 mkdir -p "$WORK/cls"
 cargo build --release -p jadx-cli --manifest-path "$ROOT/Cargo.toml" 2>/dev/null
 "$JAVAC" -cp "$LIB" -d "$WORK/cls" "$ROOT/tests/oracle/java/ClassInfoDump.java"

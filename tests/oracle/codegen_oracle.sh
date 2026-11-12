@@ -12,7 +12,7 @@ JADX_REF="${JADX_REF:-$ROOT/../jadx}"
 WORK="${WORK:-$ROOT/work}"
 JAVAC="${JDK_BIN:+$JDK_BIN/}javac"; JAVA="${JDK_BIN:+$JDK_BIN/}java"
 LIB="$JADX_REF/jadx-cli/build/install/jadx/lib/*"
-JOPTS="-Duser.language=en -Duser.country=US -Xss16m -Xmx12g"
+JOPTS="-Duser.language=en -Duser.country=US -Xss16m -Xmx${JAVA_XMX:-5g}"
 export NAMES="${NAMES:-0}"
 mkdir -p "$WORK/cls"
 cargo build --release -p jadx-cli --manifest-path "$ROOT/Cargo.toml" 2>/dev/null
