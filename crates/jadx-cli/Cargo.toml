@@ -14,4 +14,5 @@ anyhow.workspace = true
 jadx-dex-input.workspace = true
 jadx-input-api.workspace = true
 jadx-core.workspace = true
+jadx-api.workspace = true
 jadx-resources.workspace = true

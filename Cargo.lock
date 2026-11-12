@@ -116,6 +116,7 @@ name = "jadx-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "jadx-api",
  "jadx-core",
  "jadx-dex-input",
  "jadx-input-api",
