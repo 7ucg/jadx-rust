@@ -32,6 +32,7 @@ fn const_repr(v: &ConstValue) -> String {
         ConstValue::Float(b) => format!("F:{b:08x}"),
         ConstValue::Double(b) => format!("D:{b:016x}"),
         ConstValue::Str(u) => format!("T:{}", escape(u)),
+        ConstValue::Null => "N".to_string(),
     }
 }
 

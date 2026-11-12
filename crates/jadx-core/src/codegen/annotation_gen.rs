@@ -250,5 +250,6 @@ pub fn const_value_to_string(v: &ConstValue) -> String {
         ConstValue::Float(bits) => java_float_to_string(f32::from_bits(*bits)),
         ConstValue::Double(bits) => java_double_to_string(f64::from_bits(*bits)),
         ConstValue::Str(u) => String::from_utf16_lossy(u),
+        ConstValue::Null => "null".to_string(),
     }
 }

@@ -478,6 +478,7 @@ fn const_literal_by_insn(cfg: &MethodCfg, env: &MethodEnv, insn: InsnId) -> Opti
                 ConstValue::Float(bits) => Some(i64::from(*bits as i32)),
                 ConstValue::Double(bits) => Some(*bits as i64),
                 ConstValue::Str(_) => None,
+                ConstValue::Null => None,
             }
         }
         _ => None,

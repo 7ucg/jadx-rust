@@ -134,6 +134,7 @@ fn const_val(v: &ConstValue) -> String {
         ConstValue::Float(b) => format!("FLOAT:0x{b:x}"),
         ConstValue::Double(b) => format!("DOUBLE:0x{b:x}"),
         ConstValue::Str(s) => format!("STR:{}", escape(s)),
+        ConstValue::Null => "NULL".to_string(),
     }
 }
 

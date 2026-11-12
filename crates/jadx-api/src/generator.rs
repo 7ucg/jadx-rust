@@ -383,6 +383,7 @@ pub fn const_str(v: &ConstValue) -> String {
             }
         }
         ConstValue::Str(units) => format!("\"{}\"", escape_units(units, '"')),
+        ConstValue::Null => "null".to_string(),
     }
 }
 

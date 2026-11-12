@@ -80,6 +80,10 @@ pub fn enum_visitor(root: &mut Root, methods: &mut Methods, cls: usize) -> Resul
     }
     if !converted && root.classes[cls].access & ACC_ENUM != 0 {
         root.classes[cls].access &= !ACC_ENUM;
+        root.classes[cls].comments.push((
+            crate::codegen::CommentsLevel::Warn,
+            "Failed to restore enum class, 'enum' modifier and super class removed".to_string(),
+        ));
     }
     Ok(())
 }
@@ -98,6 +102,10 @@ fn convert_to_enum(root: &mut Root, methods: &mut Methods, cls: usize) -> Result
         .iter()
         .position(|m| m.info.is_class_init())
     else {
+        root.classes[cls].comments.push((
+            crate::codegen::CommentsLevel::Warn,
+            "Enum class init method not found".to_string(),
+        ));
         return Ok(false);
     };
     let Some(mut state) = methods.remove(&(cls, ci)) else {
@@ -173,6 +181,10 @@ fn convert_with_clinit(ctx: &mut Ctx, cls: usize, ci: usize) -> Result<(bool, Fo
         _ => {}
     }
     let Some(mut enum_fields) = enum_fields else {
+        ctx.root.classes[cls].comments.push((
+            crate::codegen::CommentsLevel::Warn,
+            "Unknown enum class pattern. Please report as an issue!".to_string(),
+        ));
         return Ok((false, Vec::new()));
     };
     data.to_remove.push((ci, data.values_init));

@@ -90,11 +90,12 @@ fn process_static_fields(
         return Ok(false);
     }
     // ignore field init constant if field initialized in class init method
+    // (`ExtractFieldInit.processStaticFields`: `field.remove(CONSTANT_VALUE)`)
     for fi in &inits {
         let f = &mut root.classes[cls].fields[fi.field];
         if f.access & ACC_FINAL != 0 {
-            // the constant value stays (used to resolve names), the field initializer wins
             f.zero_init = false;
+            f.const_value = None;
         }
     }
     filter_fields_init(root, cfg, cls, &mut inits);
