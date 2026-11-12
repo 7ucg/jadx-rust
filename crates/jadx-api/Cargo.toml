@@ -4,5 +4,11 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+description = "Public decompiler API: arguments, decompiler facade, class and resource wrappers, output writing"
 
 [dependencies]
+zip.workspace = true
+jadx-core.workspace = true
+jadx-dex-input.workspace = true
+jadx-input-api.workspace = true
+jadx-resources.workspace = true
