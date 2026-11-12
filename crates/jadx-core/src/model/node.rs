@@ -3,14 +3,22 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use jadx_input_api::ClassData;
+use jadx_input_api::{AnnotationRef, ClassData, ConstValue, InnerClassData};
 
+use super::const_storage::ConstStorage;
 use super::info::{ClassInfo, FieldInfo, MethodInfo};
 use super::types::ArgType;
 use crate::root::RootCtx;
 
+pub const ACC_PUBLIC: u32 = 0x1;
 pub const ACC_STATIC: u32 = 0x8;
+pub const ACC_FINAL: u32 = 0x10;
+pub const ACC_SYNTHETIC: u32 = 0x1000;
 pub const ACC_ENUM: u32 = 0x4000;
+pub const ACC_CONSTRUCTOR: u32 = 0x10000;
+
+/// Method of a class: `(class index, method index)` into [`Root::classes`].
+pub type MethodId = (usize, usize);
 
 #[derive(Debug, Clone)]
 pub struct FieldNode {
@@ -19,6 +27,14 @@ pub struct FieldNode {
     /// Current type (declared type, replaced by the generic type from the signature).
     pub ty: ArgType,
     pub signature: Option<String>,
+    /// Initial value of a static field.
+    pub const_value: Option<ConstValue>,
+    pub annotation_refs: Vec<AnnotationRef>,
+    /// Methods using this field (sorted by method info), set by the usage scan.
+    pub use_in: Vec<MethodId>,
+    /// Marked by the anonymous class processing: the instance field holding the single
+    /// instance of an inlinable class.
+    pub inline_instance_field: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -36,6 +52,50 @@ pub struct MethodNode {
     /// `AType.BRIDGED_BY`: index (same class) of the method this one collides with after the
     /// argument types of the other were fixed.
     pub bridged_by: Option<usize>,
+    pub annotation_refs: Vec<AnnotationRef>,
+    /// Methods calling this method (sorted by method info), set by the usage scan.
+    pub use_in: Vec<MethodId>,
+    /// Resolved methods called from this method (sorted by method info).
+    pub used: Vec<MethodId>,
+    /// Called methods that are not part of the input (sorted by method info).
+    pub unresolved_used: Vec<MethodInfo>,
+    pub calls_self: bool,
+    /// Constructor of an anonymous class that is inlined at its single use.
+    pub anonymous_constructor: bool,
+    /// Synthetic method (or constructor) that may be inlined at its usage.
+    pub inline_candidate: bool,
+}
+
+impl MethodNode {
+    /// Constructor: `<init>` carrying the constructor access flag.
+    pub fn is_constructor(&self) -> bool {
+        self.access & ACC_CONSTRUCTOR != 0 && self.info.is_constructor()
+    }
+}
+
+/// How an anonymous class is inlined into its outer class.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InlineType {
+    Constructor,
+    InstanceField,
+}
+
+impl InlineType {
+    /// Name of the reference enum constant.
+    pub fn name(self) -> &'static str {
+        match self {
+            InlineType::Constructor => "CONSTRUCTOR",
+            InlineType::InstanceField => "INSTANCE_FIELD",
+        }
+    }
+}
+
+/// `AnonymousClassAttr`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AnonymousClassAttr {
+    pub outer_class: usize,
+    pub base_type: ArgType,
+    pub inline_type: InlineType,
 }
 
 #[derive(Debug, Clone)]
@@ -48,11 +108,42 @@ pub struct ClassNode {
     pub signature: Option<String>,
     pub fields: Vec<FieldNode>,
     pub methods: Vec<MethodNode>,
+    /// `InnerClass` annotation data of the input.
+    pub inner_class: Option<InnerClassData>,
+    pub annotation_refs: Vec<AnnotationRef>,
+    /// Top level classes used by this class (only set for top level classes).
+    pub dependencies: Vec<usize>,
+    /// Top level classes needed for code generation.
+    pub codegen_deps: Vec<usize>,
+    /// Classes using this class.
+    pub use_in: Vec<usize>,
+    /// Methods using this class (definition excluded).
+    pub use_in_mth: Vec<MethodId>,
+    pub anonymous: Option<AnonymousClassAttr>,
+    /// Anonymous classes inlined into this class.
+    pub inlined_classes: Vec<usize>,
+    /// Class this class is inlined into (`InlinedAttr`).
+    pub inlined_into: Option<usize>,
+    /// Class is not generated as separate class.
+    pub dont_generate: bool,
 }
 
 impl ClassNode {
     pub fn is_inner(&self) -> bool {
         self.info.is_inner()
+    }
+
+    pub fn is_anonymous(&self) -> bool {
+        self.anonymous.is_some()
+    }
+
+    pub fn is_enum(&self) -> bool {
+        self.access & ACC_ENUM != 0
+            && self
+                .super_class
+                .as_ref()
+                .and_then(|s| s.object_name())
+                .is_some_and(|n| n == super::types::CLASS_ENUM)
     }
 }
 
@@ -62,6 +153,7 @@ pub struct Root {
     pub ctx: Arc<RootCtx>,
     pub classes: Vec<ClassNode>,
     pub clsp: crate::clsp::ClspGraph,
+    pub const_storage: ConstStorage,
     by_raw: HashMap<String, usize>,
 }
 
@@ -95,6 +187,10 @@ impl Root {
                     access: f.access_flags,
                     ty,
                     signature: f.signature,
+                    const_value: f.const_value,
+                    annotation_refs: f.annotation_refs,
+                    use_in: Vec::new(),
+                    inline_instance_field: false,
                 });
             }
             let mut methods = Vec::with_capacity(c.methods.len());
@@ -120,6 +216,13 @@ impl Root {
                     code_offset: m.code_offset,
                     override_base_decl: None,
                     bridged_by: None,
+                    annotation_refs: m.annotation_refs,
+                    use_in: Vec::new(),
+                    used: Vec::new(),
+                    unresolved_used: Vec::new(),
+                    calls_self: false,
+                    anonymous_constructor: false,
+                    inline_candidate: false,
                 });
             }
             by_raw.insert(info.raw_name(), classes.len());
@@ -132,12 +235,23 @@ impl Root {
                 fields,
                 methods,
                 info,
+                inner_class: c.inner_class,
+                annotation_refs: c.annotation_refs,
+                dependencies: Vec::new(),
+                codegen_deps: Vec::new(),
+                use_in: Vec::new(),
+                use_in_mth: Vec::new(),
+                anonymous: None,
+                inlined_classes: Vec::new(),
+                inlined_into: None,
+                dont_generate: false,
             });
         }
         let mut root = Root {
             ctx,
             classes,
             clsp: crate::clsp::ClspGraph::default(),
+            const_storage: ConstStorage::new(true),
             by_raw,
         };
         let mut clsp = crate::clsp::ClspGraph::load_core()?;
@@ -177,6 +291,57 @@ impl Root {
         out
     }
 
+    /// Class processing order of passes that run over `RootNode.getClasses()`: sorted by raw name.
+    pub fn sorted_class_order(&self) -> Vec<usize> {
+        let mut keys: Vec<(Vec<u16>, usize)> = self
+            .classes
+            .iter()
+            .enumerate()
+            .map(|(i, c)| (c.info.raw_name().encode_utf16().collect(), i))
+            .collect();
+        keys.sort();
+        keys.into_iter().map(|(_, i)| i).collect()
+    }
+
+    /// Order of `DepthTraversal` over the sorted class list: top level classes by raw name, each
+    /// followed by its inner classes (depth first).
+    pub fn depth_traversal_order(&self) -> Vec<usize> {
+        let sorted = self.sorted_class_order();
+        let mut children: Vec<Vec<usize>> = vec![Vec::new(); self.classes.len()];
+        for &i in &sorted {
+            if let Some(p) = self.parent_index(i).filter(|p| *p != i) {
+                children[p].push(i);
+            }
+        }
+        fn visit(i: usize, children: &[Vec<usize>], out: &mut Vec<usize>) {
+            out.push(i);
+            for &c in &children[i] {
+                visit(c, children, out);
+            }
+        }
+        let mut out = Vec::with_capacity(self.classes.len());
+        for &i in &sorted {
+            if self.parent_index(i).is_none() {
+                visit(i, &children, &mut out);
+            }
+        }
+        out
+    }
+
+    /// Top level class of a class (the class itself if it is not an inner class).
+    pub fn top_parent_index(&self, idx: usize) -> usize {
+        let mut cur = idx;
+        let mut steps = 0;
+        while let Some(p) = self.parent_index(cur) {
+            if p == cur || steps > self.classes.len() {
+                break;
+            }
+            cur = p;
+            steps += 1;
+        }
+        cur
+    }
+
     pub fn class_index(&self, raw_name: &str) -> Option<usize> {
         self.by_raw.get(raw_name).copied()
     }
@@ -195,22 +360,28 @@ impl Root {
 
     /// Declared field lookup: exact field, then by name and type in the class and its super classes.
     pub fn resolve_field(&self, field: &FieldInfo) -> Option<&FieldNode> {
+        let (c, f) = self.resolve_field_id(field)?;
+        Some(&self.classes[c].fields[f])
+    }
+
+    /// Like [`Root::resolve_field`], returning `(class index, field index)`.
+    pub fn resolve_field_id(&self, field: &FieldInfo) -> Option<(usize, usize)> {
         let idx = self.resolve_class(field.decl_class.arg_type())?;
         let cls = &self.classes[idx];
-        if let Some(f) = cls.fields.iter().find(|f| f.info == *field) {
-            return Some(f);
+        if let Some(f) = cls.fields.iter().position(|f| f.info == *field) {
+            return Some((idx, f));
         }
         self.deep_resolve_field(idx, field)
     }
 
-    fn deep_resolve_field(&self, idx: usize, field: &FieldInfo) -> Option<&FieldNode> {
+    fn deep_resolve_field(&self, idx: usize, field: &FieldInfo) -> Option<(usize, usize)> {
         let cls = &self.classes[idx];
         if let Some(f) = cls
             .fields
             .iter()
-            .find(|f| f.info.name == field.name && f.info.ty == field.ty)
+            .position(|f| f.info.name == field.name && f.info.ty == field.ty)
         {
-            return Some(f);
+            return Some((idx, f));
         }
         if let Some(sup) = &cls.super_class {
             if let Some(sidx) = self.resolve_class(sup) {

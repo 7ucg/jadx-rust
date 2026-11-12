@@ -1,10 +1,12 @@
 //! Decompilation passes.
 
+pub mod add_android_constants;
 pub mod attach_try_catch;
 pub mod block_processor;
 pub mod block_splitter;
 pub mod block_utils;
 pub mod code_shrink;
+pub mod collect_const_values;
 pub mod const_inline;
 pub mod constructor;
 pub mod dominators;
@@ -15,6 +17,11 @@ pub mod mod_visitor;
 pub mod move_inline;
 pub mod override_methods;
 pub mod pipeline;
+pub mod pre_decompile;
+pub mod prepare_access_flags;
+pub mod process_anonymous;
 pub mod process_insns;
+pub mod process_methods_for_inline;
 pub mod signature;
 pub mod ssa;
+pub mod usage_info;

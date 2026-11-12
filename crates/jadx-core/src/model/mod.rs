@@ -1,6 +1,7 @@
 //! Core data model.
 
 pub mod cfg;
+pub mod const_storage;
 pub mod info;
 pub mod insn;
 pub mod node;

@@ -1,5 +1,6 @@
 //! Decompiler engine: model, passes, type inference, region recovery, codegen (not implemented yet).
 
+pub mod class_dump;
 pub mod clsp;
 pub mod decode;
 pub mod dump;

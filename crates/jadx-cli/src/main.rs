@@ -6,6 +6,7 @@
 //!   jadx-rs dex-map     <file>   map list of every dex
 //!   jadx-rs smali       <file>   smali text of every class (oracle comparison format)
 //!   jadx-rs dex-counts  <file>   id table counts (oracle comparison format)
+//!   jadx-rs pre-info    <file>   class level state after the pre decompile passes
 
 use std::path::PathBuf;
 
@@ -18,8 +19,8 @@ fn main() -> Result<()> {
     let path = args.next().map(PathBuf::from);
     let no_verify = args.any(|a| a == "--no-verify-checksum");
     let path = match (cmd.as_str(), path) {
-        ("dex-info" | "dex-classes" | "dex-map" | "dex-counts" | "smali" | "dex-opcodes" | "insn-dump" | "insn-nodes" | "insn-blocks" | "insn-cfg" | "insn-ssa", Some(p)) => p,
-        _ => bail!("usage: jadx-rs <dex-info|dex-classes|dex-map|dex-counts|smali|dex-opcodes|insn-dump|insn-nodes|insn-blocks|insn-cfg|insn-ssa> <file.dex|.apk|.jar> [--no-verify-checksum]"),
+        ("dex-info" | "dex-classes" | "dex-map" | "dex-counts" | "smali" | "dex-opcodes" | "insn-dump" | "insn-nodes" | "insn-blocks" | "insn-cfg" | "insn-ssa" | "pre-info", Some(p)) => p,
+        _ => bail!("usage: jadx-rs <dex-info|dex-classes|dex-map|dex-counts|smali|dex-opcodes|insn-dump|insn-nodes|insn-blocks|insn-cfg|insn-ssa|pre-info> <file.dex|.apk|.jar> [--no-verify-checksum]"),
     };
     let opts = LoadOptions {
         verify_checksum: !no_verify,
@@ -27,6 +28,9 @@ fn main() -> Result<()> {
     let res = load_path(&path, &opts).with_context(|| format!("loading {}", path.display()))?;
     for w in &res.warnings {
         eprintln!("warning: {w}");
+    }
+    if cmd == "pre-info" {
+        return pre_info(&res.dex_files);
     }
     if matches!(
         cmd.as_str(),
@@ -253,16 +257,11 @@ fn insn_dump(dex: &DexFile) -> Result<()> {
     Ok(())
 }
 
-/// Decode every method with the core decoder + `ProcessInstructions` and dump the nodes
-/// (oracle comparison format, see `jadx_core::dump`).
-fn insn_nodes(dexes: &[DexFile], blocks: bool, analysis: bool, ssa: bool) -> Result<()> {
-    use jadx_core::decode::{InsnDecoder, MethodCtx};
-    use jadx_core::dump::dump_insn;
-    use jadx_core::passes::process_insns::process_instructions;
-    use std::io::Write;
+/// Load all classes of the dex files into a root and run the pre decompile passes. Also returns
+/// the dex file index of every class.
+fn build_root(dexes: &[DexFile]) -> Result<(jadx_core::model::node::Root, Vec<usize>)> {
+    use jadx_core::passes::pre_decompile::{run_pre_decompile, PreDecompileOptions};
 
-    let stdout = std::io::stdout();
-    let mut out = std::io::BufWriter::new(stdout.lock());
     let mut classes = Vec::new();
     let mut class_dex = Vec::new();
     for (i, dex) in dexes.iter().enumerate() {
@@ -273,8 +272,36 @@ fn insn_nodes(dexes: &[DexFile], blocks: bool, analysis: bool, ssa: bool) -> Res
     }
     let mut root =
         jadx_core::model::node::Root::build(classes, true).map_err(|e| anyhow::anyhow!(e))?;
-    jadx_core::passes::signature::process_signatures(&mut root);
-    jadx_core::passes::override_methods::process_overrides(&mut root);
+    let refs = jadx_dex_input::DexCodeRefs {
+        dexes,
+        class_dex: &class_dex,
+    };
+    run_pre_decompile(&mut root, &refs, &PreDecompileOptions::default());
+    Ok((root, class_dex))
+}
+
+/// Class, field and method state after the pre decompile passes (oracle comparison format, see
+/// `jadx_core::class_dump`).
+fn pre_info(dexes: &[DexFile]) -> Result<()> {
+    use std::io::Write;
+
+    let (root, _) = build_root(dexes)?;
+    let text = jadx_core::class_dump::dump_class_info(&root);
+    std::io::stdout().lock().write_all(text.as_bytes())?;
+    Ok(())
+}
+
+/// Decode every method with the core decoder + `ProcessInstructions` and dump the nodes
+/// (oracle comparison format, see `jadx_core::dump`).
+fn insn_nodes(dexes: &[DexFile], blocks: bool, analysis: bool, ssa: bool) -> Result<()> {
+    use jadx_core::decode::{InsnDecoder, MethodCtx};
+    use jadx_core::dump::dump_insn;
+    use jadx_core::passes::process_insns::process_instructions;
+    use std::io::Write;
+
+    let stdout = std::io::stdout();
+    let mut out = std::io::BufWriter::new(stdout.lock());
+    let (root, class_dex) = build_root(dexes)?;
     let root = std::sync::Arc::new(root);
     for (ci, cls) in root.classes.iter().enumerate() {
         let dex = &dexes[class_dex[ci]];
