@@ -4,9 +4,10 @@
 //! (`ProcessAnonymous`) are not ported: no constant field is ever found and no constructor is
 //! marked as an anonymous class constructor.
 
-use jadx_input_api::ArrayData;
+use jadx_input_api::{ArrayData, ConstValue};
 
 use crate::model::cfg::MethodCfg;
+use crate::model::const_storage::FieldRef;
 use crate::model::info::FieldInfo;
 use crate::model::insn::{
     iflag, BlockId, FillArrayData, IfOp, IndexValue, InsnArg, InsnId, InsnKind, InsnNode, InsnType,
@@ -29,38 +30,62 @@ const DOUBLE_TO_BITS: i64 = 0x3FF0_0000_0000_0000;
 const FLOAT_TO_BITS: i64 = 0x3F80_0000;
 
 /// `IFieldInfoRef`: a field found for a constant value.
-struct ConstField {
-    info: FieldInfo,
+pub(crate) struct ConstField {
+    pub info: FieldInfo,
+    /// `(class, field)` index when the reference is a field of the input (`FieldNode`).
+    pub node: Option<(usize, usize)>,
 }
 
-/// `ClassNode.getConstField(String)`: constant fields are not collected yet, so nothing is found.
-fn get_const_field_str(_env: &MethodEnv, _value: &[u16]) -> Option<ConstField> {
-    None
+fn const_field_from_ref(env: &MethodEnv, r: &FieldRef) -> ConstField {
+    match r {
+        FieldRef::Node(c, f) => ConstField {
+            info: env.root.classes[*c].fields[*f].info.clone(),
+            node: Some((*c, *f)),
+        },
+        FieldRef::Info(info) => ConstField {
+            info: info.clone(),
+            node: None,
+        },
+    }
 }
 
-/// `ClassNode.getConstField(ArgType)`
+/// `ClassNode.getConstField(Object, searchGlobal)`
+pub(crate) fn get_const_field(
+    env: &MethodEnv,
+    value: &ConstValue,
+    search_global: bool,
+) -> Option<ConstField> {
+    env.root
+        .const_storage
+        .get_const_field(env.root, env.cls, value, search_global)
+        .map(|r| const_field_from_ref(env, r))
+}
+
+/// `ClassNode.getConstField(String)`
+pub(crate) fn get_const_field_str(env: &MethodEnv, value: &[u16]) -> Option<ConstField> {
+    get_const_field(env, &ConstValue::Str(value.to_vec()), true)
+}
+
+/// `ClassNode.getConstField(ArgType)`: the constant storage only holds primitive and string
+/// values, so a class literal never has a field.
 fn get_const_field_class(_env: &MethodEnv, _value: &ArgType) -> Option<ConstField> {
     None
 }
 
 /// `ClassNode.getConstFieldByLiteralArg`
-fn get_const_field_literal(_env: &MethodEnv, _value: &LiteralArg) -> Option<ConstField> {
-    None
+pub(crate) fn get_const_field_literal(env: &MethodEnv, value: &LiteralArg) -> Option<ConstField> {
+    env.root
+        .const_storage
+        .get_const_field_by_literal(env.root, env.cls, value.literal, &value.ty)
+        .map(|r| const_field_from_ref(env, r))
 }
 
-/// `ModVisitor.addFieldUsage`: field usage info is not tracked yet.
-fn add_field_usage(_field: &ConstField, _env: &MethodEnv) {
-    // `FieldNode.addUseIn(mth)` is not modelled.
-}
-
-/// `MethodNode.contains(AFlag.ANONYMOUS_CONSTRUCTOR)`: set by `ProcessAnonymous`, not ported.
-fn is_anonymous_constructor(_env: &MethodEnv, _cls: usize, _mth: usize) -> bool {
-    false
-}
-
-/// Skipped argument flags of an anonymous constructor (`AType.SKIP_MTH_ARGS`), not ported.
-fn skip_method_args(_env: &MethodEnv, _cls: usize, _mth: usize) -> Option<Vec<bool>> {
-    None
+/// `ModVisitor.addFieldUsage`: remember that the method uses the field (`FieldNode.addUseIn`).
+/// The usage of the processed methods is merged into the field nodes by the caller.
+pub(crate) fn add_field_usage(cfg: &mut MethodCfg, field: &ConstField) {
+    if let Some(n) = field.node {
+        cfg.field_uses.push(n);
+    }
 }
 
 pub fn mod_visitor(cfg: &mut MethodCfg, env: &MethodEnv) -> Result<(), String> {
@@ -80,7 +105,7 @@ fn replace_step(cfg: &mut MethodCfg, env: &MethodEnv) -> Result<(), String> {
                 InsnType::Const | InsnType::ConstStr | InsnType::ConstClass => {
                     replace_const(cfg, env, bid, i, iid)?
                 }
-                InsnType::Switch => replace_const_keys(env, cfg, iid),
+                InsnType::Switch => replace_const_keys(cfg, env, iid),
                 InsnType::NewArray => process_new_array(cfg, env, bid, i, iid, &mut remover)?,
                 InsnType::MoveException => process_move_exception(cfg, bid, iid, &mut remover)?,
                 InsnType::Arith => process_arith(cfg, env, iid)?,
@@ -190,19 +215,25 @@ fn is_field_visible_in_method(env: &MethodEnv, field: &FieldNode) -> bool {
     result == TypeCompareEnum::Narrow
 }
 
-/// `ModVisitor.replaceConstKeys`: keys of a switch are never replaced by fields while constant
-/// fields are not collected.
-fn replace_const_keys(env: &MethodEnv, cfg: &MethodCfg, insn: InsnId) {
+/// `ModVisitor.replaceConstKeys`
+fn replace_const_keys(cfg: &mut MethodCfg, env: &MethodEnv, insn: InsnId) {
     let InsnKind::Switch {
         data: Some(data), ..
     } = &cfg.insn(insn).kind
     else {
         return;
     };
-    for &key in &data.keys {
-        let lit = LiteralArg::with_fixed_type(i64::from(key), ArgType::int());
-        if let Some(f) = get_const_field_literal(env, &lit) {
-            add_field_usage(&f, env);
+    let keys = data.keys.clone();
+    for (k, key) in keys.into_iter().enumerate() {
+        if let Some(f) = get_const_field(env, &ConstValue::Int(key), true) {
+            if let InsnKind::Switch {
+                data: Some(data), ..
+            } = &mut cfg.insns[insn].kind
+            {
+                data.key_fields.resize(data.keys.len(), None);
+                data.key_fields[k] = Some(f.info.clone());
+            }
+            add_field_usage(cfg, &f);
         }
     }
 }
@@ -309,7 +340,7 @@ fn replace_const(
         );
         sget.result = cfg.insn(insn).result.clone();
         replace_insn(cfg, block, i, sget)?;
-        add_field_usage(&f, env);
+        add_field_usage(cfg, &f);
     }
     Ok(())
 }
@@ -327,7 +358,7 @@ fn process_arith(cfg: &mut MethodCfg, env: &MethodEnv, insn: InsnId) -> Result<(
             let id = cfg.add_insn(sget);
             let arg = cfg.wrap_arg(id)?;
             cfg.replace_arg(insn, 1, arg);
-            add_field_usage(&f, env);
+            add_field_usage(cfg, &f);
         }
     }
     Ok(())
@@ -386,7 +417,7 @@ fn process_new_array(
     if cfg.insn(next).ty != InsnType::FillArray {
         return Ok(());
     }
-    if check_arr_sizes(cfg, insn, next) {
+    if check_arr_sizes(cfg, env, insn, next) {
         let filled = make_filled_array_insn(cfg, env, insn, next)?;
         replace_insn(cfg, block, i, filled)?;
         remover.add_and_unbind(cfg, next)?;
@@ -394,7 +425,7 @@ fn process_new_array(
     Ok(())
 }
 
-fn check_arr_sizes(cfg: &MethodCfg, new_arr: InsnId, fill: InsnId) -> bool {
+fn check_arr_sizes(cfg: &MethodCfg, env: &MethodEnv, new_arr: InsnId, fill: InsnId) -> bool {
     let InsnKind::FillArray {
         data: Some(data), ..
     } = &cfg.insn(fill).kind
@@ -404,33 +435,51 @@ fn check_arr_sizes(cfg: &MethodCfg, new_arr: InsnId, fill: InsnId) -> bool {
     let Some(arg) = cfg.insn(new_arr).args.first() else {
         return false;
     };
-    match const_literal_by_arg(cfg, arg) {
+    match const_literal_by_arg(cfg, env, arg) {
         Some(literal) => i64::from(data.size as i32) == i64::from(literal as i32),
         None => false,
     }
 }
 
 /// `InsnUtils.getConstValueByArg`, only literal values are of interest here.
-fn const_literal_by_arg(cfg: &MethodCfg, arg: &InsnArg) -> Option<i64> {
+fn const_literal_by_arg(cfg: &MethodCfg, env: &MethodEnv, arg: &InsnArg) -> Option<i64> {
     match arg {
         InsnArg::Literal(l) => Some(l.literal),
         InsnArg::Register(r) => {
             let assign = cfg.svars[r.svar?].assign.parent_insn()?;
             let a = cfg.insn(assign);
             if a.ty == InsnType::Move {
-                return const_literal_by_arg(cfg, a.args.first()?);
+                return const_literal_by_arg(cfg, env, a.args.first()?);
             }
-            const_literal_by_insn(cfg, assign)
+            const_literal_by_insn(cfg, env, assign)
         }
-        InsnArg::Wrapped(w) => const_literal_by_insn(cfg, w.insn),
+        InsnArg::Wrapped(w) => const_literal_by_insn(cfg, env, w.insn),
         InsnArg::Named(_) => None,
     }
 }
 
-fn const_literal_by_insn(cfg: &MethodCfg, insn: InsnId) -> Option<i64> {
+/// `InsnUtils.getConstValueByInsn`, literal values only.
+fn const_literal_by_insn(cfg: &MethodCfg, env: &MethodEnv, insn: InsnId) -> Option<i64> {
     let n = cfg.insn(insn);
-    match (&n.ty, n.args.first()) {
-        (InsnType::Const, Some(InsnArg::Literal(l))) => Some(l.literal),
+    match (&n.ty, &n.kind) {
+        (InsnType::Const, _) => match n.args.first() {
+            Some(InsnArg::Literal(l)) => Some(l.literal),
+            _ => None,
+        },
+        (InsnType::Sget, InsnKind::Index(IndexValue::Field(f))) => {
+            let value = env.root.resolve_field(f)?.const_value.as_ref()?;
+            match value {
+                ConstValue::Boolean(b) => Some(i64::from(*b)),
+                ConstValue::Byte(v) => Some(i64::from(*v)),
+                ConstValue::Short(v) => Some(i64::from(*v)),
+                ConstValue::Char(v) => Some(i64::from(*v)),
+                ConstValue::Int(v) => Some(i64::from(*v)),
+                ConstValue::Long(v) => Some(*v),
+                ConstValue::Float(bits) => Some(i64::from(*bits as i32)),
+                ConstValue::Double(bits) => Some(*bits as i64),
+                ConstValue::Str(_) => None,
+            }
+        }
         _ => None,
     }
 }
@@ -526,7 +575,7 @@ fn make_filled_array_insn(
                 let id = cfg.add_insn(sget);
                 let wrapped = cfg.wrap_arg(id)?;
                 filled.args.push(wrapped);
-                add_field_usage(&f, env);
+                add_field_usage(cfg, &f);
             }
             None => filled.args.push(arg),
         }
@@ -671,11 +720,12 @@ fn process_anonymous_constructor(cfg: &mut MethodCfg, env: &MethodEnv, co: InsnI
     else {
         return;
     };
-    if !is_anonymous_constructor(env, c, m) {
+    let call_mth = &env.root.classes[c].methods[m];
+    if !call_mth.anonymous_constructor || call_mth.no_skip_args {
         return;
     }
     let args_count = cfg.insn(co).args.len();
-    match skip_method_args(env, c, m) {
+    match &call_mth.skip_args {
         Some(skip) => {
             let count = env.root.classes[c].methods[m]
                 .info

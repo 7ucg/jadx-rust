@@ -393,6 +393,8 @@ pub struct FillArrayData {
 pub struct SwitchData {
     pub keys: Vec<i32>,
     pub targets: Vec<i32>,
+    /// `SwitchInsn.modifyKey`: constant field replacing the key (empty when no key is replaced).
+    pub key_fields: Vec<Option<FieldInfo>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

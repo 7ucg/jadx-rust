@@ -62,6 +62,10 @@ pub struct MethodNode {
     pub calls_self: bool,
     /// Constructor of an anonymous class that is inlined at its single use.
     pub anonymous_constructor: bool,
+    /// `AFlag.NO_SKIP_ARGS`: the anonymous constructor has no arguments to skip.
+    pub no_skip_args: bool,
+    /// `AType.SKIP_MTH_ARGS`: arguments not generated for the method (by argument index).
+    pub skip_args: Option<Vec<bool>>,
     /// Synthetic method (or constructor) that may be inlined at its usage.
     pub inline_candidate: bool,
 }
@@ -222,6 +226,8 @@ impl Root {
                     unresolved_used: Vec::new(),
                     calls_self: false,
                     anonymous_constructor: false,
+                    no_skip_args: false,
+                    skip_args: None,
                     inline_candidate: false,
                 });
             }

@@ -473,6 +473,7 @@ impl<'a> InsnDecoder<'a> {
                     InsnKind::SwitchData(SwitchData {
                         keys: p.keys.clone(),
                         targets: p.targets.clone(),
+                        key_fields: Vec::new(),
                     }),
                 )
             }

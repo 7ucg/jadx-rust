@@ -135,7 +135,8 @@ pub fn build_ssa(
         }
     }
     if stage >= 6 {
-        crate::passes::const_inline::const_inline(&mut cfg, root)?;
+        let env = crate::passes::constructor::MethodEnv { root, cls, mth };
+        crate::passes::const_inline::const_inline(&mut cfg, &env)?;
     }
     if std::env::var("JADX_RS_VALIDATE").is_ok() {
         for p in cfg.validate_ssa() {

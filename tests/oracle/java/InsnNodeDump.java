@@ -142,6 +142,20 @@ public class InsnNodeDump {
 			} else {
 				sb.append(" keys=").append(java.util.Arrays.toString(s.getKeys())).append(" targets=")
 						.append(java.util.Arrays.toString(s.getTargets()));
+				java.util.List<String> mk = new java.util.ArrayList<>();
+				boolean modified = false;
+				for (int i = 0; i < s.getKeys().length; i++) {
+					Object key = s.getKey(i);
+					if (key instanceof jadx.core.dex.nodes.IFieldInfoRef) {
+						modified = true;
+						mk.add(((jadx.core.dex.nodes.IFieldInfoRef) key).getFieldInfo().toString());
+					} else {
+						mk.add(String.valueOf(key));
+					}
+				}
+				if (modified) {
+					sb.append(" mkeys=").append(mk);
+				}
 			}
 		} else if (n instanceof SwitchData) {
 			SwitchData d = (SwitchData) n;

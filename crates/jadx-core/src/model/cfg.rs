@@ -277,6 +277,8 @@ pub struct MethodCfg {
     pub errors: Vec<String>,
     /// Code size in 16-bit units (`getInsnsCount`).
     pub units_count: usize,
+    /// Fields of the input used through constant field replacement (`(class, field)` indexes).
+    pub field_uses: Vec<(usize, usize)>,
     /// Type inference ran (types are meaningful).
     pub types_done: bool,
     /// The type fixing stage ran (warnings are reported by the dump).

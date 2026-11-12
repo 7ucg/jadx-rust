@@ -169,6 +169,20 @@ fn insn_line(n: &InsnNode, if_target: Option<i32>, cfg: Ctx) -> String {
             match data {
                 Some(d) => {
                     let _ = write!(s, " keys={} targets={}", ints(&d.keys), ints(&d.targets));
+                    if d.key_fields.iter().any(Option::is_some) {
+                        let keys: Vec<String> = d
+                            .keys
+                            .iter()
+                            .enumerate()
+                            .map(
+                                |(i, k)| match d.key_fields.get(i).and_then(Option::as_ref) {
+                                    Some(f) => f.to_string(),
+                                    None => k.to_string(),
+                                },
+                            )
+                            .collect();
+                        let _ = write!(s, " mkeys=[{}]", keys.join(", "));
+                    }
                 }
                 None => s.push_str(" nodata"),
             }

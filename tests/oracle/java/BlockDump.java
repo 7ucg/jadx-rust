@@ -64,10 +64,12 @@ public class BlockDump {
 		// JADX_RS_FINALLY=1: run MarkFinallyVisitor after InitCodeVariables
 		boolean extractFinally = "1".equals(System.getenv("JADX_RS_FINALLY"));
 		if (args.length > 1 && Integer.parseInt(args[1]) >= 6) {
-			// constant field replacement is not ported yet
 			if (!extractFinally) {
 				jargs.setExtractFinally(false);
 			}
+		}
+		// JADX_RS_NO_CONSTS=1: disable constant field replacement
+		if ("1".equals(System.getenv("JADX_RS_NO_CONSTS"))) {
 			jargs.setReplaceConsts(false);
 		}
 		int stage = args.length > 1 ? Integer.parseInt(args[1]) : 0;
