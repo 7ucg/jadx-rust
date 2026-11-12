@@ -170,14 +170,10 @@ fn get_next_if(cfg: &mut MethodCfg, info: &IfInfo, block: Option<BlockId>) -> Op
     if !can_select_next(cfg, info, block) {
         return None;
     }
-    get_next_if_node_info(cfg, info, Some(block))
+    get_next_if_node_info(cfg, Some(block))
 }
 
-fn get_next_if_node_info(
-    cfg: &mut MethodCfg,
-    info: &IfInfo,
-    block: Option<BlockId>,
-) -> Option<IfInfo> {
+fn get_next_if_node_info(cfg: &mut MethodCfg, block: Option<BlockId>) -> Option<IfInfo> {
     let block = block?;
     if !cfg.block(block).loops.is_empty() || cfg.block(block).contains(bflag::ADDED_TO_REGION) {
         return None;
@@ -196,7 +192,7 @@ fn get_next_if_node_info(
         return None;
     }
     match make_if_info(cfg, next) {
-        None => get_next_if_node_info(cfg, info, Some(next)),
+        None => get_next_if_node_info(cfg, Some(next)),
         Some(next_info) => {
             next_info
                 .shared
@@ -785,9 +781,7 @@ impl RegionMaker<'_> {
             let scope_else = self.find_scope_out_block(info.else_block)?;
             if scope_then.is_none() && scope_else.is_some() {
                 info.out_block = scope_else;
-            } else if scope_then.is_some() && scope_else.is_none() {
-                info.out_block = scope_then;
-            } else if scope_then.is_some() && scope_then == scope_else {
+            } else if scope_then.is_some() && (scope_else.is_none() || scope_then == scope_else) {
                 info.out_block = scope_then;
             }
         }

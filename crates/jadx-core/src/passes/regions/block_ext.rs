@@ -1,10 +1,8 @@
 //! `BlockUtils` helpers needed by the region stages.
 
-use std::collections::HashSet;
-
 use crate::model::bitset::BitSet;
 use crate::model::cfg::{bflag, MethodCfg};
-use crate::model::insn::{BlockId, InsnArg, InsnId, InsnKind, InsnNode, InsnType};
+use crate::model::insn::{BlockId, InsnArg, InsnId, InsnKind, InsnNode};
 use crate::passes::block_utils::{
     follow_empty_path, is_any_path_exists, is_dominator, is_path_exists,
 };

@@ -299,33 +299,31 @@ fn simplify_cmp_op(cfg: &mut MethodCfg, insn: InsnId) -> Option<IfCondition> {
                 move_arg(cfg, wrap, 1, insn, 1);
             }
         }
-        InsnType::Arith => {
-            if lit.ty == ArgType::boolean() {
-                let InsnKind::Arith(arith_op) = cfg.insn(wrap).kind.clone() else {
-                    return None;
+        InsnType::Arith if lit.ty == ArgType::boolean() => {
+            let InsnKind::Arith(arith_op) = cfg.insn(wrap).kind.clone() else {
+                return None;
+            };
+            if arith_op == ArithOp::Or || arith_op == ArithOp::And {
+                let if_op_v = if_op(cfg, insn);
+                let is_true = (if_op_v == IfOp::Ne && lit.literal == 0)
+                    || (if_op_v == IfOp::Eq && lit.literal == 1);
+                let op = if is_true { IfOp::Ne } else { IfOp::Eq };
+                let mode = if (is_true && arith_op == ArithOp::Or)
+                    || (!is_true && arith_op == ArithOp::And)
+                {
+                    CondMode::Or
+                } else {
+                    CondMode::And
                 };
-                if arith_op == ArithOp::Or || arith_op == ArithOp::And {
-                    let if_op_v = if_op(cfg, insn);
-                    let is_true = (if_op_v == IfOp::Ne && lit.literal == 0)
-                        || (if_op_v == IfOp::Eq && lit.literal == 1);
-                    let op = if is_true { IfOp::Ne } else { IfOp::Eq };
-                    let mode = if (is_true && arith_op == ArithOp::Or)
-                        || (!is_true && arith_op == ArithOp::And)
-                    {
-                        CondMode::Or
-                    } else {
-                        CondMode::And
-                    };
-                    let if1 = new_if(cfg, op, wrap, 0);
-                    let if2 = new_if(cfg, op, wrap, 1);
-                    return Some(IfCondition::with_args(
-                        mode,
-                        vec![
-                            IfCondition::from_if_node(cfg, if1),
-                            IfCondition::from_if_node(cfg, if2),
-                        ],
-                    ));
-                }
+                let if1 = new_if(cfg, op, wrap, 0);
+                let if2 = new_if(cfg, op, wrap, 1);
+                return Some(IfCondition::with_args(
+                    mode,
+                    vec![
+                        IfCondition::from_if_node(cfg, if1),
+                        IfCondition::from_if_node(cfg, if2),
+                    ],
+                ));
             }
         }
         _ => {}

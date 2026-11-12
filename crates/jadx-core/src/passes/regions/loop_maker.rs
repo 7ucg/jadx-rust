@@ -21,7 +21,7 @@ use crate::passes::regions::block_ext::{
 use crate::passes::regions::if_maker::{make_if_info, merge_nested_if_nodes, IfInfo};
 use crate::passes::regions::maker::{RegionMaker, Res};
 use crate::passes::regions::utils::{
-    contains_exit_insn, cs, is_exit_block, is_pre_exit_block, is_region_contains_block, last_insn,
+    contains_exit_insn, cs, is_exit_block, is_pre_exit_block, is_region_contains_block,
     last_insn_is, next_block,
 };
 
@@ -117,15 +117,6 @@ fn is_exit_at_loop_end(cfg: &MethodCfg, exit: BlockId, l: LoopId) -> bool {
     cfg.block(loop_end).insns.is_empty() && cfg.block(loop_end).preds == [exit]
 }
 
-fn same_reg_and_svar(
-    cfg: &MethodCfg,
-    a: crate::model::ssa::ArgRef,
-    b: crate::model::ssa::ArgRef,
-) -> bool {
-    let (x, y) = (cfg.reg(a), cfg.reg(b));
-    x.reg_num == y.reg_num && x.svar == y.svar
-}
-
 impl RegionMaker<'_> {
     /// `LoopRegion.checkPreCondition`
     fn check_pre_condition(&self, pre_condition: BlockId, cond: &Option<IfCondition>) -> bool {
@@ -142,8 +133,8 @@ impl RegionMaker<'_> {
             return false;
         }
         let size = insns.len();
-        for i in 0..size {
-            let insn = cfg.insn(insns[i]);
+        for (i, &insn_id) in insns.iter().enumerate() {
+            let insn = cfg.insn(insn_id);
             let Some(res) = &insn.result else {
                 return false;
             };
@@ -386,7 +377,7 @@ impl RegionMaker<'_> {
                     ty: None,
                 },
             );
-            let found;
+            let mut found;
             if block == loop_start
                 || exit_at_loop_end
                 || is_empty_simple_path(self.cfg, loop_start, block)
@@ -407,7 +398,6 @@ impl RegionMaker<'_> {
             } else {
                 found = false;
             }
-            let mut found = found;
             if found {
                 let list = all_loops_for_block(self.cfg, block);
                 if list.len() >= 2 {
@@ -834,10 +824,7 @@ impl RegionMaker<'_> {
                 Some(exit_edge.source)
             };
             let mut visited: Vec<BlockId> = Vec::new();
-            loop {
-                let Some(e) = exit else {
-                    break;
-                };
+            while let Some(e) = exit {
                 if visited.contains(&e) {
                     break;
                 }
