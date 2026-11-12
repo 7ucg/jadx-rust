@@ -204,7 +204,7 @@ impl<'m, 'a> InsnGen<'m, 'a> {
 
     fn instance_field(&self, code: &mut CodeWriter, field: &FieldInfo, arg: &InsnArg) -> Res {
         self.add_arg_dot(code, arg)?;
-        code.add(&field.name);
+        code.add(&self.root().field_name(field));
         Ok(())
     }
 
@@ -654,8 +654,7 @@ impl<'m, 'a> InsnGen<'m, 'a> {
             }
             InvokeType::Custom | InvokeType::CustomRaw => {}
         }
-        // method names are not renamed, so the raw name and the alias are the same
-        code.add(&mth.name);
+        code.add(&self.root().method_name(mth));
         self.generate_method_arguments(code, insn, k, call_mth_node)
     }
 
@@ -1015,7 +1014,7 @@ pub fn make_static_field_access(
         }
         code.add(".");
     }
-    code.add(&field.name);
+    code.add(&cls_gen.env().root.field_name(field));
     Ok(())
 }
 
@@ -1029,7 +1028,7 @@ fn handle_app_res_field(
         Some(parent) if parent.short_name() == "R" => {
             cls_gen.use_class_info(code, parent)?;
             code.add(".");
-            code.add(decl_class.short_name());
+            code.add(&cls_gen.env().short_name(decl_class));
             Ok(true)
         }
         _ => Ok(false),

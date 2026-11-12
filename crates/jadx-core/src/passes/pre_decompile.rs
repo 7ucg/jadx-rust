@@ -6,7 +6,7 @@ use jadx_input_api::CodeRefProvider;
 use crate::model::node::Root;
 use crate::passes::{
     add_android_constants, collect_const_values, override_methods, prepare_access_flags,
-    process_anonymous, process_methods_for_inline, signature, usage_info,
+    process_anonymous, process_methods_for_inline, rename, signature, usage_info,
 };
 
 /// Options of the pre decompile passes (defaults of the reference decompiler).
@@ -22,6 +22,8 @@ pub struct PreDecompileOptions {
     pub inline_methods: bool,
     /// Treat classes extending the Kotlin lambda base class as inlinable.
     pub allow_inline_kotlin_lambda: bool,
+    /// Rename invalid and colliding names of classes, fields, methods and packages.
+    pub rename: Option<rename::RenameOptions>,
 }
 
 impl Default for PreDecompileOptions {
@@ -32,12 +34,13 @@ impl Default for PreDecompileOptions {
             inline_anonymous_classes: true,
             inline_methods: true,
             allow_inline_kotlin_lambda: true,
+            rename: Some(rename::RenameOptions::default()),
         }
     }
 }
 
 /// Run the pre decompile passes in the order of the reference:
-/// access flags, signatures, method overrides, android constants, usage info, constant values, anonymous classes, methods to inline.
+/// access flags, signatures, method overrides, android constants, renaming, usage info, constant values, anonymous classes, methods to inline.
 pub fn run_pre_decompile(root: &mut Root, refs: &dyn CodeRefProvider, opts: &PreDecompileOptions) {
     if !opts.respect_bytecode_acc_modifiers {
         prepare_access_flags::prepare_access_flags(root);
@@ -46,6 +49,9 @@ pub fn run_pre_decompile(root: &mut Root, refs: &dyn CodeRefProvider, opts: &Pre
     override_methods::process_overrides(root);
     root.const_storage.set_replace_enabled(opts.replace_consts);
     add_android_constants::add_android_constants(root);
+    if let Some(r) = &opts.rename {
+        rename::rename_all(root, r);
+    }
     usage_info::collect_usage(root, refs);
     collect_const_values::collect_const_values(root);
     if opts.inline_anonymous_classes {

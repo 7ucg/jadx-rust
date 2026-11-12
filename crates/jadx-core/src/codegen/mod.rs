@@ -12,6 +12,7 @@ pub mod method_gen;
 pub mod name_gen;
 pub mod string_utils;
 pub mod type_gen;
+mod unicode_tables;
 pub mod var_names;
 
 use std::fmt;

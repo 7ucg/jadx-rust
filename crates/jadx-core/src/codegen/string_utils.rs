@@ -23,68 +23,20 @@ pub struct StringUtils {
     pub integer_format: IntegerFormat,
 }
 
-/// `Character.isISOControl`
-fn is_iso_control(cp: u32) -> bool {
-    cp <= 0x1f || (0x7f..=0x9f).contains(&cp)
-}
-
-/// `Character.isWhitespace`
-fn is_java_whitespace(cp: u32) -> bool {
-    matches!(
-        cp,
-        0x09..=0x0d
-            | 0x1c..=0x1f
-            | 0x20
-            | 0x1680
-            | 0x2000..=0x2006
-            | 0x2008..=0x200a
-            | 0x2028
-            | 0x2029
-            | 0x205f
-            | 0x3000
-    )
-}
-
-/// Code points of the categories format, private use and surrogate (`Cf`, `Co`, `Cs`).
-/// Unassigned code points are not detected (no Unicode tables available).
-fn is_hidden_category(cp: u32) -> bool {
-    matches!(cp,
-        0x00ad
-        | 0x0600..=0x0605
-        | 0x061c
-        | 0x06dd
-        | 0x070f
-        | 0x0890..=0x0891
-        | 0x08e2
-        | 0x180e
-        | 0x200b..=0x200f
-        | 0x202a..=0x202e
-        | 0x2060..=0x2064
-        | 0x2066..=0x206f
-        | 0xd800..=0xdfff
-        | 0xe000..=0xf8ff
-        | 0xfeff
-        | 0xfff9..=0xfffb
-        | 0x110bd
-        | 0x110cd
-        | 0x13430..=0x1343f
-        | 0x1bca0..=0x1bca3
-        | 0x1d173..=0x1d17a
-        | 0xe0001
-        | 0xe0020..=0xe007f
-        | 0xf0000..=0xffffd
-        | 0x100000..=0x10fffd)
-}
-
-/// `NameMapper.isPrintableCodePoint`
+/// `NameMapper.isPrintableCodePoint`: no control, format, private use, surrogate or unassigned
+/// code points and no white space other than the plain space.
 pub fn is_printable_code_point(cp: u32) -> bool {
-    if is_iso_control(cp) {
-        return false;
-    }
-    if is_java_whitespace(cp) {
-        return cp == u32::from(b' ');
-    }
-    !is_hidden_category(cp)
+    super::unicode_tables::NON_PRINTABLE
+        .binary_search_by(|&(first, last)| {
+            if cp < first {
+                std::cmp::Ordering::Greater
+            } else if cp > last {
+                std::cmp::Ordering::Less
+            } else {
+                std::cmp::Ordering::Equal
+            }
+        })
+        .is_err()
 }
 
 /// `NameMapper.isPrintableChar`

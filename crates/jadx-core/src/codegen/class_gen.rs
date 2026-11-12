@@ -61,6 +61,21 @@ impl<'a> GenEnv<'a> {
         self.class_info(&ArgType::object(name))
     }
 
+    /// Output short name of a class (`ClassInfo.getAliasShortName`).
+    pub fn short_name(&self, ci: &ClassInfo) -> String {
+        self.root.class_short_name(ci)
+    }
+
+    /// Output package of a class (`ClassInfo.getAliasPkg`).
+    pub fn pkg(&self, ci: &ClassInfo) -> String {
+        self.root.class_package(ci)
+    }
+
+    /// Output full name of a class (`ClassInfo.getAliasFullName`).
+    pub fn full_name(&self, ci: &ClassInfo) -> String {
+        self.root.class_full_name(ci)
+    }
+
     /// `RootNode.resolveClass(ClassInfo)`
     pub fn resolve_class_info(&self, ci: &ClassInfo) -> Option<usize> {
         self.root.class_index(&ci.raw_name())
@@ -154,7 +169,7 @@ impl<'a> ClassGen<'a> {
                 .imports
                 .borrow()
                 .iter()
-                .any(|i| i != ext && i.short_name() == short),
+                .any(|i| i != ext && self.env.short_name(i) == short),
         }
     }
 
@@ -221,7 +236,7 @@ impl<'a> ClassGen<'a> {
             base.object_name().unwrap_or_default()
         };
         let ci = self.env.class_info_by_name(&full)?;
-        code.add(ci.short_name());
+        code.add(&self.env.short_name(&ci));
         self.add_generics(code, ty)
     }
 
@@ -267,27 +282,28 @@ impl<'a> ClassGen<'a> {
 
     /// `addClsShortNameForced`
     pub fn add_cls_short_name_forced(&self, code: &mut CodeWriter, ci: &ClassInfo) {
-        code.add(ci.short_name());
+        code.add(&self.env.short_name(ci));
         if !is_both_classes_in_one_top_class(self.class_info(), ci) {
             self.add_import(ci);
         }
     }
 
     fn use_class_internal(&self, use_cls: &ClassInfo, ext: &ClassInfo) -> String {
-        let mut full_name = ext.full_name().to_string();
-        if self.env.fallback || !self.env.use_imports {
+        let env = self.env;
+        let mut full_name = env.full_name(ext);
+        if env.fallback || !env.use_imports {
             return full_name;
         }
-        let short_name = ext.short_name();
+        let short_name = env.short_name(ext);
         if use_cls == ext {
-            return short_name.to_string();
+            return short_name;
         }
-        if ext.package().is_empty() {
+        if env.pkg(ext).is_empty() {
             // omit import for default package
-            return short_name.to_string();
+            return short_name;
         }
         if is_class_inner_for(use_cls, ext) {
-            return short_name.to_string();
+            return short_name;
         }
         if ext.is_inner() {
             return self.expand_inner_class_name(use_cls, ext);
@@ -298,28 +314,24 @@ impl<'a> ClassGen<'a> {
             return full_name;
         }
         if is_both_classes_in_one_top_class(use_cls, ext) {
-            return short_name.to_string();
+            return short_name;
         }
         // don't add import for top classes from 'java.lang' package (subpackages excluded)
         if ext.package() == "java.lang" && ext.parent_class().is_none() {
-            return short_name.to_string();
+            return short_name;
         }
-        if ext.package() == use_cls.package() {
+        if env.pkg(ext) == env.pkg(use_cls) {
             if !ext.is_inner() {
                 // don't add import if this class from same package
-                return short_name.to_string();
+                return short_name;
             }
-            full_name = name_without_package(ext);
+            full_name = env.root.class_name_without_package(ext);
         }
-        if self.has_import_with_short_name(ext, short_name) {
-            return if let Some(parent) = ext.parent_class().filter(|_| ext.is_inner()) {
-                format!("{}.{short_name}", self.use_class_internal(use_cls, parent))
-            } else {
-                full_name
-            };
+        if self.has_import_with_short_name(ext, &short_name) {
+            return full_name;
         }
         self.add_import(ext);
-        short_name.to_string()
+        short_name
     }
 
     fn expand_inner_class_name(&self, use_cls: &ClassInfo, ext: &ClassInfo) -> String {
@@ -342,9 +354,9 @@ impl<'a> ClassGen<'a> {
             let top = cls_list[0];
             if top != ext {
                 let used = self.use_class_internal(use_cls, top);
-                if used != top.short_name() {
+                if used != self.env.short_name(top) {
                     // short top name can't be used, use full name as fallback
-                    return ext.full_name().to_string();
+                    return self.env.full_name(ext);
                 }
             } else {
                 self.add_import(top);
@@ -352,7 +364,7 @@ impl<'a> ClassGen<'a> {
         }
         cls_list
             .iter()
-            .map(|c| c.short_name())
+            .map(|c| self.env.short_name(c))
             .collect::<Vec<_>>()
             .join(".")
     }
@@ -361,14 +373,14 @@ impl<'a> ClassGen<'a> {
         let Some(use_cls) = use_cls else {
             return false;
         };
-        let short = search.short_name();
-        if use_cls.short_name() == short {
+        let short = self.env.short_name(search);
+        if self.env.short_name(use_cls) == short {
             return true;
         }
         if let Some(idx) = self.env.resolve_class_info(use_cls) {
             for &inner in &self.env.inner_classes[idx] {
                 let ic = &self.env.root.classes[inner].info;
-                if ic.short_name() == short && ic.full_name() != search.full_name() {
+                if ic.short_name() == short && ic.full_name() != self.env.full_name(search) {
                     return true;
                 }
             }
@@ -378,23 +390,15 @@ impl<'a> ClassGen<'a> {
 
     /// Check if a class with the same name exists in the current package.
     fn check_in_package_collision(&self, use_cls: &ClassInfo, search: &ClassInfo) -> bool {
-        let current_pkg = use_cls.package();
-        if current_pkg == search.package() {
+        let current_pkg = self.env.pkg(use_cls);
+        if current_pkg == self.env.pkg(search) {
             // search class already from current package
             return false;
         }
         self.env
             .root
             .clsp
-            .is_cls_known(&format!("{current_pkg}.{}", search.short_name()))
-    }
-}
-
-/// `ClassInfo.getAliasNameWithoutPackage`
-pub fn name_without_package(ci: &ClassInfo) -> String {
-    match ci.parent_class() {
-        None => ci.short_name().to_string(),
-        Some(p) => format!("{}.{}", name_without_package(p), ci.short_name()),
+            .is_cls_known(&format!("{current_pkg}.{}", self.env.short_name(search)))
     }
 }
 

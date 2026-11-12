@@ -23,6 +23,7 @@ pub mod prepare_access_flags;
 pub mod process_anonymous;
 pub mod process_insns;
 pub mod process_methods_for_inline;
+pub mod rename;
 pub mod signature;
 pub mod ssa;
 pub mod usage_info;

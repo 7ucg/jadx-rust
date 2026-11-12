@@ -150,15 +150,16 @@ fn make_name_for_object(root: &Root, ty: &ArgType) -> String {
             return alias.to_string();
         }
         return match root.ctx.class_info(ty) {
-            Ok(ci) => make_name_for_checked_class(&ci),
+            Ok(ci) => make_name_for_checked_class(root, &ci),
             Err(_) => escape_name(&ty.to_string()),
         };
     }
     escape_name(&ty.to_string())
 }
 
-fn make_name_for_checked_class(ci: &ClassInfo) -> String {
-    let short = ci.short_name();
+fn make_name_for_checked_class(root: &Root, ci: &ClassInfo) -> String {
+    let short = root.class_short_name(ci);
+    let short = short.as_str();
     if let Some(v) = from_name(short) {
         return v;
     }
@@ -169,11 +170,11 @@ fn make_name_for_checked_class(ci: &ClassInfo) -> String {
     lower
 }
 
-fn make_name_for_class(_root: &Root, ci: &ClassInfo) -> String {
-    if let Some(alias) = alias_for_object(ci.full_name()) {
-        return alias.to_string();
+fn make_name_for_class(root: &Root, ci: &ClassInfo) -> String {
+    if let Some(known) = alias_for_object(ci.full_name()) {
+        return known.to_string();
     }
-    make_name_for_checked_class(ci)
+    make_name_for_checked_class(root, ci)
 }
 
 fn from_name(name: &str) -> Option<String> {
@@ -205,7 +206,8 @@ fn make_name_from_invoke(
     let InsnKind::Invoke { mth: call_mth, .. } = &insn.kind else {
         return None;
     };
-    let name = call_mth.name.as_str();
+    let method_name = root.method_name(call_mth);
+    let name = method_name.as_str();
     let decl_class = &call_mth.decl_class;
     if name == "getInstance" {
         // e.g. Cipher.getInstance

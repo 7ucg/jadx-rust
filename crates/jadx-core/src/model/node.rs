@@ -35,6 +35,8 @@ pub struct FieldNode {
     /// Marked by the anonymous class processing: the instance field holding the single
     /// instance of an inlinable class.
     pub inline_instance_field: bool,
+    /// Name used in the output when it differs from the name in the bytecode.
+    pub alias: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -72,6 +74,13 @@ pub struct MethodNode {
     pub skip_first_arg: bool,
     /// `AFlag.DONT_GENERATE`: the method is not part of the output.
     pub dont_generate: bool,
+    /// Name used in the output when it differs from the name in the bytecode.
+    pub alias: Option<String>,
+    /// `AType.METHOD_OVERRIDE`: index into [`Root::override_sets`] of the set of all methods of
+    /// the override hierarchy (this method included).
+    pub override_set: Option<usize>,
+    /// `AFlag.DONT_RENAME`
+    pub dont_rename: bool,
 }
 
 impl MethodNode {
@@ -134,6 +143,8 @@ pub struct ClassNode {
     pub inlined_into: Option<usize>,
     /// Class is not generated as separate class.
     pub dont_generate: bool,
+    /// Short name used in the output when it differs from the name in the bytecode.
+    pub alias: Option<String>,
 }
 
 impl ClassNode {
@@ -163,6 +174,10 @@ pub struct Root {
     pub clsp: crate::clsp::ClspGraph,
     pub const_storage: ConstStorage,
     by_raw: HashMap<String, usize>,
+    /// Sets of related methods of override hierarchies (`MethodOverrideAttr.getRelatedMthNodes`).
+    pub override_sets: Vec<Vec<MethodId>>,
+    /// Renamed packages: full package name to the new name of its last segment.
+    pub pkg_aliases: HashMap<String, String>,
 }
 
 fn parse(desc: &str) -> ArgType {
@@ -199,6 +214,7 @@ impl Root {
                     annotation_refs: f.annotation_refs,
                     use_in: Vec::new(),
                     inline_instance_field: false,
+                    alias: None,
                 });
             }
             let mut methods = Vec::with_capacity(c.methods.len());
@@ -235,6 +251,9 @@ impl Root {
                     inline_candidate: false,
                     skip_first_arg: false,
                     dont_generate: false,
+                    alias: None,
+                    override_set: None,
+                    dont_rename: false,
                 });
             }
             by_raw.insert(info.raw_name(), classes.len());
@@ -257,6 +276,7 @@ impl Root {
                 inlined_classes: Vec::new(),
                 inlined_into: None,
                 dont_generate: false,
+                alias: None,
             });
         }
         let mut root = Root {
@@ -265,6 +285,8 @@ impl Root {
             clsp: crate::clsp::ClspGraph::default(),
             const_storage: ConstStorage::new(true),
             by_raw,
+            override_sets: Vec::new(),
+            pkg_aliases: HashMap::new(),
         };
         let mut clsp = crate::clsp::ClspGraph::load_core()?;
         clsp.add_app(&root);

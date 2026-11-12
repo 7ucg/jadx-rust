@@ -44,12 +44,13 @@ impl NameGen {
         let node = &env.root.classes[cls];
         for f in &node.fields {
             if f.access & crate::model::node::ACC_STATIC != 0 {
-                self.var_names.insert(f.info.name.clone());
+                self.var_names
+                    .insert(f.alias.clone().unwrap_or_else(|| f.info.name.clone()));
             }
         }
         for &inner in &env.inner_classes[cls] {
             self.var_names
-                .insert(env.root.classes[inner].info.short_name().to_string());
+                .insert(env.short_name(&env.root.classes[inner].info));
         }
         // all root package names avoid collisions with full class names
         self.var_names.extend(env.root_pkgs.iter().cloned());
