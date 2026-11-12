@@ -138,7 +138,7 @@ public class BlockDump {
 					dump(sb, mth, stage >= 1, stage >= 2, typed, stage >= 8);
 					System.out.print(sb);
 					sb.setLength(0);
-					mth.unload();
+					// not unloaded: unload() would also drop pre-decompile flags (e.g. inline candidates) that later methods read
 				}
 			}
 		}
