@@ -70,6 +70,15 @@ pub fn build_blocks(
         .iter()
         .flatten()
         .any(|i| i.ty == InsnType::MoveException);
+    if decoded
+        .insns
+        .iter()
+        .flatten()
+        .any(|i| matches!(i.ty, InsnType::JavaJsr | InsnType::JavaRet))
+    {
+        // `ResolveJavaJSR` (duplication of the subroutine blocks) is not ported
+        return Err("Java jsr/ret instructions are not supported yet".to_string());
+    }
     process_instructions(&mut decoded.insns).map_err(|e| e.0)?;
     let handler_list: Vec<usize> = (0..handlers.len()).collect();
     let units_count = decoded.insns.len();
@@ -103,6 +112,8 @@ pub fn build_processed_blocks(
 /// Method frame description needed by SSA construction.
 pub struct FrameInfo {
     pub regs_count: usize,
+    /// Register of the first argument if the input defines it (`argsStartReg`).
+    pub args_start_reg: Option<usize>,
     pub is_static: bool,
     pub this_type: crate::model::types::ArgType,
     pub arg_types: Vec<crate::model::types::ArgType>,
@@ -120,6 +131,7 @@ impl FrameInfo {
         let m = &root.classes[cls].methods[mth];
         FrameInfo {
             regs_count,
+            args_start_reg: None,
             is_static: m.access & crate::model::node::ACC_STATIC != 0,
             this_type: tu.expand_type_variables(cls, mth, &tu.class_type(cls)),
             arg_types: m
@@ -152,9 +164,10 @@ pub fn build_ssa(
     let void_return = root.classes[cls].methods[mth].info.return_type.is_void();
     let mut cfg = build_processed_blocks(decoded, tries, &root.ctx, &root.clsp, void_return)?;
     attach_method_details(&mut cfg, root);
-    crate::passes::ssa::init_arguments(
+    crate::passes::ssa::init_arguments_at(
         &mut cfg,
         frame.regs_count,
+        frame.args_start_reg,
         frame.is_static,
         &frame.this_type,
         &frame.arg_types,

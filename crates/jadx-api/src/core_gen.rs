@@ -127,23 +127,20 @@ impl DexMethodLoader<'_> {
         let Some(off) = m.code_offset else {
             return Ok(no_code_cfg(root, cls, mth));
         };
-        let dex = self.ctx.dex_of(cls);
-        let code = dex.code_item(off).map_err(|e| e.to_string())?;
-        let raw =
-            jadx_dex_input::insns::decode_insn_data(&code.insns).map_err(|e| e.to_string())?;
+        let code = self.ctx.method_code(cls, off)?;
         let mctx = MethodCtx {
             return_type: m.return_type.clone(),
             parent_class: root.classes[cls].info.clone(),
             root,
         };
-        let decoded = InsnDecoder::new(dex, &mctx)
-            .process(&raw, code.insns.len())
+        let decoded = InsnDecoder::new(code.resolver, &mctx)
+            .process(&code.insns, code.units)
             .map_err(|e| e.to_string())?;
-        let tries = dex.tries_api(&code).map_err(|e| e.to_string())?;
-        let frame = FrameInfo::new(root, cls, mth, code.registers_size as usize);
+        let mut frame = FrameInfo::new(root, cls, mth, code.registers);
+        frame.args_start_reg = code.args_start_reg;
         let mut cfg = build_ssa(
             decoded,
-            &tries,
+            &code.tries,
             root,
             cls,
             mth,
@@ -167,20 +164,16 @@ impl MethodLoader for DexMethodLoader<'_> {
         let root = self.ctx.root;
         let m = &root.classes[cls].methods[mth];
         let off = m.code_offset.ok_or("no code")?;
-        let dex = self.ctx.dex_of(cls);
-        let code = dex.code_item(off).map_err(|e| e.to_string())?;
-        let raw =
-            jadx_dex_input::insns::decode_insn_data(&code.insns).map_err(|e| e.to_string())?;
+        let code = self.ctx.method_code(cls, off)?;
         let mctx = MethodCtx {
             return_type: m.return_type.clone(),
             parent_class: root.classes[cls].info.clone(),
             root,
         };
-        let decoded = InsnDecoder::new(dex, &mctx)
-            .process(&raw, code.insns.len())
+        let decoded = InsnDecoder::new(code.resolver, &mctx)
+            .process(&code.insns, code.units)
             .map_err(|e| e.to_string())?;
-        let tries = dex.tries_api(&code).map_err(|e| e.to_string())?;
-        let (insns, handlers) = fallback_decode(decoded, &tries, &root.ctx)?;
+        let (insns, handlers) = fallback_decode(decoded, &code.tries, &root.ctx)?;
         Ok(FallbackCode { insns, handlers })
     }
 
@@ -195,37 +188,11 @@ impl MethodLoader for DexMethodLoader<'_> {
 }
 
 impl DexMethodLoader<'_> {
-    /// `DebugInfoAttachVisitor.setMethodSourceLine`: line of the first instruction with a line
-    /// number, minus one.
+    /// `DebugInfoAttachVisitor.setMethodSourceLine`
     fn compute_source_line(&self, cls: usize, mth: usize) -> u32 {
-        let m = &self.ctx.root.classes[cls].methods[mth];
-        let Some(off) = m.code_offset else {
-            return 0;
-        };
-        let dex = self.ctx.dex_of(cls);
-        let Ok(code) = dex.code_item(off) else {
-            return 0;
-        };
-        if code.debug_info_off == 0 {
-            return 0;
+        match self.ctx.class(cls).methods[mth].code_offset {
+            Some(off) => self.ctx.method_source_line(cls, off),
+            None => 0,
         }
-        let Ok(lines) = dex.debug_lines(code.debug_info_off, code.insns.len() as u32) else {
-            return 0;
-        };
-        let mut map: HashMap<u32, u32> = HashMap::new();
-        for (addr, line) in lines {
-            map.insert(addr, line);
-        }
-        let Ok(raw) = jadx_dex_input::insns::decode_insn_data(&code.insns) else {
-            return 0;
-        };
-        for insn in &raw {
-            if let Some(&line) = map.get(&insn.offset) {
-                if line != 0 {
-                    return line - 1;
-                }
-            }
-        }
-        0
     }
 }

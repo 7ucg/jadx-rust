@@ -1,14 +1,63 @@
 //! Conversion of a parsed class into the input API model.
 
 use jadx_input_api::{
-    AnnotationRef, ClassData, CodeRef, CodeRefProvider, ConstValue, FieldData, FieldRefData,
-    InnerClassData, InsnData, InsnIndexType, InsnResolver, MethodData, MethodProtoData,
-    MethodRefData,
+    AnnotationData, AnnotationRef, AnnotationVisibility as ApiVisibility, CallSiteValue,
+    ClassAttrs, ClassData, CodeRef, CodeRefProvider, ConstValue, EncodedValueData, FieldAttrs,
+    FieldData, FieldRefData, InnerClassData, InsnData, InsnIndexType, InsnResolver, MethodAttrs,
+    MethodData, MethodProtoData, MethodRefData,
 };
 
 use crate::class::{parse_method_descriptor, JavaClass};
 use crate::error::{JavaError, Result};
-use crate::types::{Annotation, EncodedValue, MethodHandleRef};
+use crate::types::{Annotation, AnnotationVisibility, EncodedValue, MethodHandleRef};
+
+/// Marker bit of a `newarray` operand in the index of a decoded instruction used with
+/// [`InsnResolver::type_desc`]: the low bits hold the primitive element type code.
+pub const NEW_ARRAY_PRIMITIVE_TAG: u32 = 0x8000_0000;
+
+/// Annotation value as handed to the decompiler core.
+pub fn value_data(v: &EncodedValue) -> EncodedValueData {
+    match v {
+        EncodedValue::Null => EncodedValueData::Null,
+        EncodedValue::Boolean(b) => EncodedValueData::Boolean(*b),
+        EncodedValue::Byte(x) => EncodedValueData::Byte(*x),
+        EncodedValue::Short(x) => EncodedValueData::Short(*x),
+        EncodedValue::Char(x) => EncodedValueData::Char(*x),
+        EncodedValue::Int(x) => EncodedValueData::Int(*x),
+        EncodedValue::Long(x) => EncodedValueData::Long(*x),
+        EncodedValue::Float(x) => EncodedValueData::Float(x.to_bits()),
+        EncodedValue::Double(x) => EncodedValueData::Double(x.to_bits()),
+        EncodedValue::String(s) => EncodedValueData::Str(s.clone()),
+        EncodedValue::Type(t) => EncodedValueData::Type(t.clone()),
+        EncodedValue::Enum(f) => EncodedValueData::Enum(f.clone()),
+        EncodedValue::MethodType(_) => EncodedValueData::Unsupported("METHOD_TYPE".into()),
+        EncodedValue::MethodHandle(_) => EncodedValueData::Unsupported("METHOD_HANDLE".into()),
+        EncodedValue::Array(items) => {
+            EncodedValueData::Array(items.iter().map(value_data).collect())
+        }
+        EncodedValue::Annotation(a) => EncodedValueData::Annotation(annotation_data(a)),
+    }
+}
+
+/// Annotation with its values as handed to the decompiler core.
+pub fn annotation_data(a: &Annotation) -> AnnotationData {
+    AnnotationData {
+        type_desc: a.class.clone(),
+        visibility: match a.visibility {
+            AnnotationVisibility::Runtime => ApiVisibility::Runtime,
+            AnnotationVisibility::Build => ApiVisibility::Build,
+        },
+        values: a
+            .values
+            .iter()
+            .map(|(k, v)| (k.clone(), value_data(v)))
+            .collect(),
+    }
+}
+
+fn annotations_attr(list: &[Annotation]) -> Vec<AnnotationData> {
+    jadx_input_api::pack_annotations(list.iter().map(annotation_data).collect())
+}
 
 /// Annotations as seen by the decompiler: one annotation per class (a later one replaces an
 /// earlier one of the same class).
@@ -91,7 +140,9 @@ impl JavaClass {
                 ty: f.descriptor,
                 access_flags: f.access_flags,
                 signature: f.signature,
-                attrs: Default::default(),
+                attrs: FieldAttrs {
+                    annotations: annotations_attr(&f.annotations),
+                },
             })
             .collect();
         let mut methods = Vec::new();
@@ -101,6 +152,22 @@ impl JavaClass {
             for p in &m.param_annotations {
                 refs.extend(annotation_refs(p));
             }
+            let attrs = MethodAttrs {
+                annotations: annotations_attr(&m.annotations),
+                param_annotations: m
+                    .param_annotations
+                    .iter()
+                    .map(|p| annotations_attr(p))
+                    .collect(),
+                throws: m.exceptions.clone().unwrap_or_default(),
+                annotation_default: m.annotation_default.as_ref().map(value_data),
+                method_parameters: m
+                    .parameters
+                    .iter()
+                    .flatten()
+                    .map(|p| (p.name.clone(), p.access_flags))
+                    .collect(),
+            };
             methods.push(MethodData {
                 name: m.name,
                 arg_types: proto.arg_types,
@@ -109,7 +176,7 @@ impl JavaClass {
                 signature: m.signature,
                 code_offset: m.code_offset,
                 annotation_refs: refs,
-                attrs: Default::default(),
+                attrs,
             });
         }
         Ok(ClassData {
@@ -122,7 +189,11 @@ impl JavaClass {
             fields,
             methods,
             type_desc,
-            attrs: Default::default(),
+            attrs: ClassAttrs {
+                source_file: attrs.source_file.clone().filter(|s| !s.is_empty()),
+                input_file_name: Some(self.source().to_string()),
+                annotations: annotations_attr(&attrs.annotations()),
+            },
         })
     }
 
@@ -133,6 +204,19 @@ impl JavaClass {
             return array_elem_type(insn.index);
         }
         self.class_name(insn.index)
+    }
+
+    /// Instructions for the decompiler core: like [`decode_insns`](Self::decode_insns), but the
+    /// operand of `newarray` is tagged with [`NEW_ARRAY_PRIMITIVE_TAG`] so that
+    /// [`InsnResolver::type_desc`] resolves it to the primitive element type.
+    pub fn decode_core_insns(&self, code_offset: u32) -> Result<Vec<InsnData>> {
+        let mut insns = self.decode_insns(code_offset)?;
+        for insn in &mut insns {
+            if insn.raw_opcode_unit == 0xbc {
+                insn.index |= NEW_ARRAY_PRIMITIVE_TAG;
+            }
+        }
+        Ok(insns)
     }
 
     /// Type, field and method operands of all instructions of the code at `code_offset`.
@@ -191,6 +275,9 @@ impl InsnResolver for JavaClass {
     }
 
     fn type_desc(&self, idx: u32) -> std::result::Result<String, String> {
+        if idx & NEW_ARRAY_PRIMITIVE_TAG != 0 {
+            return array_elem_type(idx & !NEW_ARRAY_PRIMITIVE_TAG).map_err(|e| e.to_string());
+        }
         self.class_name(idx).map_err(|e| e.to_string())
     }
 
@@ -204,6 +291,11 @@ impl InsnResolver for JavaClass {
 
     fn proto(&self, _idx: u32) -> std::result::Result<MethodProtoData, String> {
         Err("class files have no prototype table".to_string())
+    }
+
+    fn call_site(&self, idx: u32) -> std::result::Result<Vec<CallSiteValue>, String> {
+        let site = JavaClass::call_site(self, idx).map_err(|e| e.to_string())?;
+        site.values.iter().map(call_site_value).collect()
     }
 }
 
@@ -224,4 +316,42 @@ impl CodeRefProvider for JavaCodeRefs<'_> {
             .ok_or_else(|| format!("no class #{class_idx}"))?;
         cls.code_refs(code_offset).map_err(|e| e.to_string())
     }
+}
+
+fn call_site_value(v: &EncodedValue) -> std::result::Result<CallSiteValue, String> {
+    use crate::types::MethodHandleKind as J;
+    use jadx_input_api::{MethodHandleData, MethodHandleKind as K, MethodHandleTarget as T};
+    Ok(match v {
+        EncodedValue::Null => CallSiteValue::Null,
+        EncodedValue::Boolean(b) => CallSiteValue::Boolean(*b),
+        EncodedValue::Byte(x) => CallSiteValue::Byte(*x),
+        EncodedValue::Short(x) => CallSiteValue::Short(*x),
+        EncodedValue::Char(x) => CallSiteValue::Char(*x),
+        EncodedValue::Int(x) => CallSiteValue::Int(*x),
+        EncodedValue::Long(x) => CallSiteValue::Long(*x),
+        EncodedValue::Float(x) => CallSiteValue::Float(x.to_bits()),
+        EncodedValue::Double(x) => CallSiteValue::Double(x.to_bits()),
+        EncodedValue::String(s) => CallSiteValue::Str(s.clone()),
+        EncodedValue::Type(t) => CallSiteValue::Type(t.clone()),
+        EncodedValue::MethodType(p) => CallSiteValue::MethodType(p.clone()),
+        EncodedValue::MethodHandle(h) => {
+            let kind = match h.kind {
+                J::StaticPut => K::StaticPut,
+                J::StaticGet => K::StaticGet,
+                J::InstancePut => K::InstancePut,
+                J::InstanceGet => K::InstanceGet,
+                J::InvokeStatic => K::InvokeStatic,
+                J::InvokeInstance => K::InvokeInstance,
+                J::InvokeDirect => K::InvokeDirect,
+                J::InvokeConstructor => K::InvokeConstructor,
+                J::InvokeInterface => K::InvokeInterface,
+            };
+            let target = match &h.target {
+                MethodHandleRef::Field(f) => T::Field(f.clone()),
+                MethodHandleRef::Method(m) => T::Method(m.clone()),
+            };
+            CallSiteValue::MethodHandle(MethodHandleData { kind, target })
+        }
+        _ => CallSiteValue::Other,
+    })
 }

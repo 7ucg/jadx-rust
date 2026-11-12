@@ -4,6 +4,7 @@ use jadx_core::model::node::{ClassNode, MethodNode, Root};
 use jadx_core::model::types::{ArgType, WildcardBound, CLASS_ENUM, CLASS_OBJECT};
 use jadx_dex_input::DexFile;
 use jadx_input_api::ConstValue;
+use jadx_java_input::JavaClass as JavaInputClass;
 
 use crate::access::{AccessInfo, AccessKind, ACC_ABSTRACT, ACC_FINAL, ACC_STATIC};
 use crate::args::JadxArgs;
@@ -13,9 +14,14 @@ use crate::paths::DEFAULT_PACKAGE_NAME;
 /// Everything a generator may read while it produces the code of a class.
 pub struct GenContext<'a> {
     pub root: &'a Root,
-    /// The loaded dex files and, for every class of `root`, the index of its dex file.
+    /// The loaded dex files and, for every class of `root`, the index of its dex file
+    /// (`usize::MAX` for classes that do not come from a dex file).
     pub dexes: &'a [DexFile],
     pub class_dex: &'a [usize],
+    /// The loaded JVM classes.
+    pub java_classes: &'a [JavaInputClass],
+    /// Where every class of `root` was loaded from.
+    pub class_origin: &'a [crate::input_code::ClassOrigin],
     pub args: &'a JadxArgs,
     /// Member classes (not inlined) of every class, in output order.
     pub inner_classes: &'a [Vec<usize>],

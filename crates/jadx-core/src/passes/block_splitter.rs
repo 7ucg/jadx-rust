@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use crate::model::cfg::{bflag, MethodCfg};
-use crate::model::insn::{iflag, BlockId, InsnKind, InsnNode, InsnType};
+use crate::model::insn::{iflag, BlockId, InsnArg, InsnKind, InsnNode, InsnType};
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{0}")]
@@ -109,6 +109,7 @@ pub fn split_blocks(insns: Vec<Option<InsnNode>>, cfg: &mut MethodCfg) -> Result
 
     setup_connections_from_jumps(cfg, &blocks_map)?;
     init_blocks_in_target_nodes(cfg)?;
+    expand_move_multi(cfg);
     remove_jump_attrs(cfg);
     remove_insns(cfg);
     remove_empty_detached_blocks(cfg);
@@ -126,6 +127,43 @@ pub fn split_blocks(insns: Vec<Option<InsnNode>>, cfg: &mut MethodCfg) -> Result
     setup_exit_connections(cfg);
     cfg.update_block_positions();
     Ok(())
+}
+
+/// `BlockSplitter.expandMoveMulti`: a `MOVE_MULTI` (stack manipulation of class files) becomes one
+/// `MOVE` per register pair.
+fn expand_move_multi(cfg: &mut MethodCfg) {
+    let order = cfg.blocks.clone();
+    for id in order {
+        let mut i = 0;
+        while i < cfg.block(id).insns.len() {
+            let insn_id = cfg.block(id).insns[i];
+            if cfg.insn(insn_id).ty != InsnType::MoveMulti {
+                i += 1;
+                continue;
+            }
+            let multi = cfg.insn(insn_id).clone();
+            let count = multi.args.len() / 2;
+            for j in 0..count {
+                let (InsnArg::Register(res), src) = (&multi.args[j * 2], &multi.args[j * 2 + 1])
+                else {
+                    continue;
+                };
+                let mut mv = InsnNode::plain(InsnType::Move);
+                mv.result = Some(res.clone());
+                mv.args.push(src.clone());
+                mv.copy_attributes_from(&multi);
+                if j == 0 {
+                    mv.offset = multi.offset;
+                    let new_id = cfg.add_insn(mv);
+                    cfg.block_mut(id).insns[i] = new_id;
+                } else {
+                    let new_id = cfg.add_insn(mv);
+                    cfg.block_mut(id).insns.insert(i + j, new_id);
+                }
+            }
+            i += count.max(1);
+        }
+    }
 }
 
 fn is_do_while(

@@ -17,14 +17,33 @@ pub fn init_arguments(
     this_type: &ArgType,
     arg_types: &[ArgType],
 ) {
+    init_arguments_at(cfg, regs_count, None, is_static, this_type, arg_types);
+}
+
+/// [`init_arguments`] with the register of the first argument given by the input
+/// (`argsStartReg`, set by stack based inputs such as class files).
+pub fn init_arguments_at(
+    cfg: &mut MethodCfg,
+    regs_count: usize,
+    args_start_reg: Option<usize>,
+    is_static: bool,
+    this_type: &ArgType,
+    arg_types: &[ArgType],
+) {
     cfg.regs_count = regs_count;
-    let mut pos = regs_count as i64;
-    for a in arg_types {
-        pos -= a.reg_count() as i64;
-    }
-    if !is_static {
-        pos -= 1;
-    }
+    let pos = match args_start_reg {
+        Some(start) => start as i64,
+        None => {
+            let mut pos = regs_count as i64;
+            for a in arg_types {
+                pos -= a.reg_count() as i64;
+            }
+            if !is_static {
+                pos -= 1;
+            }
+            pos
+        }
+    };
     let mut pos = pos.max(0) as u32;
     cfg.this_arg = None;
     if !is_static {

@@ -8,7 +8,9 @@ use std::sync::{Arc, Mutex};
 
 use jadx_core::model::node::Root;
 use jadx_core::passes::pre_decompile::{run_pre_decompile, PreDecompileOptions};
-use jadx_dex_input::{load_path, DexFile, LoadOptions};
+use jadx_dex_input::DexFile;
+use jadx_java_input::JavaClass as JavaInputClass;
+use jadx_package::{load_inputs, InputSet, LoadOptions};
 
 use crate::args::{JadxArgs, OutputFormat, DEFAULT_OUT_DIR, DEFAULT_RES_DIR, DEFAULT_SRC_DIR};
 use crate::code::{ICodeInfo, SimpleCodeInfo};
@@ -16,6 +18,7 @@ use crate::error::{ErrorsCounter, JadxError, Result};
 use crate::generator::{
     generate_declarations, ClassCodeGenerator, ClassDiagnostics, DeclarationGenerator, GenContext,
 };
+use crate::input_code::{ClassOrigin, CombinedCodeRefs};
 use crate::java::{JavaClass, JavaMethod, JavaPackage};
 use crate::log::{Level, LogSink, NullLog};
 use crate::parallel::run_indexed;
@@ -46,6 +49,8 @@ pub(crate) struct PackageData {
 struct Loaded {
     dexes: Vec<DexFile>,
     class_dex: Vec<usize>,
+    java_classes: Vec<JavaInputClass>,
+    class_origin: Vec<ClassOrigin>,
     root: Root,
     /// Member classes of every class in output order.
     inner: Vec<Vec<usize>>,
@@ -129,32 +134,66 @@ impl JadxDecompiler {
             .clear();
         self.validate_args()?;
         self.log(Level::Info, "loading ...");
-        let inputs = expand_dirs(&self.args.input_files);
+        let inputs: Vec<PathBuf> = expand_dirs(&self.args.input_files)
+            .iter()
+            // plain dex files are named by their absolute path (shown in the `loaded from` comment)
+            .map(|f| std::path::absolute(f).unwrap_or_else(|_| f.clone()))
+            .collect();
         let opts = LoadOptions {
             verify_checksum: self.args.verify_dex_checksum,
+            ..LoadOptions::default()
         };
-        let mut dexes: Vec<DexFile> = Vec::new();
-        for file in &inputs {
-            // plain dex files are named by their absolute path (shown in the `loaded from` comment)
-            let abs = std::path::absolute(file).unwrap_or_else(|_| file.clone());
-            match load_path(&abs, &opts) {
-                Ok(res) => {
-                    for w in &res.warnings {
-                        self.log(Level::Warn, w);
-                    }
-                    dexes.extend(res.dex_files);
-                }
-                Err(e) => {
-                    let msg = format!("Failed to load {}: {e}", file.display());
-                    self.log(Level::Error, &msg);
-                    self.errors
-                        .add_error(&format!("file {}", file.display()), &msg);
-                }
+        let input_set = load_inputs(&inputs, &opts);
+        for w in &input_set.warnings {
+            if w.starts_with("File open error") {
+                self.log(Level::Error, w);
+                self.errors.add_error("input file", w);
+            } else {
+                self.log(Level::Warn, w);
             }
         }
+        let InputSet {
+            dex_files: dexes,
+            java_classes,
+            ..
+        } = input_set;
+
+        // the duplicate selection of the reference root: of classes with the same name the one of
+        // the lowest `classesN.dex` wins, otherwise the first loaded
+        let sources = {
+            let mut all = Vec::new();
+            for (di, dex) in dexes.iter().enumerate() {
+                for def in dex.class_defs().flatten() {
+                    if let Ok(desc) = dex.type_descriptor(def.class_idx) {
+                        all.push(jadx_package::ClassSource {
+                            raw_name: raw_class_name(&desc),
+                            source: dex.name().to_owned(),
+                            origin: jadx_package::Origin::Dex(di),
+                        });
+                    }
+                }
+            }
+            for (ji, cls) in java_classes.iter().enumerate() {
+                if let Ok(desc) = cls.type_desc() {
+                    all.push(jadx_package::ClassSource {
+                        raw_name: raw_class_name(&desc),
+                        source: cls.source().to_owned(),
+                        origin: jadx_package::Origin::Java(ji),
+                    });
+                }
+            }
+            all
+        };
+        let (kept, dup_warnings) = jadx_package::select_from_duplicates(sources);
+        for w in &dup_warnings {
+            self.log(Level::Warn, w);
+        }
+        let chosen: HashMap<String, jadx_package::Origin> =
+            kept.into_iter().map(|c| (c.raw_name, c.origin)).collect();
 
         let mut class_data = Vec::new();
         let mut class_dex = Vec::new();
+        let mut class_origin = Vec::new();
         let mut seen: HashSet<String> = HashSet::new();
         for (di, dex) in dexes.iter().enumerate() {
             for (ci, def) in dex.class_defs().enumerate() {
@@ -163,25 +202,41 @@ impl JadxDecompiler {
                     .and_then(|d| dex.class_api(&d).map_err(|e| e.to_string()));
                 match loaded {
                     Ok(data) => {
-                        if !seen.insert(data.type_desc.clone()) {
-                            self.log(
-                                Level::Warn,
-                                &format!(
-                                    "Duplicate class {} in {}, skipped",
-                                    data.type_desc,
-                                    dex.name()
-                                ),
-                            );
+                        let raw = raw_class_name(&data.type_desc);
+                        if chosen.get(&raw) != Some(&jadx_package::Origin::Dex(di))
+                            || !seen.insert(data.type_desc.clone())
+                        {
                             continue;
                         }
                         class_data.push(data);
                         class_dex.push(di);
+                        class_origin.push(ClassOrigin::Dex(di));
                     }
                     Err(e) => {
                         let node = format!("class #{ci} in {}", dex.name());
                         self.log(Level::Error, &format!("Failed to load {node}: {e}"));
                         self.errors.add_error(&node, &e);
                     }
+                }
+            }
+        }
+        for (ji, cls) in java_classes.iter().enumerate() {
+            match cls.class_api() {
+                Ok(data) => {
+                    let raw = raw_class_name(&data.type_desc);
+                    if chosen.get(&raw) != Some(&jadx_package::Origin::Java(ji))
+                        || !seen.insert(data.type_desc.clone())
+                    {
+                        continue;
+                    }
+                    class_data.push(data);
+                    class_dex.push(usize::MAX);
+                    class_origin.push(ClassOrigin::Java(ji));
+                }
+                Err(e) => {
+                    let node = format!("class in {}", cls.source());
+                    self.log(Level::Error, &format!("Failed to load {node}: {e}"));
+                    self.errors.add_error(&node, &e.to_string());
                 }
             }
         }
@@ -197,9 +252,10 @@ impl JadxDecompiler {
             ..PreDecompileOptions::default()
         };
         {
-            let refs = jadx_dex_input::DexCodeRefs {
+            let refs = CombinedCodeRefs {
                 dexes: &dexes,
-                class_dex: &class_dex,
+                java_classes: &java_classes,
+                origin: &class_origin,
             };
             run_pre_decompile(&mut root, &refs, &pre);
         }
@@ -207,16 +263,6 @@ impl JadxDecompiler {
         let (resources, res_warnings) = load_resources(&self.args.input_files);
         for w in &res_warnings {
             self.log(Level::Warn, w);
-        }
-        if resources
-            .iter()
-            .any(|r| r.original_name().ends_with(".class"))
-            && dexes.is_empty()
-        {
-            self.log(
-                Level::Warn,
-                "Java bytecode (.class) inputs are not supported yet, no classes loaded",
-            );
         }
 
         let sorted = root.sorted_class_order();
@@ -236,6 +282,8 @@ impl JadxDecompiler {
         self.loaded = Some(Loaded {
             dexes,
             class_dex,
+            java_classes,
+            class_origin,
             root,
             inner,
             top_classes,
@@ -426,6 +474,8 @@ impl JadxDecompiler {
             root: &l.root,
             dexes: &l.dexes,
             class_dex: &l.class_dex,
+            java_classes: &l.java_classes,
+            class_origin: &l.class_origin,
             args: &self.args,
             inner_classes: &l.inner,
         };
@@ -654,6 +704,14 @@ pub fn class_output_path(cls: &JavaClass<'_>, args: &JadxArgs) -> String {
         ),
         args.output_format.file_extension()
     )
+}
+
+/// Dotted raw class name of a type descriptor (`Lp/A$B;` to `p.A$B`).
+fn raw_class_name(desc: &str) -> String {
+    desc.strip_prefix('L')
+        .and_then(|d| d.strip_suffix(';'))
+        .unwrap_or(desc)
+        .replace('/', ".")
 }
 
 /// Output directory name derived from the first input file (`JadxArgsValidator`).

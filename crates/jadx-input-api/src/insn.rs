@@ -97,6 +97,86 @@ pub struct MethodProtoData {
     pub return_type: String,
 }
 
+/// Kind of a method handle (`MethodHandleType`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MethodHandleKind {
+    StaticPut,
+    StaticGet,
+    InstancePut,
+    InstanceGet,
+    InvokeStatic,
+    InvokeInstance,
+    InvokeConstructor,
+    InvokeDirect,
+    InvokeInterface,
+}
+
+impl MethodHandleKind {
+    pub fn is_field(self) -> bool {
+        matches!(
+            self,
+            MethodHandleKind::StaticPut
+                | MethodHandleKind::StaticGet
+                | MethodHandleKind::InstancePut
+                | MethodHandleKind::InstanceGet
+        )
+    }
+
+    /// Name of the reference enum constant.
+    pub fn name(self) -> &'static str {
+        match self {
+            MethodHandleKind::StaticPut => "STATIC_PUT",
+            MethodHandleKind::StaticGet => "STATIC_GET",
+            MethodHandleKind::InstancePut => "INSTANCE_PUT",
+            MethodHandleKind::InstanceGet => "INSTANCE_GET",
+            MethodHandleKind::InvokeStatic => "INVOKE_STATIC",
+            MethodHandleKind::InvokeInstance => "INVOKE_INSTANCE",
+            MethodHandleKind::InvokeConstructor => "INVOKE_CONSTRUCTOR",
+            MethodHandleKind::InvokeDirect => "INVOKE_DIRECT",
+            MethodHandleKind::InvokeInterface => "INVOKE_INTERFACE",
+        }
+    }
+}
+
+/// Field or method a method handle refers to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MethodHandleTarget {
+    Field(FieldRefData),
+    Method(MethodRefData),
+}
+
+/// A method handle constant.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MethodHandleData {
+    pub kind: MethodHandleKind,
+    pub target: MethodHandleTarget,
+}
+
+/// A value of a call site (`invoke-custom` / `invokedynamic`): the bootstrap method handle, the
+/// call site name, its prototype and the static bootstrap arguments.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CallSiteValue {
+    Null,
+    Boolean(bool),
+    Byte(i8),
+    Short(i16),
+    Char(u16),
+    Int(i32),
+    Long(i64),
+    /// Bits of the `f32` value.
+    Float(u32),
+    /// Bits of the `f64` value.
+    Double(u64),
+    /// String as UTF-16 code units.
+    Str(Vec<u16>),
+    /// Class descriptor.
+    Type(String),
+    MethodType(MethodProtoData),
+    MethodHandle(MethodHandleData),
+    /// Value kind that is not used in call sites.
+    Other,
+}
+
 /// Resolves the index operands of [`InsnData`] against the input's constant tables.
 pub trait InsnResolver {
     fn string(&self, idx: u32) -> Result<String, String>;
@@ -107,6 +187,11 @@ pub trait InsnResolver {
     fn field(&self, idx: u32) -> Result<FieldRefData, String>;
     fn method(&self, idx: u32) -> Result<MethodRefData, String>;
     fn proto(&self, idx: u32) -> Result<MethodProtoData, String>;
+    /// Values of the call site with the given index: `[bootstrap method handle, name, method
+    /// type, static arguments...]`.
+    fn call_site(&self, _idx: u32) -> Result<Vec<CallSiteValue>, String> {
+        Err("call sites are not supported by this input".to_string())
+    }
 }
 
 /// Field of a class as read from the input.

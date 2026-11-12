@@ -18,7 +18,10 @@ mod mutf8;
 mod reader;
 mod types;
 
-pub use api::{annotation_refs, array_elem_type, const_value, pack_annotations, JavaCodeRefs};
+pub use api::{
+    annotation_data, annotation_refs, array_elem_type, const_value, pack_annotations, value_data,
+    JavaCodeRefs, NEW_ARRAY_PRIMITIVE_TAG,
+};
 pub use class::{parse_method_descriptor, JavaClass, ACC_CONSTRUCTOR};
 pub use error::{JavaError, Result};
 pub use loader::{load_bytes, load_path, LoadResult};

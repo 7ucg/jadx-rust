@@ -22,6 +22,7 @@ pub mod core_gen;
 pub mod decompiler;
 pub mod error;
 pub mod generator;
+pub mod input_code;
 pub mod java;
 pub mod log;
 pub mod parallel;
@@ -42,6 +43,7 @@ pub use error::{ErrorsCounter, JadxError, Result};
 pub use generator::{
     ClassCodeGenerator, ClassDiagnostics, DeclarationGenerator, GenContext, PLACEHOLDER_BODY,
 };
+pub use input_code::{ClassOrigin, CombinedCodeRefs, MethodCode};
 pub use java::{JavaClass, JavaField, JavaMethod, JavaPackage};
 pub use log::{Level, LogSink, NullLog};
 pub use resources::{
