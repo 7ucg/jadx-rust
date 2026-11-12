@@ -131,10 +131,11 @@ impl EngineProject {
             }
         }
         if data.is_empty() {
-            return Err(ToolError::new(
-                "LOAD_FAILED",
-                "The input contains no classes",
-            ));
+            let mut message = String::from("The input contains no classes");
+            if let Some(first) = warnings.first() {
+                message.push_str(&format!(" ({first})"));
+            }
+            return Err(ToolError::new("LOAD_FAILED", message));
         }
         let mut root = Root::build(data, true).map_err(|e| ToolError::new("LOAD_FAILED", e))?;
         let opts = PreDecompileOptions::default();

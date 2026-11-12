@@ -211,7 +211,10 @@ impl Server {
         let Some(spec) = self.shared.registry.get(name) else {
             return rpc_error(id, -32602, &format!("Unknown tool: {name}"));
         };
-        let arguments = params.get("arguments").cloned().unwrap_or(json!({}));
+        let arguments = match params.get("arguments") {
+            None | Some(Value::Null) => json!({}),
+            Some(other) => other.clone(),
+        };
         let key = id.to_string();
         let cancels = self.cancels.clone();
         let check_key = key.clone();

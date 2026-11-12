@@ -766,3 +766,70 @@ fn binary_serves_over_stdio() {
     drop(stdin);
     assert!(child.wait().unwrap().success());
 }
+/// A minimal class file `p/Hello extends java/lang/Object` with one empty method `run()V`.
+fn hello_class() -> Vec<u8> {
+    let mut b: Vec<u8> = vec![0xCA, 0xFE, 0xBA, 0xBE, 0, 0, 0, 52];
+    let utf8 = |b: &mut Vec<u8>, s: &str| {
+        b.push(1);
+        b.extend((s.len() as u16).to_be_bytes());
+        b.extend(s.as_bytes());
+    };
+    b.extend(8u16.to_be_bytes());
+    utf8(&mut b, "p/Hello");
+    b.extend([7, 0, 1]);
+    utf8(&mut b, "java/lang/Object");
+    b.extend([7, 0, 3]);
+    utf8(&mut b, "run");
+    utf8(&mut b, "()V");
+    utf8(&mut b, "Code");
+    b.extend(0x21u16.to_be_bytes());
+    b.extend(2u16.to_be_bytes());
+    b.extend(4u16.to_be_bytes());
+    b.extend([0, 0, 0, 0]); // no interfaces, no fields
+    b.extend(1u16.to_be_bytes()); // one method
+    b.extend(1u16.to_be_bytes());
+    b.extend(5u16.to_be_bytes());
+    b.extend(6u16.to_be_bytes());
+    b.extend(1u16.to_be_bytes()); // one attribute: Code
+    b.extend(7u16.to_be_bytes());
+    b.extend(13u32.to_be_bytes());
+    b.extend(0u16.to_be_bytes()); // max stack
+    b.extend(1u16.to_be_bytes()); // max locals
+    b.extend(1u32.to_be_bytes());
+    b.push(0xB1); // return
+    b.extend([0, 0, 0, 0]); // no handlers, no attributes
+    b.extend(0u16.to_be_bytes()); // class attributes
+    b
+}
+
+#[test]
+fn jvm_inputs_support_classes_and_usage_queries_but_not_smali() {
+    let dir = TempDir::new("jvm");
+    let class_path = dir.0.join("Hello.class");
+    std::fs::write(&class_path, hello_class()).unwrap();
+    let jar_path = dir.0.join("hello.jar");
+    std::fs::write(&jar_path, zip_bytes(&[("p/Hello.class", hello_class())])).unwrap();
+    for (path, kind) in [(&class_path, "class"), (&jar_path, "jar")] {
+        let r = run_calls(vec![
+            ("open_project", json!({"path": path.to_string_lossy()})),
+            ("get_all_classes", json!({})),
+            ("get_class_source", json!({"class_id": "Hello"})),
+            (
+                "get_class_source",
+                json!({"class_id": "Hello", "format": "smali"}),
+            ),
+            ("get_strings", json!({})),
+            ("find_usages", json!({"symbol": "p.Hello.run()V"})),
+        ]);
+        let info = data(&r[0]);
+        assert_eq!(info["kind"], json!(kind));
+        assert_eq!(info["capabilities"]["smali"], json!(false));
+        assert_eq!(data(&r[1])["items"][0]["class_id"], json!("p.Hello"));
+        let text = data(&r[2])["text"].as_str().unwrap().to_string();
+        assert!(text.contains("public class Hello {"), "{text}");
+        assert!(text.contains("public void run()"), "{text}");
+        assert_eq!(error_code(&r[3]), "UNSUPPORTED");
+        assert_eq!(error_code(&r[4]), "UNSUPPORTED");
+        assert_eq!(data(&r[5])["items"], json!([]));
+    }
+}
