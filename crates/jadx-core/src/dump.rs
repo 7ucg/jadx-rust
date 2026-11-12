@@ -323,14 +323,20 @@ fn dump_cfg_impl(
     for hid in &cfg.handler_list {
         let h = &cfg.handlers[*hid];
         let types: Vec<&str> = h.catch_types.iter().map(|c| c.full_name()).collect();
-        let _ = writeln!(out, "H {} types=[{}]", h.handler_offset, types.join(","));
+        let _ = writeln!(
+            out,
+            "H {} types=[{}]{}",
+            h.handler_offset,
+            types.join(","),
+            if h.is_finally { " finally=1" } else { "" }
+        );
     }
     if analysis {
         for t in &cfg.try_list {
             let tb = &cfg.try_blocks[*t];
             let _ = writeln!(
                 out,
-                "T {} handlers=[{}] blocks=[{}] outer={} inner=[{}] top={}",
+                "T {} handlers=[{}] blocks=[{}] outer={} inner=[{}] top={}{}",
                 tb.id,
                 tb.handlers
                     .iter()
@@ -346,7 +352,8 @@ fn dump_cfg_impl(
                     .map(|i| cfg.try_blocks[*i].id.to_string())
                     .collect::<Vec<_>>()
                     .join(","),
-                opt(tb.top_splitter)
+                opt(tb.top_splitter),
+                if tb.merged { " merged=1" } else { "" }
             );
         }
         for l in &cfg.loops {

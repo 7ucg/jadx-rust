@@ -26,6 +26,7 @@ import jadx.core.dex.visitors.MoveInlineVisitor;
 import jadx.core.dex.visitors.ConstructorVisitor;
 import jadx.core.dex.visitors.InitCodeVariables;
 import jadx.core.dex.visitors.ConstInlineVisitor;
+import jadx.core.dex.visitors.finaly.MarkFinallyVisitor;
 import jadx.core.dex.visitors.typeinference.TypeInferenceVisitor;
 import jadx.core.dex.visitors.typeinference.ITypeBound;
 import jadx.core.dex.visitors.typeinference.ITypeBoundDynamic;
@@ -45,10 +46,10 @@ import jadx.core.dex.attributes.nodes.LoopInfo;
  */
 public class BlockDump {
 	static final AFlag[] INSN_FLAGS = { AFlag.TRY_ENTER, AFlag.TRY_LEAVE, AFlag.SYNTHETIC, AFlag.DONT_GENERATE, AFlag.HIDDEN,
-			AFlag.REMOVE, AFlag.WRAPPED, AFlag.FALL_THROUGH, AFlag.DONT_INLINE, AFlag.EXPLICIT_CAST, AFlag.SOFT_CAST };
+			AFlag.REMOVE, AFlag.WRAPPED, AFlag.FALL_THROUGH, AFlag.DONT_INLINE, AFlag.EXPLICIT_CAST, AFlag.SOFT_CAST, AFlag.FINALLY_INSNS };
 	static final AFlag[] BLOCK_FLAGS = { AFlag.MTH_ENTER_BLOCK, AFlag.MTH_EXIT_BLOCK, AFlag.SYNTHETIC, AFlag.RETURN, AFlag.REMOVE,
 			AFlag.LOOP_START, AFlag.LOOP_END, AFlag.EXC_TOP_SPLITTER, AFlag.EXC_BOTTOM_SPLITTER, AFlag.ADDED_TO_REGION,
-			AFlag.DONT_GENERATE, AFlag.FALL_THROUGH, AFlag.ORIG_RETURN, AFlag.IGNORE_THROW_SPLIT, AFlag.TRY_ENTER, AFlag.TRY_LEAVE };
+			AFlag.DONT_GENERATE, AFlag.FALL_THROUGH, AFlag.ORIG_RETURN, AFlag.IGNORE_THROW_SPLIT, AFlag.TRY_ENTER, AFlag.TRY_LEAVE, AFlag.FINALLY_INSNS };
 
 	public static void main(String[] args) throws Exception {
 		JadxArgs jargs = new JadxArgs();
@@ -58,9 +59,13 @@ public class BlockDump {
 			// anonymous class inlining is not ported yet
 			jargs.setInlineAnonymousClasses(false);
 		}
+		// JADX_RS_FINALLY=1: run MarkFinallyVisitor after InitCodeVariables
+		boolean extractFinally = "1".equals(System.getenv("JADX_RS_FINALLY"));
 		if (args.length > 1 && Integer.parseInt(args[1]) >= 6) {
-			// finally extraction and constant field replacement are not ported yet
-			jargs.setExtractFinally(false);
+			// constant field replacement is not ported yet
+			if (!extractFinally) {
+				jargs.setExtractFinally(false);
+			}
 			jargs.setReplaceConsts(false);
 		}
 		int stage = args.length > 1 ? Integer.parseInt(args[1]) : 0;
@@ -95,6 +100,9 @@ public class BlockDump {
 						}
 						if (stage >= 5) {
 							new InitCodeVariables().visit(mth);
+							if (extractFinally) {
+								new MarkFinallyVisitor().visit(mth);
+							}
 						}
 						if (stage >= 6) {
 							new ConstInlineVisitor().visit(mth);
@@ -228,7 +236,8 @@ public class BlockDump {
 		sb.append("M ").append(mth.getMethodInfo().getRawFullId()).append('\n');
 		for (ExceptionHandler h : mth.getExceptionHandlers()) {
 			sb.append("H ").append(h.getHandlerOffset()).append(" types=[")
-					.append(h.getCatchTypes().stream().map(c -> c.getFullName()).collect(Collectors.joining(","))).append("]\n");
+					.append(h.getCatchTypes().stream().map(c -> c.getFullName()).collect(Collectors.joining(","))).append("]")
+					.append(h.isFinally() ? " finally=1" : "").append("\n");
 		}
 		if (analysis) {
 			List<TryCatchBlockAttr> tries = mth.getAll(AType.TRY_BLOCKS_LIST);
@@ -239,7 +248,8 @@ public class BlockDump {
 							.append("] blocks=[").append(cids(t.getBlocks())).append("] outer=")
 							.append(t.getOuterTryBlock() == null ? "-" : Integer.toString(t.getOuterTryBlock().id())).append(" inner=[")
 							.append(t.getInnerTryBlocks().stream().map(i -> Integer.toString(i.id())).collect(Collectors.joining(",")))
-							.append("] top=").append(t.getTopSplitter() == null ? "-" : Integer.toString(t.getTopSplitter().getCId())).append('\n');
+							.append("] top=").append(t.getTopSplitter() == null ? "-" : Integer.toString(t.getTopSplitter().getCId()))
+							.append(t.isMerged() ? " merged=1" : "").append('\n');
 				}
 			}
 			for (LoopInfo l : mth.getLoops()) {

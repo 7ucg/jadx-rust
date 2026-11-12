@@ -133,6 +133,100 @@
 .end method
 
 #---end-class---
+.class public Lcorpus/Finally;
+.super Ljava/lang/Object;
+.source "Finally.smali"
+
+
+# direct methods
+.method public static cleanup()V
+    .registers 0
+
+    return-void
+.end method
+
+.method public static g(I)I
+    .registers 1
+
+    return p0
+.end method
+
+.method public static h()V
+    .registers 0
+
+    return-void
+.end method
+
+.method public static twoExits(I)I
+    .registers 3
+
+    :try_start_0
+    if-lez p0, :cond_a
+
+    invoke-static {p0}, Lcorpus/Finally;->g(I)I
+
+    move-result v0
+    :try_end_6
+    .catchall {:try_start_0 .. :try_end_6} :catchall_12
+
+    invoke-static {}, Lcorpus/Finally;->cleanup()V
+
+    return v0
+
+    :cond_a
+    :try_start_a
+    invoke-static {}, Lcorpus/Finally;->h()V
+    :try_end_d
+    .catchall {:try_start_a .. :try_end_d} :catchall_12
+
+    invoke-static {}, Lcorpus/Finally;->cleanup()V
+
+    const/4 v0, 0x1
+
+    return v0
+
+    :catchall_12
+    move-exception v0
+
+    invoke-static {}, Lcorpus/Finally;->cleanup()V
+
+    throw v0
+.end method
+
+.method public static withCatch(I)V
+    .registers 3
+
+    :try_start_0
+    invoke-static {p0}, Lcorpus/Finally;->g(I)I
+    :try_end_3
+    .catch Ljava/lang/RuntimeException; {:try_start_0 .. :try_end_3} :catch_7
+    .catchall {:try_start_0 .. :try_end_3} :catchall_f
+
+    invoke-static {}, Lcorpus/Finally;->cleanup()V
+
+    return-void
+
+    :catch_7
+    move-exception v0
+
+    :try_start_8
+    invoke-static {}, Lcorpus/Finally;->h()V
+    :try_end_b
+    .catchall {:try_start_8 .. :try_end_b} :catchall_f
+
+    invoke-static {}, Lcorpus/Finally;->cleanup()V
+
+    return-void
+
+    :catchall_f
+    move-exception v0
+
+    invoke-static {}, Lcorpus/Finally;->cleanup()V
+
+    throw v0
+.end method
+
+#---end-class---
 .class public Lcorpus/Ops;
 .super Ljava/lang/Object;
 .source "Ops.smali"
