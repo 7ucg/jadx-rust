@@ -62,7 +62,8 @@ pub fn process(cfg: &mut MethodCfg, clsp: &ClspGraph) -> Res<bool> {
 
 fn process_catch_attr(cfg: &mut MethodCfg) {
     for b in cfg.blocks.clone() {
-        for insn in &mut cfg.block_mut(b).insns {
+        for iid in cfg.block(b).insns.clone() {
+            let insn = cfg.insn_mut(iid);
             if insn.catch.is_some() && !can_throw(insn.ty) {
                 insn.catch = None;
             }
@@ -71,8 +72,8 @@ fn process_catch_attr(cfg: &mut MethodCfg) {
     for b in cfg.blocks.clone() {
         let mut common: Option<Vec<HandlerId>> = None;
         let mut conflict = false;
-        for insn in &cfg.block(b).insns {
-            if let Some(c) = &insn.catch {
+        for iid in &cfg.block(b).insns {
+            if let Some(c) = &cfg.insn(*iid).catch {
                 match &common {
                     None => common = Some(c.clone()),
                     Some(cc) => {
@@ -89,7 +90,8 @@ fn process_catch_attr(cfg: &mut MethodCfg) {
         }
         if let Some(c) = common {
             let (mut enter, mut leave) = (false, false);
-            for insn in &cfg.block(b).insns {
+            for iid in &cfg.block(b).insns {
+                let insn = cfg.insn(*iid);
                 enter |= insn.contains_flag(iflag::TRY_ENTER);
                 leave |= insn.contains_flag(iflag::TRY_LEAVE);
             }
@@ -129,13 +131,14 @@ fn init_exc_handlers(cfg: &mut MethodCfg) -> Res<()> {
     let blocks_count = cfg.blocks.len();
     for i in 0..blocks_count {
         let block = cfg.blocks[i];
-        let Some(first) = cfg.block(block).insns.first() else {
+        let Some(first) = cfg.first_insn(block) else {
             continue;
         };
         let Some(handler) = first.exc_handler else {
             continue;
         };
-        cfg.block_mut(block).insns[0].exc_handler = None;
+        let first_id = cfg.block(block).insns[0];
+        cfg.insn_mut(first_id).exc_handler = None;
         // remove tmp connection
         if let Some(src) = cfg.block(block).tmp_edge {
             cfg.remove_connection(src, block);
@@ -164,16 +167,20 @@ fn init_exc_handlers(cfg: &mut MethodCfg) -> Res<()> {
 
 fn fix_move_exception_insn(cfg: &mut MethodCfg, block: BlockId, handler: HandlerId) {
     let arg_type = cfg.handlers[handler].arg_type();
-    if let Some(me) = cfg.block_mut(block).insns.last_mut() {
+    let mut set_reg = None;
+    if let Some(me) = cfg.last_insn_mut(block) {
         if me.ty == InsnType::MoveException {
             if let Some(res) = &me.result {
                 let reg = res.reg_num;
                 me.result = Some(RegisterArg::new(reg, arg_type));
                 me.flags |= iflag::DONT_INLINE;
                 me.exc_handler = Some(handler);
-                cfg.handlers[handler].arg_reg = Some(reg);
+                set_reg = Some(reg);
             }
         }
+    }
+    if let Some(reg) = set_reg {
+        cfg.handlers[handler].arg_reg = Some(reg);
     }
 }
 
@@ -594,16 +601,18 @@ fn connect_splitters_and_handlers(
 
 fn remove_monitor_exit_from_exc_handler(cfg: &mut MethodCfg, eh: HandlerId) {
     for exc_block in cfg.handlers[eh].blocks.clone() {
-        let insns = &mut cfg.block_mut(exc_block).insns;
+        let ids = cfg.block(exc_block).insns.clone();
         let mut remove = Vec::new();
-        for (i, insn) in insns.iter().enumerate() {
-            if insn.ty == InsnType::MonitorEnter {
+        for (i, iid) in ids.iter().enumerate() {
+            let ty = cfg.insn(*iid).ty;
+            if ty == InsnType::MonitorEnter {
                 break;
             }
-            if insn.ty == InsnType::MonitorExit {
+            if ty == InsnType::MonitorExit {
                 remove.push(i);
             }
         }
+        let insns = &mut cfg.block_mut(exc_block).insns;
         for i in remove.into_iter().rev() {
             insns.remove(i);
         }
@@ -636,7 +645,8 @@ fn merge_multi_catch(cfg: &mut MethodCfg, t: usize) -> bool {
             return false;
         };
         let b = cfg.block(block);
-        if b.insns.len() != 1 || b.insns.last().map(|i| i.ty) != Some(InsnType::MoveException) {
+        if b.insns.len() != 1 || cfg.last_insn(block).map(|i| i.ty) != Some(InsnType::MoveException)
+        {
             return false;
         }
     }
@@ -662,7 +672,7 @@ fn merge_multi_catch(cfg: &mut MethodCfg, t: usize) -> bool {
     }
     let mut regs: Vec<u32> = Vec::new();
     for hb in &handler_blocks {
-        let Some(res) = cfg.block(*hb).insns.last().and_then(|i| i.result.as_ref()) else {
+        let Some(res) = cfg.last_insn(*hb).and_then(|i| i.result.as_ref()) else {
             return false;
         };
         if !regs.contains(&res.reg_num) {

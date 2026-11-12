@@ -2,7 +2,7 @@
 
 use super::bitset::{BitSet, JavaIntSet};
 use super::info::ClassInfo;
-use super::insn::{BlockId, HandlerId, InsnNode};
+use super::insn::{BlockId, HandlerId, InsnId, InsnNode};
 
 pub type LoopId = usize;
 pub type TryId = usize;
@@ -142,7 +142,8 @@ pub struct BlockNode {
     pub cid: BlockId,
     pub pos: usize,
     pub start_offset: i32,
-    pub insns: Vec<InsnNode>,
+    /// Instruction ids (indexes into `MethodCfg::insns`) in execution order.
+    pub insns: Vec<InsnId>,
     pub preds: Vec<BlockId>,
     pub succs: Vec<BlockId>,
     /// `cleanSuccessors`: `None` = not computed, `Some(None)` = same list object as `succs`
@@ -226,6 +227,8 @@ impl BlockNode {
 pub struct MethodCfg {
     /// Block arena indexed by `cid`; blocks are never removed from the arena.
     pub arena: Vec<BlockNode>,
+    /// Instruction arena; blocks reference instructions by id.
+    pub insns: Vec<InsnNode>,
     /// `mth.getBasicBlocks()`: live blocks in order.
     pub blocks: Vec<BlockId>,
     pub enter: BlockId,
@@ -253,6 +256,52 @@ impl MethodCfg {
     }
     pub fn block_mut(&mut self, id: BlockId) -> &mut BlockNode {
         &mut self.arena[id]
+    }
+
+    pub fn insn(&self, id: InsnId) -> &InsnNode {
+        &self.insns[id]
+    }
+
+    pub fn insn_mut(&mut self, id: InsnId) -> &mut InsnNode {
+        &mut self.insns[id]
+    }
+
+    /// Add an instruction to the arena (not yet part of any block).
+    pub fn add_insn(&mut self, insn: InsnNode) -> InsnId {
+        self.insns.push(insn);
+        self.insns.len() - 1
+    }
+
+    /// Append a copy of `insn` to the arena and to the end of `block`.
+    pub fn push_insn(&mut self, block: BlockId, insn: InsnNode) -> InsnId {
+        let id = self.add_insn(insn);
+        self.arena[block].insns.push(id);
+        id
+    }
+
+    pub fn last_insn(&self, block: BlockId) -> Option<&InsnNode> {
+        self.arena[block].insns.last().map(|i| &self.insns[*i])
+    }
+
+    pub fn first_insn(&self, block: BlockId) -> Option<&InsnNode> {
+        self.arena[block].insns.first().map(|i| &self.insns[*i])
+    }
+
+    pub fn last_insn_mut(&mut self, block: BlockId) -> Option<&mut InsnNode> {
+        let id = *self.arena[block].insns.last()?;
+        Some(&mut self.insns[id])
+    }
+
+    /// Clones of the block's instructions as new arena entries (ids), for block copying.
+    pub fn clone_block_insns(&mut self, block: BlockId, flags: u64) -> Vec<InsnId> {
+        let ids = self.arena[block].insns.clone();
+        let mut out = Vec::with_capacity(ids.len());
+        for id in ids {
+            let mut c = self.insns[id].clone();
+            c.flags |= flags;
+            out.push(self.add_insn(c));
+        }
+        out
     }
 
     /// `startNewBlock`: new block appended to the live list.

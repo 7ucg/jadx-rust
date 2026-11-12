@@ -103,7 +103,7 @@ pub fn split_blocks(insns: Vec<Option<InsnNode>>, cfg: &mut MethodCfg) -> Result
         light.offset = insn.offset;
         light.jumps = insn.jumps.clone();
         prev_node_for_jump = Some(light);
-        cfg.block_mut(cur_block).insns.push(insn);
+        cfg.push_insn(cur_block, insn);
     }
     let _ = prev;
 
@@ -154,7 +154,7 @@ fn setup_connections_from_jumps(
             .block(id)
             .insns
             .iter()
-            .flat_map(|i| i.jumps.clone())
+            .flat_map(|i| cfg.insn(*i).jumps.clone())
             .collect();
         for j in jumps {
             let src = get_block(blocks_map, j.src)?;
@@ -170,7 +170,7 @@ fn init_blocks_in_target_nodes(cfg: &mut MethodCfg) -> Result<(), SplitError> {
     for id in order {
         let succs = cfg.block(id).succs.clone();
         let starts: Vec<i32> = succs.iter().map(|s| cfg.block(*s).start_offset).collect();
-        let Some(last) = cfg.block_mut(id).insns.last_mut() else {
+        let Some(last) = cfg.last_insn_mut(id) else {
             continue;
         };
         match &mut last.kind {
@@ -236,17 +236,25 @@ fn select_other(node: BlockId, list: &[BlockId]) -> Result<BlockId, SplitError> 
 
 fn remove_jump_attrs(cfg: &mut MethodCfg) {
     for id in cfg.blocks.clone() {
-        for insn in &mut cfg.block_mut(id).insns {
-            insn.jumps.clear();
+        for iid in cfg.block(id).insns.clone() {
+            cfg.insn_mut(iid).jumps.clear();
         }
     }
 }
 
 fn remove_insns(cfg: &mut MethodCfg) {
     for id in cfg.blocks.clone() {
-        cfg.block_mut(id)
+        let kept: Vec<usize> = cfg
+            .block(id)
             .insns
-            .retain(|i| !(i.attrs_empty() && matches!(i.ty, InsnType::Goto | InsnType::Nop)));
+            .iter()
+            .copied()
+            .filter(|i| {
+                let n = cfg.insn(*i);
+                !(n.attrs_empty() && matches!(n.ty, InsnType::Goto | InsnType::Nop))
+            })
+            .collect();
+        cfg.block_mut(id).insns = kept;
     }
 }
 
@@ -281,7 +289,7 @@ fn can_remove_block(cfg: &MethodCfg, id: BlockId) -> bool {
 }
 
 pub fn replace_target(cfg: &mut MethodCfg, source: BlockId, old: BlockId, new: BlockId) {
-    if let Some(last) = cfg.block_mut(source).insns.last_mut() {
+    if let Some(last) = cfg.last_insn_mut(source) {
         match &mut last.kind {
             InsnKind::If {
                 then_block,
@@ -355,7 +363,7 @@ fn add_temp_connections_for_exc_handlers(
             .block(id)
             .insns
             .iter()
-            .filter_map(|i| i.catch.clone())
+            .filter_map(|i| cfg.insn(*i).catch.clone())
             .collect();
         for catch in catches {
             for h in catch {
@@ -385,7 +393,7 @@ fn setup_exit_connections(cfg: &mut MethodCfg) {
     for id in cfg.blocks.clone() {
         if cfg.block(id).succs.is_empty() && id != exit {
             cfg.connect(id, exit);
-            if cfg.block(id).insns.last().map(|i| i.ty) == Some(InsnType::Return) {
+            if cfg.last_insn(id).map(|i| i.ty) == Some(InsnType::Return) {
                 cfg.block_mut(id).add(bflag::RETURN);
             }
         }

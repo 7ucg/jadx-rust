@@ -39,8 +39,8 @@ fn insert_block_between(cfg: &mut MethodCfg, source: BlockId, target: BlockId) -
 }
 
 fn copy_block_data(cfg: &mut MethodCfg, from: BlockId, to: BlockId) {
-    let insns = cfg.block(from).insns.clone();
-    cfg.block_mut(to).insns.extend(insns);
+    let copies = cfg.clone_block_insns(from, 0);
+    cfg.block_mut(to).insns.extend(copies);
     copy_block_attributes(cfg, from, to);
 }
 
@@ -465,7 +465,7 @@ fn insn_from_end(cfg: &MethodCfg, block: BlockId, number: usize) -> Option<&Insn
     if insns.len() <= number {
         return None;
     }
-    Some(&insns[insns.len() - number - 1])
+    Some(cfg.insn(insns[insns.len() - number - 1]))
 }
 
 fn same_last_insn_count(cfg: &MethodCfg, preds: &[BlockId]) -> usize {
@@ -498,10 +498,13 @@ fn deduplicate_block_insns(cfg: &mut MethodCfg, block: BlockId) -> bool {
     if preds.len() <= 1 {
         return false;
     }
-    if b.insns.last().map(|i| i.ty) == Some(InsnType::If) {
+    if cfg.last_insn(block).map(|i| i.ty) == Some(InsnType::If) {
         return false;
     }
-    if b.insns.first().is_some_and(|i| i.exc_handler.is_some()) {
+    if cfg
+        .first_insn(block)
+        .is_some_and(|i| i.exc_handler.is_some())
+    {
         return false;
     }
     let same = same_last_insn_count(cfg, &preds);
@@ -509,7 +512,7 @@ fn deduplicate_block_insns(cfg: &mut MethodCfg, block: BlockId) -> bool {
         return false;
     }
     let first_pred = &cfg.block(preds[0]).insns;
-    let moved: Vec<InsnNode> = first_pred[first_pred.len() - same..].to_vec();
+    let moved: Vec<usize> = first_pred[first_pred.len() - same..].to_vec();
     let blk = cfg.block_mut(block);
     let mut new_list = moved;
     new_list.append(&mut blk.insns);
@@ -556,7 +559,7 @@ fn merge_const_return(cfg: &mut MethodCfg) -> bool {
         if pb.insns.len() != 1 {
             continue;
         }
-        let const_insn = &pb.insns[0];
+        let const_insn = cfg.insn(pb.insns[0]);
         if !matches!(
             const_insn.ty,
             InsnType::Const | InsnType::ConstStr | InsnType::ConstClass
@@ -566,7 +569,7 @@ fn merge_const_return(cfg: &mut MethodCfg) -> bool {
         let Some(const_arg) = &const_insn.result else {
             continue;
         };
-        let Some(ret_insn) = rb.insns.last() else {
+        let Some(ret_insn) = cfg.last_insn(ret_block) else {
             continue;
         };
         if ret_insn.ty != InsnType::Return {
@@ -623,7 +626,7 @@ pub fn remove_marked_blocks(cfg: &mut MethodCfg) {
 fn only_switch_and_if_in_last_insns(cfg: &MethodCfg, preds: &[BlockId]) -> bool {
     let (mut has_switch, mut has_if) = (false, false);
     for &p in preds {
-        match cfg.block(p).insns.last().map(|i| i.ty) {
+        match cfg.last_insn(p).map(|i| i.ty) {
             Some(InsnType::Switch) => has_switch = true,
             Some(InsnType::If) => has_if = true,
             _ => return false,
@@ -634,7 +637,7 @@ fn only_switch_and_if_in_last_insns(cfg: &MethodCfg, preds: &[BlockId]) -> bool 
 
 fn duplicate_simple_move_block(cfg: &mut MethodCfg, block: BlockId) -> bool {
     let b = cfg.block(block);
-    if b.insns.len() != 1 || b.succs.len() != 1 || b.insns[0].ty != InsnType::Move {
+    if b.insns.len() != 1 || b.succs.len() != 1 || cfg.insn(b.insns[0]).ty != InsnType::Move {
         return false;
     }
     let preds = b.preds.clone();
@@ -645,11 +648,8 @@ fn duplicate_simple_move_block(cfg: &mut MethodCfg, block: BlockId) -> bool {
     for pred in preds.iter().skip(1) {
         let nb = cfg.start_new_block(-1);
         cfg.block_mut(nb).add(bflag::SYNTHETIC);
-        for old in cfg.block(block).insns.clone() {
-            let mut c = old;
-            c.flags |= crate::model::insn::iflag::SYNTHETIC;
-            cfg.block_mut(nb).insns.push(c);
-        }
+        let copies = cfg.clone_block_insns(block, crate::model::insn::iflag::SYNTHETIC);
+        cfg.block_mut(nb).insns.extend(copies);
         copy_block_attributes(cfg, block, nb);
         replace_connection(cfg, *pred, block, nb);
         cfg.connect(nb, successor);
@@ -800,8 +800,10 @@ fn update_exit_block_connections(cfg: &mut MethodCfg) {
 fn is_arg_assign_in_pred(cfg: &MethodCfg, preds: &[BlockId], arg: &InsnArg) -> bool {
     if let InsnArg::Register(r) = arg {
         for &p in preds {
-            for i in &cfg.block(p).insns {
-                if i.result
+            for iid in &cfg.block(p).insns {
+                if cfg
+                    .insn(*iid)
+                    .result
                     .as_ref()
                     .is_some_and(|res| res.reg_num == r.reg_num)
                 {
@@ -823,7 +825,7 @@ fn split_return(cfg: &mut MethodCfg, return_block: BlockId) -> bool {
     if preds.len() < 2 {
         return false;
     }
-    let Some(return_insn) = rb.insns.last() else {
+    let Some(return_insn) = cfg.last_insn(return_block) else {
         return false;
     };
     if return_insn.args.len() == 1
@@ -841,11 +843,8 @@ fn split_return(cfg: &mut MethodCfg, return_block: BlockId) -> bool {
             let nb = cfg.start_new_block(-1);
             cfg.block_mut(nb).add(bflag::SYNTHETIC);
             cfg.block_mut(nb).add(bflag::RETURN);
-            for old in cfg.block(return_block).insns.clone() {
-                let mut c = old;
-                c.flags |= crate::model::insn::iflag::SYNTHETIC;
-                cfg.block_mut(nb).insns.push(c);
-            }
+            let copies = cfg.clone_block_insns(return_block, crate::model::insn::iflag::SYNTHETIC);
+            cfg.block_mut(nb).insns.extend(copies);
             replace_connection(cfg, pred, return_block, nb);
         }
     }
@@ -860,7 +859,7 @@ fn split_throw(cfg: &mut MethodCfg, exit_block: BlockId) -> bool {
     if preds.len() < 2 {
         return false;
     }
-    let Some(throw_insn) = cfg.block(exit_block).insns.last() else {
+    let Some(throw_insn) = cfg.last_insn(exit_block) else {
         return false;
     };
     if throw_insn.ty != InsnType::Throw {
@@ -915,11 +914,8 @@ fn split_throw(cfg: &mut MethodCfg, exit_block: BlockId) -> bool {
         } else {
             let nb = cfg.start_new_block(-1);
             cfg.block_mut(nb).add(bflag::SYNTHETIC);
-            for old in cfg.block(exit_block).insns.clone() {
-                let mut c = old;
-                c.flags |= crate::model::insn::iflag::SYNTHETIC;
-                cfg.block_mut(nb).insns.push(c);
-            }
+            let copies = cfg.clone_block_insns(exit_block, crate::model::insn::iflag::SYNTHETIC);
+            cfg.block_mut(nb).insns.extend(copies);
             copy_block_attributes(cfg, exit_block, nb);
             if let Some(h) = handlers_map.get(&pred) {
                 cfg.handlers[*h].blocks.push(nb);

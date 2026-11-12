@@ -392,6 +392,8 @@ pub enum InsnKind {
 
 /// Block identifier: index into the method's block arena (the block's `cid`).
 pub type BlockId = usize;
+/// Instruction identifier: index into the method's instruction arena.
+pub type InsnId = usize;
 /// Exception handler identifier: index into the method's handler list.
 pub type HandlerId = usize;
 

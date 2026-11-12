@@ -310,7 +310,8 @@ pub fn dump_cfg_ext(id: &str, cfg: &crate::model::cfg::MethodCfg, analysis: bool
             );
         }
         out.push('\n');
-        for insn in &b.insns {
+        for iid in &b.insns {
+            let insn = cfg.insn(*iid);
             let if_target = match &insn.kind {
                 InsnKind::If {
                     then_block: Some(t),
