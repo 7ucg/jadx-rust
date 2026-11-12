@@ -54,6 +54,10 @@ pub struct ConstStorage {
     replace_enabled: bool,
     global_values: ValueStorage,
     classes: HashMap<usize, ValueStorage>,
+    /// Resource id to `type/name` of the resource table (`resourcesNames`).
+    resources_names: HashMap<i32, String>,
+    /// Resource id to the field of the app `R` class (`getResourceField`).
+    resource_fields: HashMap<i32, FieldRef>,
 }
 
 impl ConstStorage {
@@ -62,7 +66,24 @@ impl ConstStorage {
             replace_enabled,
             global_values: ValueStorage::default(),
             classes: HashMap::new(),
+            resources_names: HashMap::new(),
+            resource_fields: HashMap::new(),
         }
+    }
+
+    /// `setResourcesNames`, with the `R` fields the ids resolve to.
+    pub fn set_resource_names(
+        &mut self,
+        names: HashMap<i32, String>,
+        fields: HashMap<i32, FieldRef>,
+    ) {
+        self.resources_names = names;
+        self.resource_fields = fields;
+    }
+
+    /// Resource id to `type/name` of the resource table.
+    pub fn resources_names(&self) -> &HashMap<i32, String> {
+        &self.resources_names
     }
 
     pub fn is_replace_enabled(&self) -> bool {
@@ -116,6 +137,11 @@ impl ConstStorage {
     ) -> Option<&FieldRef> {
         if !self.replace_enabled {
             return None;
+        }
+        if let ConstValue::Int(id) = value {
+            if let Some(f) = self.resource_fields.get(id) {
+                return Some(f);
+            }
         }
         let found_in_global = self.global_values.contains(value);
         if found_in_global && !search_global {

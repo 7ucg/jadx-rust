@@ -17,6 +17,7 @@ path = "src/main.rs"
 [dependencies]
 serde_json.workspace = true
 zip.workspace = true
+jadx-api.workspace = true
 jadx-core.workspace = true
 jadx-dex-input.workspace = true
 jadx-input-api.workspace = true

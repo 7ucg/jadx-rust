@@ -11,4 +11,6 @@ zip.workspace = true
 jadx-core.workspace = true
 jadx-dex-input.workspace = true
 jadx-input-api.workspace = true
+jadx-java-input.workspace = true
+jadx-package.workspace = true
 jadx-resources.workspace = true

@@ -21,6 +21,8 @@ pub struct LoadedCode {
     pub decoded: DecodedMethod,
     pub tries: Vec<TryData>,
     pub regs_count: usize,
+    /// Register of the first argument if the input defines it (class files).
+    pub args_start_reg: Option<usize>,
 }
 
 /// Provider of method code.
@@ -213,7 +215,8 @@ impl<'s> ClassDriver<'s> {
             }
         };
         let root = &self.root;
-        let frame = FrameInfo::new(root, c, m, loaded.regs_count);
+        let mut frame = FrameInfo::new(root, c, m, loaded.regs_count);
+        frame.args_start_reg = loaded.args_start_reg;
         let extract_finally = self.opts.extract_finally;
         let built = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             build_ssa(

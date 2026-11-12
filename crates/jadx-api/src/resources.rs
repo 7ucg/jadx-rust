@@ -4,7 +4,7 @@
 //! the resource table is done by a [`ResourceDecoder`]; the default implementation uses the
 //! `jadx-resources` crate.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
@@ -125,6 +125,17 @@ impl ResourceFile {
         self.deobf_name = Some(name.into());
     }
 
+    /// `ResourceFile.setAlias`: the file is saved under the name of its resource table entry,
+    /// the type follows the new name. Returns false if the name does not change.
+    pub fn set_alias(&mut self, alias: &str) -> bool {
+        if alias == self.name {
+            return false;
+        }
+        self.deobf_name = Some(alias.to_string());
+        self.ty = ResourceType::from_name(alias);
+        true
+    }
+
     pub fn resource_type(&self) -> ResourceType {
         self.ty
     }
@@ -175,9 +186,45 @@ pub struct DecodedResFile {
     pub text: String,
 }
 
+/// Tables of the decompiled code that the resource decoder uses.
+#[derive(Debug, Default, Clone)]
+pub struct ResourceContext {
+    /// Names of the constant fields of the app code by resource id (the fields of the app `R`
+    /// class), used to name resources.
+    pub code_names: HashMap<i32, String>,
+    /// Renamed classes: raw name to the name in the decompiled code, for class names in XML.
+    pub class_aliases: HashMap<String, String>,
+}
+
 /// Decodes the Android specific resources (manifest, binary XML, resource table) of an archive.
 pub trait ResourceDecoder: Send + Sync {
     fn decode_archive(&self, archive: &Path, args: &JadxArgs) -> Result<DecodedResources, String>;
+
+    /// Like [`decode_archive`](Self::decode_archive) with the tables of the decompiled code.
+    fn decode_archive_with_context(
+        &self,
+        archive: &Path,
+        args: &JadxArgs,
+        context: &ResourceContext,
+    ) -> Result<DecodedResources, String> {
+        let _ = context;
+        self.decode_archive(archive, args)
+    }
+}
+
+/// Options of the resource decoder crate from the decompiler arguments.
+pub fn resource_options(args: &JadxArgs) -> jadx_resources::ResOptions {
+    use crate::args::ResourceNameSource as Src;
+    jadx_resources::ResOptions {
+        name_source: match args.resource_name_source {
+            Src::Auto => jadx_resources::ResourceNameSource::Auto,
+            Src::Resources => jadx_resources::ResourceNameSource::Resources,
+            Src::Code => jadx_resources::ResourceNameSource::Code,
+        },
+        rename_valid: args.is_rename_valid(),
+        rename_printable: args.is_rename_printable(),
+        ..jadx_resources::ResOptions::default()
+    }
 }
 
 /// Decoder based on the `jadx-resources` crate.
@@ -186,16 +233,25 @@ pub struct AndroidResourceDecoder;
 
 impl ResourceDecoder for AndroidResourceDecoder {
     fn decode_archive(&self, archive: &Path, args: &JadxArgs) -> Result<DecodedResources, String> {
-        use crate::args::ResourceNameSource as Src;
-        let mut opts = jadx_resources::ApkOptions::default();
-        opts.res.name_source = match args.resource_name_source {
-            Src::Auto => jadx_resources::ResourceNameSource::Auto,
-            Src::Resources => jadx_resources::ResourceNameSource::Resources,
-            Src::Code => jadx_resources::ResourceNameSource::Code,
+        self.decode_archive_with_context(archive, args, &ResourceContext::default())
+    }
+
+    fn decode_archive_with_context(
+        &self,
+        archive: &Path,
+        args: &JadxArgs,
+        context: &ResourceContext,
+    ) -> Result<DecodedResources, String> {
+        let mut opts = jadx_resources::ApkOptions {
+            res: resource_options(args),
+            ..jadx_resources::ApkOptions::default()
         };
-        opts.res.rename_valid = args.is_rename_valid();
-        opts.res.rename_printable = args.is_rename_printable();
+        opts.res.code_names = context.code_names.clone();
         opts.skip_xml_pretty_print = args.skip_xml_pretty_print;
+        let lookup = |name: &str| context.class_aliases.get(name).cloned();
+        if !context.class_aliases.is_empty() {
+            opts.class_alias = Some(&lookup);
+        }
         let res = jadx_resources::decode_apk(archive, &opts).map_err(|e| e.to_string())?;
         Ok(DecodedResources {
             files: res
@@ -301,6 +357,8 @@ pub struct SaveResources<'a> {
     pub args: &'a JadxArgs,
     pub out_dir: &'a Path,
     pub decoder: Option<&'a dyn ResourceDecoder>,
+    /// Tables of the decompiled code for the decoder.
+    pub context: &'a ResourceContext,
     pub log: &'a dyn LogSink,
     pub errors: &'a ErrorsCounter,
     /// Called with `(done, total)` after every written file.
@@ -331,7 +389,7 @@ pub fn save_resources(files: &[ResourceFile], cfg: &SaveResources<'_>) {
             if !has_android {
                 continue;
             }
-            match decoder.decode_archive(archive, cfg.args) {
+            match decoder.decode_archive_with_context(archive, cfg.args, cfg.context) {
                 Ok(res) => {
                     decoded_archives.insert(archive.as_path().to_path_buf());
                     for w in &res.warnings {

@@ -8,6 +8,7 @@ use super::class_gen::ClassGen;
 use super::code_writer::{CodeInfo, CodeWriter};
 use super::insn_gen::InsnGen;
 use super::method_gen::{no_code_cfg, MethodGen};
+use super::string_utils::IntegerFormat;
 use super::type_gen::{literal_to_string, signature};
 use super::{CodegenError, CommentsLevel};
 use crate::access::{AccessInfo, AccessKind, ACC_ABSTRACT, ACC_PRIVATE, ACC_STATIC};
@@ -156,6 +157,7 @@ impl<'a> ClassGen<'a> {
         let own: Vec<(CommentsLevel, &String)> =
             cls.comments.iter().map(|(l, s)| (*l, s)).collect();
         self.add_node_comments(code, &own);
+        self.add_info_comments(code, &cls.info_comments);
         if self.has_alias(&cls.info) {
             self.add_renamed_comment(code, &cls.info.raw_name(), cls.alias_reason.as_deref());
         }
@@ -172,6 +174,17 @@ impl<'a> ClassGen<'a> {
                     .add(&file)
                     .add(" */");
             }
+        }
+    }
+
+    /// Info comments added by the decompiler (`CodeGenUtils.addComments`).
+    pub fn add_info_comments(&self, code: &mut CodeWriter, comments: &[String]) {
+        if comments.is_empty() || !self.env().check_comments_level(CommentsLevel::Info) {
+            return;
+        }
+        for c in comments {
+            code.start_line();
+            code.add("/* JADX INFO: ").add(c).add(" */");
         }
     }
 
@@ -649,9 +662,12 @@ impl<'a> ClassGen<'a> {
             return Ok(());
         }
         let has_alias = f.alias.as_deref().is_some_and(|a| a != f.info.name);
-        if !f.attrs.annotations.is_empty() || has_alias {
+        let has_comments =
+            !f.info_comments.is_empty() && env.check_comments_level(CommentsLevel::Info);
+        if !f.attrs.annotations.is_empty() || has_alias || has_comments {
             code.new_line();
         }
+        self.add_info_comments(code, &f.info_comments);
         if has_alias {
             self.add_renamed_comment(code, &f.info.name, f.alias_reason.as_deref());
         }
@@ -723,7 +739,14 @@ impl<'a> ClassGen<'a> {
 
     fn add_const_value(&self, code: &mut CodeWriter, v: &ConstValue, ty: &ArgType) -> Res {
         let env = self.env();
+        let hex_ids = env.string_utils.integer_format != IntegerFormat::Decimal
+            && *ty == ArgType::int()
+            && self.is_resource_class();
         let lit = |l: i64| -> Res<String> {
+            if hex_ids {
+                // force hex format for Android resources ids
+                return Ok(format!("0x{:08x}", l as u32));
+            }
             literal_to_string(l, ty, &env.string_utils, self.is_fallback_mode(), false)
         };
         match v {
@@ -738,6 +761,15 @@ impl<'a> ClassGen<'a> {
             ConstValue::Str(units) => code.add(&env.string_utils.unescape_string(units)),
         };
         Ok(())
+    }
+
+    /// `AndroidResourcesUtils.isResourceClass`: member of a class named `R`.
+    fn is_resource_class(&self) -> bool {
+        let env = self.env();
+        env.root.parent_index(self.class_index()).is_some_and(|p| {
+            let parent = &env.root.classes[p];
+            env.short_name(&parent.info) == "R"
+        })
     }
 
     fn is_fields_present(&self) -> bool {

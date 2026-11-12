@@ -175,6 +175,16 @@ impl jadx_input_api::InsnResolver for crate::file::DexFile {
             return_type: m.return_type,
         })
     }
+    fn call_site(
+        &self,
+        idx: u32,
+    ) -> std::result::Result<Vec<jadx_input_api::CallSiteValue>, String> {
+        let values = DexFile::call_site(self, idx).map_err(|e| e.to_string())?;
+        values
+            .iter()
+            .map(|v| self.call_site_value(v))
+            .collect::<std::result::Result<_, String>>()
+    }
     fn proto(&self, idx: u32) -> std::result::Result<jadx_input_api::MethodProtoData, String> {
         let p = self.proto_id(idx).map_err(|e| e.to_string())?;
         Ok(jadx_input_api::MethodProtoData {
@@ -184,6 +194,55 @@ impl jadx_input_api::InsnResolver for crate::file::DexFile {
             return_type: self
                 .type_descriptor(p.return_type_idx)
                 .map_err(|e| e.to_string())?,
+        })
+    }
+}
+
+impl DexFile {
+    fn call_site_value(
+        &self,
+        v: &crate::annotations::EncodedValue,
+    ) -> std::result::Result<jadx_input_api::CallSiteValue, String> {
+        use crate::annotations::EncodedValue as E;
+        use jadx_input_api::{
+            CallSiteValue as C, InsnResolver, MethodHandleData, MethodHandleKind as K,
+            MethodHandleTarget as T,
+        };
+        Ok(match v {
+            E::Null => C::Null,
+            E::Boolean(b) => C::Boolean(*b),
+            E::Byte(x) => C::Byte(*x),
+            E::Short(x) => C::Short(*x),
+            E::Char(x) => C::Char(*x),
+            E::Int(x) => C::Int(*x),
+            E::Long(x) => C::Long(*x),
+            E::Float(x) => C::Float(x.to_bits()),
+            E::Double(x) => C::Double(x.to_bits()),
+            E::String(i) => C::Str(DexFile::string_utf16(self, *i).map_err(|e| e.to_string())?),
+            E::Type(i) => C::Type(self.type_descriptor(*i).map_err(|e| e.to_string())?),
+            E::MethodType(i) => C::MethodType(InsnResolver::proto(self, *i)?),
+            E::MethodHandle(i) => {
+                let (kind, ref_idx) = self.method_handle(*i).map_err(|e| e.to_string())?;
+                let kind = match kind {
+                    0 => K::StaticPut,
+                    1 => K::StaticGet,
+                    2 => K::InstancePut,
+                    3 => K::InstanceGet,
+                    4 => K::InvokeStatic,
+                    5 => K::InvokeInstance,
+                    6 => K::InvokeConstructor,
+                    7 => K::InvokeDirect,
+                    8 => K::InvokeInterface,
+                    k => return Err(format!("Unknown method handle type: 0x{k:x}")),
+                };
+                let target = if kind.is_field() {
+                    T::Field(InsnResolver::field(self, ref_idx)?)
+                } else {
+                    T::Method(InsnResolver::method(self, ref_idx)?)
+                };
+                C::MethodHandle(MethodHandleData { kind, target })
+            }
+            _ => C::Other,
         })
     }
 }

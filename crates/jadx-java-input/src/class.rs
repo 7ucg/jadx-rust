@@ -51,7 +51,7 @@ fn tag_data_size(tag: u8) -> Option<Option<usize>> {
 }
 
 /// A parsed `.class` file. Members and attributes are read on demand from the raw bytes.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct JavaClass {
     source: String,
     data: Vec<u8>,

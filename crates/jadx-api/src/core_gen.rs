@@ -24,38 +24,67 @@ use jadx_dex_input::DexFile;
 use crate::args::{CommentsLevel, DecompilationMode, IntegerFormat};
 use crate::code::SimpleCodeInfo;
 use crate::generator::{ClassCodeGenerator, ClassDiagnostics, GenContext};
+use crate::input_code::ClassOrigin;
 
 /// Last stage of the per-method pipeline run before the code generation in fallback mode.
 const FALLBACK_LAST_STAGE: u32 = 19;
 
-/// Method code read from the dex files of the loaded input.
-struct OwnedDexSource {
+/// Method code read from the loaded inputs (dex files and JVM classes).
+struct OwnedCodeSource {
     dexes: Vec<DexFile>,
-    class_dex: Vec<usize>,
+    java_classes: Vec<jadx_java_input::JavaClass>,
+    class_origin: Vec<ClassOrigin>,
 }
 
-impl CodeSource for OwnedDexSource {
-    fn load_code(&self, root: &Root, cls: usize, mth: usize) -> Result<LoadedCode, String> {
+impl OwnedCodeSource {
+    fn decode(&self, root: &Root, cls: usize, mth: usize) -> Result<LoadedCode, String> {
         let m = &root.classes[cls].methods[mth];
-        let dex = &self.dexes[self.class_dex[cls]];
         let off = m.code_offset.ok_or("method without code")?;
-        let code = dex.code_item(off).map_err(|e| e.to_string())?;
-        let raw =
-            jadx_dex_input::insns::decode_insn_data(&code.insns).map_err(|e| e.to_string())?;
         let mctx = MethodCtx {
             return_type: m.return_type.clone(),
             parent_class: root.classes[cls].info.clone(),
             root,
         };
-        let decoded = InsnDecoder::new(dex, &mctx)
-            .process(&raw, code.insns.len())
-            .map_err(|e| e.to_string())?;
-        let tries = dex.tries_api(&code).map_err(|e| e.to_string())?;
-        Ok(LoadedCode {
-            decoded,
-            tries,
-            regs_count: code.registers_size as usize,
-        })
+        match self.class_origin.get(cls).copied() {
+            Some(ClassOrigin::Dex(d)) => {
+                let dex = &self.dexes[d];
+                let code = dex.code_item(off).map_err(|e| e.to_string())?;
+                let raw = jadx_dex_input::insns::decode_insn_data(&code.insns)
+                    .map_err(|e| e.to_string())?;
+                let decoded = InsnDecoder::new(dex, &mctx)
+                    .process(&raw, code.insns.len())
+                    .map_err(|e| e.to_string())?;
+                let tries = dex.tries_api(&code).map_err(|e| e.to_string())?;
+                Ok(LoadedCode {
+                    decoded,
+                    tries,
+                    regs_count: code.registers_size as usize,
+                    args_start_reg: None,
+                })
+            }
+            Some(ClassOrigin::Java(j)) => {
+                let class = &self.java_classes[j];
+                let info = class.code_info(off).map_err(|e| e.to_string())?;
+                let insns = class.decode_core_insns(off).map_err(|e| e.to_string())?;
+                let tries = class.tries(off).map_err(|e| e.to_string())?;
+                let decoded = InsnDecoder::new(class, &mctx)
+                    .process(&insns, info.code_length as usize)
+                    .map_err(|e| e.to_string())?;
+                Ok(LoadedCode {
+                    decoded,
+                    tries,
+                    regs_count: info.registers_count() as usize,
+                    args_start_reg: Some(info.args_start_reg() as usize),
+                })
+            }
+            _ => Err("class without code".to_string()),
+        }
+    }
+}
+
+impl CodeSource for OwnedCodeSource {
+    fn load_code(&self, root: &Root, cls: usize, mth: usize) -> Result<LoadedCode, String> {
+        self.decode(root, cls, mth)
     }
 }
 
@@ -102,9 +131,10 @@ impl CoreClassGenerator {
     }
 
     fn new_driver(ctx: &GenContext<'_>) -> ClassDriver<'static> {
-        let src = OwnedDexSource {
+        let src = OwnedCodeSource {
             dexes: ctx.dexes.to_vec(),
-            class_dex: ctx.class_dex.to_vec(),
+            java_classes: ctx.java_classes.to_vec(),
+            class_origin: ctx.class_origin.to_vec(),
         };
         let opts = DriverOptions {
             extract_finally: ctx.args.extract_finally,
@@ -305,23 +335,20 @@ impl FallbackLoader<'_> {
         let Some(off) = m.code_offset else {
             return Ok(no_code_cfg(root, cls, mth));
         };
-        let dex = self.ctx.dex_of(cls);
-        let code = dex.code_item(off).map_err(|e| e.to_string())?;
-        let raw =
-            jadx_dex_input::insns::decode_insn_data(&code.insns).map_err(|e| e.to_string())?;
+        let code = self.ctx.method_code(cls, off)?;
         let mctx = MethodCtx {
             return_type: m.return_type.clone(),
             parent_class: root.classes[cls].info.clone(),
             root,
         };
-        let decoded = InsnDecoder::new(dex, &mctx)
-            .process(&raw, code.insns.len())
+        let decoded = InsnDecoder::new(code.resolver, &mctx)
+            .process(&code.insns, code.units)
             .map_err(|e| e.to_string())?;
-        let tries = dex.tries_api(&code).map_err(|e| e.to_string())?;
-        let frame = FrameInfo::new(root, cls, mth, code.registers_size as usize);
+        let mut frame = FrameInfo::new(root, cls, mth, code.registers);
+        frame.args_start_reg = code.args_start_reg;
         let mut cfg = build_ssa(
             decoded,
-            &tries,
+            &code.tries,
             root,
             cls,
             mth,
@@ -339,19 +366,16 @@ fn fallback_code(ctx: &GenContext<'_>, cls: usize, mth: usize) -> Result<Fallbac
     let root = ctx.root;
     let m = &root.classes[cls].methods[mth];
     let off = m.code_offset.ok_or("no code")?;
-    let dex = ctx.dex_of(cls);
-    let code = dex.code_item(off).map_err(|e| e.to_string())?;
-    let raw = jadx_dex_input::insns::decode_insn_data(&code.insns).map_err(|e| e.to_string())?;
+    let code = ctx.method_code(cls, off)?;
     let mctx = MethodCtx {
         return_type: m.return_type.clone(),
         parent_class: root.classes[cls].info.clone(),
         root,
     };
-    let decoded = InsnDecoder::new(dex, &mctx)
-        .process(&raw, code.insns.len())
+    let decoded = InsnDecoder::new(code.resolver, &mctx)
+        .process(&code.insns, code.units)
         .map_err(|e| e.to_string())?;
-    let tries = dex.tries_api(&code).map_err(|e| e.to_string())?;
-    let (insns, handlers) = fallback_decode(decoded, &tries, &root.ctx)?;
+    let (insns, handlers) = fallback_decode(decoded, &code.tries, &root.ctx)?;
     Ok(FallbackCode { insns, handlers })
 }
 
@@ -369,36 +393,10 @@ fn cached_source_line(
     l
 }
 
-/// `DebugInfoAttachVisitor.setMethodSourceLine`: line of the first instruction with a line
-/// number, minus one.
+/// `DebugInfoAttachVisitor.setMethodSourceLine`
 fn compute_source_line(ctx: &GenContext<'_>, cls: usize, mth: usize) -> u32 {
-    let m = &ctx.root.classes[cls].methods[mth];
-    let Some(off) = m.code_offset else {
-        return 0;
-    };
-    let dex = ctx.dex_of(cls);
-    let Ok(code) = dex.code_item(off) else {
-        return 0;
-    };
-    if code.debug_info_off == 0 {
-        return 0;
+    match ctx.root.classes[cls].methods[mth].code_offset {
+        Some(off) => ctx.method_source_line(cls, off),
+        None => 0,
     }
-    let Ok(lines) = dex.debug_lines(code.debug_info_off, code.insns.len() as u32) else {
-        return 0;
-    };
-    let mut map: HashMap<u32, u32> = HashMap::new();
-    for (addr, line) in lines {
-        map.insert(addr, line);
-    }
-    let Ok(raw) = jadx_dex_input::insns::decode_insn_data(&code.insns) else {
-        return 0;
-    };
-    for insn in &raw {
-        if let Some(&line) = map.get(&insn.offset) {
-            if line != 0 {
-                return line - 1;
-            }
-        }
-    }
-    0
 }

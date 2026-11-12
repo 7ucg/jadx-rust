@@ -89,6 +89,16 @@ pub fn process_instructions(insns: &mut [Option<InsnNode>]) -> Result<Vec<String
                 };
                 add_jump(insns, off, target, &mut errors);
             }
+            InsnType::JavaJsr => {
+                let target = match &insn.kind {
+                    InsnKind::Goto { target } => *target,
+                    _ => continue,
+                };
+                add_jump(insns, off, target, &mut errors);
+                if let Some(on_ret) = next_insn_offset(insns, offset) {
+                    add_jump(insns, off, on_ret as i32, &mut errors);
+                }
+            }
             InsnType::Invoke => {
                 if insn.result.is_none() {
                     let ret = match &insn.kind {

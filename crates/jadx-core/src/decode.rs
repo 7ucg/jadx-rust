@@ -9,6 +9,8 @@ use crate::model::insn::{
 };
 use crate::model::types::{ArgType, PrimitiveType, CLASS_CLASS};
 
+const CLASS_OBJECT_DESC: &str = "Ljava/lang/Object;";
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum DecodeError {
     #[error("{0}")]
@@ -487,19 +489,24 @@ impl<'a> InsnDecoder<'a> {
                 None,
                 arg(0, ArgType::unknown_object())?,
             ),
-            O::InvokeCustom
-            | O::InvokeCustomRange
-            | O::InvokePolymorphic
-            | O::InvokePolymorphicRange
-            | O::ConstMethodHandle
-            | O::ConstMethodType
-            | O::InvokeSpecial
-            | O::JavaJsr
-            | O::JavaRet => {
-                return err(format!(
-                    "Unsupported instruction (not yet ported): {:?}",
-                    insn.opcode
-                ))
+            O::InvokeCustom => self.invoke_custom(insn, false)?,
+            O::InvokeCustomRange => self.invoke_custom(insn, true)?,
+            O::InvokePolymorphic => self.invoke_polymorphic(insn, false)?,
+            O::InvokePolymorphicRange => self.invoke_polymorphic(insn, true)?,
+            O::InvokeSpecial => self.invoke_special(insn)?,
+            O::JavaJsr => {
+                let mut n = InsnNode::new(
+                    InsnType::JavaJsr,
+                    InsnKind::Goto {
+                        target: insn.target as i32,
+                    },
+                );
+                n.result = Some(reg_arg(0, ArgType::unknown_int())?);
+                n
+            }
+            O::JavaRet => one(InsnType::JavaRet, None, arg(0, ArgType::unknown_int())?),
+            O::ConstMethodHandle | O::ConstMethodType => {
+                return err(format!("Unknown instruction: '{:?}'", insn.opcode))
             }
             O::Unknown | O::Arith | O::Cast | O::If | O::Neg => {
                 return err(format!("Unknown instruction: '{:?}'", insn.opcode))
@@ -678,7 +685,18 @@ impl<'a> InsnDecoder<'a> {
         is_range: bool,
     ) -> Result<InsnNode, DecodeError> {
         let mth = self.method_info(insn.index)?;
-        let instance_call = ty != InvokeType::Static;
+        self.invoke_node(insn, ty, mth, ty != InvokeType::Static, is_range)
+    }
+
+    /// `InvokeNode(MethodInfo, InsnData, InvokeType, boolean, boolean)`
+    fn invoke_node(
+        &self,
+        insn: &InsnData,
+        ty: InvokeType,
+        mth: MethodInfo,
+        instance_call: bool,
+        is_range: bool,
+    ) -> Result<InsnNode, DecodeError> {
         let mut n = InsnNode::new(
             InsnType::Invoke,
             InsnKind::Invoke {
@@ -704,7 +722,111 @@ impl<'a> InsnDecoder<'a> {
             n.args.push(InsnArg::reg(r, a.clone()));
             k += a.reg_count();
         }
+        if let Some(res) = insn.result_reg {
+            n.result = Some(RegisterArg::new(res, mth.return_type.clone()));
+        }
         Ok(n)
+    }
+
+    /// `invokeSpecial`: converted to a direct or super call like dx does.
+    fn invoke_special(&self, insn: &InsnData) -> Result<InsnNode, DecodeError> {
+        let mth = self.method_info(insn.index)?;
+        let ty = if mth.is_constructor() || mth.decl_class == self.ctx.parent_class {
+            InvokeType::Direct
+        } else {
+            InvokeType::Super
+        };
+        self.invoke_node(insn, ty, mth, true, false)
+    }
+
+    /// `invokePolymorphic`: the call is described by the prototype of the instruction.
+    fn invoke_polymorphic(&self, insn: &InsnData, is_range: bool) -> Result<InsnNode, DecodeError> {
+        let call = self.method_info(insn.index)?;
+        let proto = self
+            .resolver
+            .proto(insn.target as u32)
+            .map_err(DecodeError::Msg)?;
+        let mut args = Vec::with_capacity(proto.arg_types.len());
+        for a in &proto.arg_types {
+            args.push(self.parse_type(a)?);
+        }
+        let mth = MethodInfo {
+            decl_class: call.decl_class,
+            name: call.name,
+            arg_types: args,
+            return_type: self.parse_type(&proto.return_type)?,
+        };
+        self.invoke_node(insn, InvokeType::Polymorphic, mth, true, is_range)
+    }
+
+    /// `InvokeCustomBuilder`: lambdas and string concatenations are described by the method of
+    /// the call site prototype, all other call sites like a raw call of an unknown method.
+    fn invoke_custom(&self, insn: &InsnData, is_range: bool) -> Result<InsnNode, DecodeError> {
+        use jadx_input_api::{CallSiteValue as V, MethodHandleKind, MethodHandleTarget};
+        let values = self.resolver.call_site(insn.index).map_err(|e| {
+            DecodeError::Msg(format!("'invoke-custom' instruction processing error: {e}"))
+        })?;
+        let bad = || {
+            DecodeError::Msg("Failed to decode invoke-custom: unexpected call site values".into())
+        };
+        let (Some(V::MethodHandle(handle)), Some(V::Str(name)), Some(V::MethodType(proto))) =
+            (values.first(), values.get(1), values.get(2))
+        else {
+            return Err(bad());
+        };
+        let name = String::from_utf16_lossy(name);
+        let mut args = Vec::with_capacity(proto.arg_types.len());
+        for a in &proto.arg_types {
+            args.push(self.parse_type(a)?);
+        }
+        let ret = self.parse_type(&proto.return_type)?;
+        let bootstrap = match &handle.target {
+            MethodHandleTarget::Method(m) => Some(m),
+            MethodHandleTarget::Field(_) => None,
+        };
+        let is_static_handle = handle.kind == MethodHandleKind::InvokeStatic;
+        let is_lambda = values.len() >= 6
+            && is_static_handle
+            && bootstrap.is_some_and(|m| {
+                m.parent_class == "Ljava/lang/invoke/LambdaMetafactory;"
+                    && (m.name == "metafactory" || m.name == "altMetafactory")
+            });
+        let is_concat = values.len() >= 4
+            && is_static_handle
+            && matches!(values.get(3), Some(V::Str(_)))
+            && name == "makeConcatWithConstants"
+            && bootstrap.is_some_and(|m| {
+                m.name == "makeConcatWithConstants"
+                    && m.parent_class == "Ljava/lang/invoke/StringConcatFactory;"
+            });
+        if is_lambda || is_concat {
+            // the lambda info belongs to the class of the method, its result takes the type of
+            // the method return type
+            let mth = MethodInfo {
+                decl_class: self.ctx.parent_class.clone(),
+                name: if is_lambda { String::new() } else { name },
+                arg_types: args,
+                return_type: ret,
+            };
+            let mut n = self.invoke_node(insn, InvokeType::Custom, mth, false, is_range)?;
+            if let Some(res) = insn.result_reg {
+                n.result = Some(RegisterArg::new(res, self.ctx.return_type.clone()));
+            }
+            return Ok(n);
+        }
+        if handle.kind.is_field() {
+            return Err(DecodeError::Msg(
+                "Failed to decode invoke-custom: Field handle not yet supported".into(),
+            ));
+        }
+        let decl = self.class_info(CLASS_OBJECT_DESC)?;
+        let mth = MethodInfo {
+            decl_class: decl,
+            name,
+            arg_types: args,
+            return_type: ret,
+        };
+        self.invoke_node(insn, InvokeType::CustomRaw, mth, false, is_range)
     }
 
     fn filled_new_array(&self, insn: &InsnData, is_range: bool) -> Result<InsnNode, DecodeError> {
@@ -742,13 +864,26 @@ impl<'a> InsnDecoder<'a> {
             .regs
             .first()
             .ok_or_else(|| DecodeError::Msg("missing register".into()))?;
+        // stack based inputs carry the payload with the instruction (absolute targets, the
+        // default target is the target of the instruction)
+        let (data, def) = match &insn.payload {
+            Some(Payload::Switch(p)) => (
+                Some(SwitchData {
+                    keys: p.keys.clone(),
+                    targets: p.targets.clone(),
+                    key_fields: Vec::new(),
+                }),
+                insn.target as i32,
+            ),
+            _ => (None, -1),
+        };
         let mut n = InsnNode::new(
             InsnType::Switch,
             InsnKind::Switch {
                 data_target: insn.target as i32,
                 packed,
-                data: None,
-                def: -1,
+                data,
+                def,
                 target_blocks: None,
                 def_block: None,
             },

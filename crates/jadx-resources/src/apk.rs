@@ -242,6 +242,26 @@ pub fn read_resource_table(path: &Path, opts: &ResOptions) -> Result<Option<ResT
     Ok(None)
 }
 
+/// Output names of the files that the resource table refers to by their original name
+/// (obfuscated or shrunk resource file names): original name to `res/<type><config>/<key><ext>`.
+pub fn file_alias_map(table: &ResTable) -> HashMap<String, String> {
+    let names = table.resource_names();
+    let vp = ValuesParser::new(table.strings(), &names);
+    let mut by_value: HashMap<String, &crate::table::ResourceEntry> = HashMap::new();
+    for re in table.storage().resources() {
+        if let Some(v) = re.simple_value.as_ref().and_then(|s| vp.decode_raw(s)) {
+            by_value.insert(v, re);
+        }
+    }
+    by_value
+        .into_iter()
+        .map(|(name, re)| {
+            let alias = file_alias(re, &name);
+            (name, alias)
+        })
+        .collect()
+}
+
 /// New name of a resource file that is referenced by a resource entry
 /// (`res/<type><config>/<key><ext>`).
 fn file_alias(re: &crate::table::ResourceEntry, name: &str) -> String {

@@ -6,9 +6,14 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use jadx_core::model::const_storage::FieldRef;
 use jadx_core::model::node::Root;
 use jadx_core::passes::pre_decompile::{run_pre_decompile, PreDecompileOptions};
-use jadx_dex_input::{load_path, DexFile, LoadOptions};
+use jadx_core::resources::{add_resource_classes, ResourceField, ResourceInput};
+use jadx_dex_input::DexFile;
+use jadx_input_api::ConstValue;
+use jadx_java_input::JavaClass as JavaInputClass;
+use jadx_package::{load_inputs, InputSet, LoadOptions};
 
 use crate::args::{JadxArgs, OutputFormat, DEFAULT_OUT_DIR, DEFAULT_RES_DIR, DEFAULT_SRC_DIR};
 use crate::code::{ICodeInfo, SimpleCodeInfo};
@@ -16,13 +21,14 @@ use crate::error::{ErrorsCounter, JadxError, Result};
 use crate::generator::{
     generate_declarations, ClassCodeGenerator, ClassDiagnostics, DeclarationGenerator, GenContext,
 };
+use crate::input_code::{ClassOrigin, CombinedCodeRefs};
 use crate::java::{JavaClass, JavaMethod, JavaPackage};
 use crate::log::{Level, LogSink, NullLog};
 use crate::parallel::run_indexed;
 use crate::paths::{class_alias_file_path, safe_join, save_text};
 use crate::resources::{
-    load_resources, save_resources, AndroidResourceDecoder, ResourceDecoder, ResourceFile,
-    SaveResources,
+    load_resources, resource_options, save_resources, AndroidResourceDecoder, ResourceContext,
+    ResourceDecoder, ResourceFile, ResourceType, SaveResources,
 };
 
 /// Progress callback: `(done, total)`.
@@ -46,6 +52,8 @@ pub(crate) struct PackageData {
 struct Loaded {
     dexes: Vec<DexFile>,
     class_dex: Vec<usize>,
+    java_classes: Vec<JavaInputClass>,
+    class_origin: Vec<ClassOrigin>,
     root: Root,
     /// Member classes of every class in output order.
     inner: Vec<Vec<usize>>,
@@ -55,6 +63,7 @@ struct Loaded {
     /// Package of every top level class.
     class_package: HashMap<usize, usize>,
     resources: Vec<ResourceFile>,
+    resource_context: ResourceContext,
 }
 
 /// Decompiler facade. Create with [`JadxArgs`], call [`load`](JadxDecompiler::load), then list
@@ -129,32 +138,66 @@ impl JadxDecompiler {
             .clear();
         self.validate_args()?;
         self.log(Level::Info, "loading ...");
-        let inputs = expand_dirs(&self.args.input_files);
+        let inputs: Vec<PathBuf> = expand_dirs(&self.args.input_files)
+            .iter()
+            // plain dex files are named by their absolute path (shown in the `loaded from` comment)
+            .map(|f| std::path::absolute(f).unwrap_or_else(|_| f.clone()))
+            .collect();
         let opts = LoadOptions {
             verify_checksum: self.args.verify_dex_checksum,
+            ..LoadOptions::default()
         };
-        let mut dexes: Vec<DexFile> = Vec::new();
-        for file in &inputs {
-            // plain dex files are named by their absolute path (shown in the `loaded from` comment)
-            let abs = std::path::absolute(file).unwrap_or_else(|_| file.clone());
-            match load_path(&abs, &opts) {
-                Ok(res) => {
-                    for w in &res.warnings {
-                        self.log(Level::Warn, w);
-                    }
-                    dexes.extend(res.dex_files);
-                }
-                Err(e) => {
-                    let msg = format!("Failed to load {}: {e}", file.display());
-                    self.log(Level::Error, &msg);
-                    self.errors
-                        .add_error(&format!("file {}", file.display()), &msg);
-                }
+        let input_set = load_inputs(&inputs, &opts);
+        for w in &input_set.warnings {
+            if w.starts_with("File open error") {
+                self.log(Level::Error, w);
+                self.errors.add_error("input file", w);
+            } else {
+                self.log(Level::Warn, w);
             }
         }
+        let InputSet {
+            dex_files: dexes,
+            java_classes,
+            ..
+        } = input_set;
+
+        // the duplicate selection of the reference root: of classes with the same name the one of
+        // the lowest `classesN.dex` wins, otherwise the first loaded
+        let sources = {
+            let mut all = Vec::new();
+            for (di, dex) in dexes.iter().enumerate() {
+                for def in dex.class_defs().flatten() {
+                    if let Ok(desc) = dex.type_descriptor(def.class_idx) {
+                        all.push(jadx_package::ClassSource {
+                            raw_name: raw_class_name(&desc),
+                            source: dex.name().to_owned(),
+                            origin: jadx_package::Origin::Dex(di),
+                        });
+                    }
+                }
+            }
+            for (ji, cls) in java_classes.iter().enumerate() {
+                if let Ok(desc) = cls.type_desc() {
+                    all.push(jadx_package::ClassSource {
+                        raw_name: raw_class_name(&desc),
+                        source: cls.source().to_owned(),
+                        origin: jadx_package::Origin::Java(ji),
+                    });
+                }
+            }
+            all
+        };
+        let (kept, dup_warnings) = jadx_package::select_from_duplicates(sources);
+        for w in &dup_warnings {
+            self.log(Level::Warn, w);
+        }
+        let chosen: HashMap<String, jadx_package::Origin> =
+            kept.into_iter().map(|c| (c.raw_name, c.origin)).collect();
 
         let mut class_data = Vec::new();
         let mut class_dex = Vec::new();
+        let mut class_origin = Vec::new();
         let mut seen: HashSet<String> = HashSet::new();
         for (di, dex) in dexes.iter().enumerate() {
             for (ci, def) in dex.class_defs().enumerate() {
@@ -163,19 +206,15 @@ impl JadxDecompiler {
                     .and_then(|d| dex.class_api(&d).map_err(|e| e.to_string()));
                 match loaded {
                     Ok(data) => {
-                        if !seen.insert(data.type_desc.clone()) {
-                            self.log(
-                                Level::Warn,
-                                &format!(
-                                    "Duplicate class {} in {}, skipped",
-                                    data.type_desc,
-                                    dex.name()
-                                ),
-                            );
+                        let raw = raw_class_name(&data.type_desc);
+                        if chosen.get(&raw) != Some(&jadx_package::Origin::Dex(di))
+                            || !seen.insert(data.type_desc.clone())
+                        {
                             continue;
                         }
                         class_data.push(data);
                         class_dex.push(di);
+                        class_origin.push(ClassOrigin::Dex(di));
                     }
                     Err(e) => {
                         let node = format!("class #{ci} in {}", dex.name());
@@ -185,9 +224,72 @@ impl JadxDecompiler {
                 }
             }
         }
+        for (ji, cls) in java_classes.iter().enumerate() {
+            match cls.class_api() {
+                Ok(data) => {
+                    let raw = raw_class_name(&data.type_desc);
+                    if chosen.get(&raw) != Some(&jadx_package::Origin::Java(ji))
+                        || !seen.insert(data.type_desc.clone())
+                    {
+                        continue;
+                    }
+                    class_data.push(data);
+                    class_dex.push(usize::MAX);
+                    class_origin.push(ClassOrigin::Java(ji));
+                }
+                Err(e) => {
+                    let node = format!("class in {}", cls.source());
+                    self.log(Level::Error, &format!("Failed to load {node}: {e}"));
+                    self.errors.add_error(&node, &e.to_string());
+                }
+            }
+        }
+
+        let (mut resources, res_warnings) = load_resources(&self.args.input_files);
+        for w in &res_warnings {
+            self.log(Level::Warn, w);
+        }
+        // the resource table gives the `R` class its fields and the ids their names
+        let table_data = resources
+            .iter()
+            .find(|r| r.resource_type() == ResourceType::Arsc)
+            .and_then(|r| r.load_bytes().ok());
+        let table = table_data.as_deref().and_then(|data| {
+            match jadx_resources::ResTable::parse(data, &resource_options(&self.args)) {
+                Ok(t) => Some(t),
+                Err(e) => {
+                    self.log(
+                        Level::Error,
+                        &format!("Failed to parse 'resources.pb'/'.arsc' file: {e}"),
+                    );
+                    None
+                }
+            }
+        });
+        let res_plan = table.as_ref().map(|t| {
+            let input = ResourceInput {
+                app_package: t.storage().app_package().map(str::to_string),
+                names: t.resource_names(),
+                fields: t
+                    .r_fields()
+                    .into_iter()
+                    .map(|f| ResourceField {
+                        id: f.id,
+                        type_name: f.type_name,
+                        name: f.name,
+                    })
+                    .collect(),
+            };
+            add_resource_classes(&mut class_data, &input, self.args.move_inner_classes)
+        });
+        class_dex.resize(class_data.len(), usize::MAX);
+        class_origin.resize(class_data.len(), ClassOrigin::Synthetic);
 
         let mut root = Root::build(class_data, self.args.move_inner_classes)
             .map_err(|e| JadxError::Load(format!("Failed to build class tree: {e}")))?;
+        if let Some(plan) = res_plan {
+            root.apply_resource_plan(plan);
+        }
         let pre = PreDecompileOptions {
             respect_bytecode_acc_modifiers: self.args.respect_bytecode_acc_modifiers,
             replace_consts: self.args.replace_consts,
@@ -197,26 +299,26 @@ impl JadxDecompiler {
             ..PreDecompileOptions::default()
         };
         {
-            let refs = jadx_dex_input::DexCodeRefs {
+            let refs = CombinedCodeRefs {
                 dexes: &dexes,
-                class_dex: &class_dex,
+                java_classes: &java_classes,
+                origin: &class_origin,
             };
             run_pre_decompile(&mut root, &refs, &pre);
         }
 
-        let (resources, res_warnings) = load_resources(&self.args.input_files);
-        for w in &res_warnings {
-            self.log(Level::Warn, w);
-        }
-        if resources
-            .iter()
-            .any(|r| r.original_name().ends_with(".class"))
-            && dexes.is_empty()
-        {
-            self.log(
-                Level::Warn,
-                "Java bytecode (.class) inputs are not supported yet, no classes loaded",
-            );
+        let mut resource_context = ResourceContext::default();
+        if !self.args.skip_resources {
+            if let Some(t) = &table {
+                // files that the table names (obfuscated or shrunk resource file names)
+                let aliases = jadx_resources::file_alias_map(t);
+                for r in &mut resources {
+                    if let Some(alias) = aliases.get(r.original_name()) {
+                        r.set_alias(alias);
+                    }
+                }
+                resource_context = self.resource_context(&mut root, table_data.as_deref());
+            }
         }
 
         let sorted = root.sorted_class_order();
@@ -236,14 +338,53 @@ impl JadxDecompiler {
         self.loaded = Some(Loaded {
             dexes,
             class_dex,
+            java_classes,
+            class_origin,
             root,
             inner,
             top_classes,
             packages,
             class_package,
             resources,
+            resource_context,
         });
         Ok(())
+    }
+
+    /// Tables of the decompiled code for the resource decoder: the names of the constants that
+    /// carry resource ids and the renamed classes. Resource ids whose constant gets another name
+    /// from the table rename the field (`ResTableBinaryParser.getResName`).
+    fn resource_context(&self, root: &mut Root, table_data: Option<&[u8]>) -> ResourceContext {
+        let mut ctx = ResourceContext::default();
+        let mut fields: HashMap<i32, (usize, usize)> = HashMap::new();
+        for (value, fld) in root.const_storage.global_const_fields() {
+            if let (ConstValue::Int(id), FieldRef::Node(c, f)) = (value, fld) {
+                if !root.classes[root.top_parent_index(*c)].synthetic {
+                    ctx.code_names
+                        .insert(*id, root.classes[*c].fields[*f].info.name.clone());
+                    fields.insert(*id, (*c, *f));
+                }
+            }
+        }
+        for c in &root.classes {
+            let alias = root.class_full_name(&c.info);
+            let raw = c.info.raw_name();
+            if alias != raw {
+                ctx.class_aliases.insert(raw, alias);
+            }
+        }
+        let mut opts = resource_options(&self.args);
+        opts.code_names = ctx.code_names.clone();
+        if let Some(data) = table_data {
+            if let Ok(t) = jadx_resources::ResTable::parse(data, &opts) {
+                for (id, name) in t.field_renames() {
+                    if let Some(&(c, f)) = fields.get(id) {
+                        root.classes[c].fields[f].alias = Some(name.clone());
+                    }
+                }
+            }
+        }
+        ctx
     }
 
     /// `JadxArgsValidator`: input files, output directories.
@@ -426,6 +567,8 @@ impl JadxDecompiler {
             root: &l.root,
             dexes: &l.dexes,
             class_dex: &l.class_dex,
+            java_classes: &l.java_classes,
+            class_origin: &l.class_origin,
             args: &self.args,
             inner_classes: &l.inner,
         };
@@ -570,6 +713,7 @@ impl JadxDecompiler {
                     args: &self.args,
                     out_dir: &res_dir,
                     decoder: self.resource_decoder.as_deref(),
+                    context: &l.resource_context,
                     log: &*self.log,
                     errors: &self.errors,
                     progress: None,
@@ -654,6 +798,14 @@ pub fn class_output_path(cls: &JavaClass<'_>, args: &JadxArgs) -> String {
         ),
         args.output_format.file_extension()
     )
+}
+
+/// Dotted raw class name of a type descriptor (`Lp/A$B;` to `p.A$B`).
+fn raw_class_name(desc: &str) -> String {
+    desc.strip_prefix('L')
+        .and_then(|d| d.strip_suffix(';'))
+        .unwrap_or(desc)
+        .replace('/', ".")
 }
 
 /// Output directory name derived from the first input file (`JadxArgsValidator`).

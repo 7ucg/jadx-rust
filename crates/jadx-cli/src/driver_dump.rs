@@ -38,6 +38,7 @@ impl CodeSource for DexCodeSource<'_> {
             decoded,
             tries,
             regs_count: code.registers_size as usize,
+            args_start_reg: None,
         })
     }
 }
