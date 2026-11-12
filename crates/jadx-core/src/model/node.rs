@@ -30,6 +30,9 @@ pub struct MethodNode {
     pub type_params: Vec<ArgType>,
     pub signature: Option<String>,
     pub code_offset: Option<u32>,
+    /// Declaring class type of the single base method this method overrides
+    /// (`MethodOverrideAttr`, used by `getMethodOriginDeclClass`).
+    pub override_base_decl: Option<ArgType>,
 }
 
 #[derive(Debug, Clone)]
@@ -112,6 +115,7 @@ impl Root {
                     type_params: Vec::new(),
                     signature: m.signature,
                     code_offset: m.code_offset,
+                    override_base_decl: None,
                 });
             }
             by_raw.insert(info.raw_name(), classes.len());

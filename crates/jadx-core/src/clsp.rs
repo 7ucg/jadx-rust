@@ -10,6 +10,8 @@ static CORE_SET: &[u8] = include_bytes!("../resources/core.jcst");
 
 #[derive(Debug, Clone)]
 pub struct ClspMethod {
+    /// Raw name of the declaring class.
+    pub decl_class: String,
     pub name: String,
     /// Erased (descriptor) argument types.
     pub raw_arg_types: Vec<ArgType>,
@@ -187,6 +189,7 @@ fn read_method(r: &mut ByteReader<'_>, names: &[String]) -> Result<ClspMethod, S
     let access_flags = r.u32()?;
     let throws = read_type_list(r, names)?;
     Ok(ClspMethod {
+        decl_class: String::new(),
         name,
         raw_arg_types: raw_args,
         raw_return_type: raw_ret,
@@ -252,7 +255,9 @@ impl ClspGraph {
             let mcount = r.i16()?;
             let mut methods = Vec::new();
             for _ in 0..mcount.max(0) {
-                methods.push(read_method(&mut r, &names)?);
+                let mut m = read_method(&mut r, &names)?;
+                m.decl_class = names[i].clone();
+                methods.push(m);
             }
             let mut cls = ClspClass {
                 name: names[i].clone(),

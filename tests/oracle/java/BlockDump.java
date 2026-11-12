@@ -26,6 +26,9 @@ import jadx.core.dex.visitors.MoveInlineVisitor;
 import jadx.core.dex.visitors.ConstructorVisitor;
 import jadx.core.dex.visitors.InitCodeVariables;
 import jadx.core.dex.visitors.ConstInlineVisitor;
+import jadx.core.dex.visitors.typeinference.TypeInferenceVisitor;
+import jadx.core.dex.visitors.typeinference.ITypeBound;
+import jadx.core.dex.visitors.typeinference.ITypeBoundDynamic;
 import jadx.core.dex.instructions.args.CodeVar;
 import jadx.core.dex.instructions.PhiInsn;
 import jadx.core.dex.instructions.args.RegisterArg;
@@ -42,7 +45,7 @@ import jadx.core.dex.attributes.nodes.LoopInfo;
  */
 public class BlockDump {
 	static final AFlag[] INSN_FLAGS = { AFlag.TRY_ENTER, AFlag.TRY_LEAVE, AFlag.SYNTHETIC, AFlag.DONT_GENERATE, AFlag.HIDDEN,
-			AFlag.REMOVE, AFlag.WRAPPED, AFlag.FALL_THROUGH, AFlag.DONT_INLINE, AFlag.EXPLICIT_CAST };
+			AFlag.REMOVE, AFlag.WRAPPED, AFlag.FALL_THROUGH, AFlag.DONT_INLINE, AFlag.EXPLICIT_CAST, AFlag.SOFT_CAST };
 	static final AFlag[] BLOCK_FLAGS = { AFlag.MTH_ENTER_BLOCK, AFlag.MTH_EXIT_BLOCK, AFlag.SYNTHETIC, AFlag.RETURN, AFlag.REMOVE,
 			AFlag.LOOP_START, AFlag.LOOP_END, AFlag.EXC_TOP_SPLITTER, AFlag.EXC_BOTTOM_SPLITTER, AFlag.ADDED_TO_REGION,
 			AFlag.DONT_GENERATE, AFlag.FALL_THROUGH, AFlag.ORIG_RETURN, AFlag.IGNORE_THROW_SPLIT, AFlag.TRY_ENTER, AFlag.TRY_LEAVE };
@@ -70,6 +73,7 @@ public class BlockDump {
 					if (mth.isNoCode()) {
 						continue;
 					}
+					boolean typed = false;
 					try {
 						mth.load();
 						new AttachTryCatchVisitor().visit(mth);
@@ -95,13 +99,19 @@ public class BlockDump {
 						if (stage >= 6) {
 							new ConstInlineVisitor().visit(mth);
 						}
+						if (stage >= 7) {
+							TypeInferenceVisitor ti = new TypeInferenceVisitor();
+							ti.init(root);
+							ti.visit(mth);
+							typed = true;
+						}
 					} catch (Throwable e) {
 						sb.append("M ").append(mth.getMethodInfo().getRawFullId()).append(" LOAD_ERROR\n");
 						System.out.print(sb);
 						sb.setLength(0);
 						continue;
 					}
-					dump(sb, mth, stage >= 1, stage >= 2);
+					dump(sb, mth, stage >= 1, stage >= 2, typed);
 					System.out.print(sb);
 					sb.setLength(0);
 					mth.unload();
@@ -166,7 +176,10 @@ public class BlockDump {
 		return l + ":?";
 	}
 
-	static void dumpSsa(StringBuilder sb, MethodNode mth) {
+	static void dumpSsa(StringBuilder sb, MethodNode mth, boolean typed) {
+		if (typed) {
+			sb.append("E ").append(mth.getAll(jadx.core.dex.attributes.AType.JADX_ERROR).size()).append('\n');
+		}
 		Map<InsnNode, String> locs = locations(mth);
 		Map<CodeVar, Integer> cvIds = new IdentityHashMap<>();
 		for (SSAVar v : mth.getSVars()) {
@@ -180,6 +193,16 @@ public class BlockDump {
 				sb.append(v.getUsedInPhi().stream().map(p -> locs.getOrDefault(p, "gone")).collect(Collectors.joining(",")));
 			}
 			sb.append(']');
+			if (typed) {
+				sb.append(" ty=").append(v.getTypeInfo().getType()).append(" bounds=[");
+				boolean firstB = true;
+				for (ITypeBound b : v.getTypeInfo().getBounds()) {
+					sb.append(firstB ? "" : ",").append(b.getBound() == jadx.core.dex.visitors.typeinference.BoundEnum.ASSIGN ? "A:" : "U:");
+					sb.append(b instanceof ITypeBoundDynamic ? "dyn" : String.valueOf(b.getType()));
+					firstB = false;
+				}
+				sb.append(']');
+			}
 			if (v.isCodeVarSet()) {
 				CodeVar cv = v.getCodeVar();
 				int n = cvIds.computeIfAbsent(cv, k -> cvIds.size());
@@ -201,7 +224,7 @@ public class BlockDump {
 		}
 	}
 
-	static void dump(StringBuilder sb, MethodNode mth, boolean analysis, boolean ssa) {
+	static void dump(StringBuilder sb, MethodNode mth, boolean analysis, boolean ssa, boolean typed) {
 		sb.append("M ").append(mth.getMethodInfo().getRawFullId()).append('\n');
 		for (ExceptionHandler h : mth.getExceptionHandlers()) {
 			sb.append("H ").append(h.getHandlerOffset()).append(" types=[")
@@ -283,7 +306,7 @@ public class BlockDump {
 			}
 		}
 		if (ssa) {
-			dumpSsa(sb, mth);
+			dumpSsa(sb, mth, typed);
 		}
 	}
 }

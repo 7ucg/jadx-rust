@@ -78,6 +78,13 @@ pub fn process_overrides(root: &mut Root) {
             }
         }
     }
+    for (m, attr) in &attrs {
+        if let (MthRef::App(c, i), [base]) = (m, attr.base_methods.as_slice()) {
+            if let Some(d) = details(root, base) {
+                root.classes[*c].methods[*i].override_base_decl = Some(d.decl_class);
+            }
+        }
+    }
 }
 
 fn collect_super_types(root: &Root, cidx: usize) -> Option<SuperTypes> {

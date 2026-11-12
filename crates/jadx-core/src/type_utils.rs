@@ -81,6 +81,23 @@ impl<'a> TypeUtils<'a> {
         expand_vars(ty, &vars)
     }
 
+    /// `checkForUnknownTypeVars`: the first type variable not declared at the method.
+    pub fn check_for_unknown_type_vars(
+        &self,
+        cls: usize,
+        mth: usize,
+        check: &ArgType,
+    ) -> Option<ArgType> {
+        let known = self.known_type_vars_at_method(cls, mth);
+        check.visit_types(&mut |t: &ArgType| {
+            if t.is_generic_type() && !known.contains(t) {
+                Some(t.clone())
+            } else {
+                None
+            }
+        })
+    }
+
     pub fn class_generics(&self, ty: &ArgType) -> Vec<ArgType> {
         if let Some(idx) = self.root.resolve_class(ty) {
             return self.root.classes[idx].generics.clone();
@@ -200,9 +217,19 @@ impl<'a> TypeUtils<'a> {
         instance_type: &ArgType,
         type_with_generic: &ArgType,
     ) -> Option<ArgType> {
+        self.replace_class_generics_from(instance_type, instance_type, type_with_generic)
+    }
+
+    /// `replaceClassGenerics(instanceType, genericSourceType, typeWithGeneric)`
+    pub fn replace_class_generics_from(
+        &self,
+        instance_type: &ArgType,
+        generic_source_type: &ArgType,
+        type_with_generic: &ArgType,
+    ) -> Option<ArgType> {
         let mut map = TypeMap::new();
         if let Some(vars) = self.class_type_vars(instance_type) {
-            map = merge_type_maps(map, vars.type_vars_map_for(instance_type));
+            map = merge_type_maps(map, vars.type_vars_map_for(generic_source_type));
         }
         map = merge_type_maps(map, self.type_variables_mapping(instance_type));
         let mut outer = instance_type.outer_type().cloned();

@@ -283,6 +283,9 @@ fn insn_nodes(dexes: &[DexFile], blocks: bool, analysis: bool, ssa: bool) -> Res
                 continue;
             };
             let id = format!("{}.{}", cls.info.raw_name(), m.info.short_id());
+            if std::env::var("JADX_RS_TRACE").is_ok() {
+                eprintln!("TRACE {id}");
+            }
             let code = dex.code_item(code_off)?;
             let raw = jadx_dex_input::insns::decode_insn_data(&code.insns)?;
             let ctx = MethodCtx {

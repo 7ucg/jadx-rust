@@ -476,6 +476,7 @@ pub mod iflag {
     pub const FALL_THROUGH: u64 = 1 << 7;
     pub const DONT_INLINE: u64 = 1 << 8;
     pub const EXPLICIT_CAST: u64 = 1 << 9;
+    pub const SOFT_CAST: u64 = 1 << 10;
 
     pub const NAMES: &[(u64, &str)] = &[
         (TRY_ENTER, "TRY_ENTER"),
@@ -488,6 +489,7 @@ pub mod iflag {
         (FALL_THROUGH, "FALL_THROUGH"),
         (DONT_INLINE, "DONT_INLINE"),
         (EXPLICIT_CAST, "EXPLICIT_CAST"),
+        (SOFT_CAST, "SOFT_CAST"),
     ];
 }
 
@@ -515,6 +517,9 @@ pub struct InsnNode {
     pub catch: Option<Vec<HandlerId>>,
     /// `AType.EXC_HANDLER`: this instruction starts the given handler.
     pub exc_handler: Option<HandlerId>,
+    /// `AType.METHOD_DETAILS` (attached by `AttachMethodDetails`): the method the details were
+    /// resolved for.
+    pub details: Option<MethodInfo>,
 }
 
 impl InsnNode {
@@ -530,6 +535,7 @@ impl InsnNode {
             flags: 0,
             catch: None,
             exc_handler: None,
+            details: None,
         }
     }
     pub fn plain(ty: InsnType) -> Self {
@@ -546,6 +552,7 @@ impl InsnNode {
             && self.error.is_none()
             && self.catch.is_none()
             && self.exc_handler.is_none()
+            && self.details.is_none()
     }
 
     /// `copyAttributesFrom`: flags are merged, attributes of the other node replace ours.
@@ -562,6 +569,9 @@ impl InsnNode {
         }
         if other.exc_handler.is_some() {
             self.exc_handler = other.exc_handler;
+        }
+        if other.details.is_some() {
+            self.details = other.details.clone();
         }
     }
 

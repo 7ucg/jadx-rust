@@ -483,6 +483,9 @@ fn dump_cfg_impl(
             out.push('\n');
         }
     }
+    if ssa && cfg.types_done {
+        let _ = writeln!(out, "E {}", cfg.errors.len());
+    }
     if ssa {
         let locs = insn_locations(cfg);
         let mut cv_ids: Vec<usize> = Vec::new();
@@ -506,6 +509,23 @@ fn dump_cfg_impl(
                 uses.join(","),
                 phis
             );
+            if cfg.types_done {
+                let bounds: Vec<String> = var
+                    .bounds
+                    .iter()
+                    .map(|b| {
+                        let k = match b.kind() {
+                            crate::model::ssa::BoundKind::Assign => "A",
+                            crate::model::ssa::BoundKind::Use => "U",
+                        };
+                        match b {
+                            crate::model::ssa::TypeBound::Const { ty, .. } => format!("{k}:{ty}"),
+                            _ => format!("{k}:dyn"),
+                        }
+                    })
+                    .collect();
+                let _ = write!(out, " ty={} bounds=[{}]", var.ty, bounds.join(","));
+            }
             if let Some(cv) = var.code_var {
                 let n = match cv_ids.iter().position(|c| *c == cv) {
                     Some(n) => n,

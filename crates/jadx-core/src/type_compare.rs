@@ -112,6 +112,16 @@ impl<'a> TypeCompare<'a> {
         Conflict
     }
 
+    /// `ArgTypeComparator.compare`
+    pub fn comparator(&self, a: &ArgType, b: &ArgType) -> i32 {
+        match self.compare_types(a, b) {
+            TypeCompareEnum::Conflict => -2,
+            TypeCompareEnum::Wider | TypeCompareEnum::WiderByGeneric => -1,
+            TypeCompareEnum::Narrow | TypeCompareEnum::NarrowByGeneric => 1,
+            _ => 0,
+        }
+    }
+
     pub fn compare_objects(&self, first: &ArgType, second: &ArgType) -> TypeCompareEnum {
         if first == second {
             return Equal;

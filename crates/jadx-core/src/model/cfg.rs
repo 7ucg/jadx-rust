@@ -268,6 +268,12 @@ pub struct MethodCfg {
     pub code_vars: Vec<CodeVar>,
     /// Warning comments attached to the method (`addWarnComment`).
     pub warnings: Vec<String>,
+    /// Errors attached to the method (`addError`).
+    pub errors: Vec<String>,
+    /// Code size in 16-bit units (`getInsnsCount`).
+    pub units_count: usize,
+    /// Type inference ran (types are meaningful).
+    pub types_done: bool,
 }
 
 impl MethodCfg {

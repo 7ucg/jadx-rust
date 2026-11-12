@@ -32,7 +32,9 @@ pub fn build_blocks(
         .any(|i| i.ty == InsnType::MoveException);
     process_instructions(&mut decoded.insns).map_err(|e| e.0)?;
     let handler_list: Vec<usize> = (0..handlers.len()).collect();
+    let units_count = decoded.insns.len();
     let mut cfg = MethodCfg {
+        units_count,
         handlers,
         handler_list,
         compute_post_dom: has_switch || has_move_exc,
@@ -89,7 +91,7 @@ impl FrameInfo {
 }
 
 /// [`build_processed_blocks`] followed by `SSATransform` and, depending on `stage`, the later
-/// SSA passes (3 = `MoveInlineVisitor`, 4 = `ConstructorVisitor`, 5 = `InitCodeVariables`, 6 = `ConstInlineVisitor`).
+/// SSA passes (3 = `MoveInlineVisitor`, 4 = `ConstructorVisitor`, 5 = `InitCodeVariables`, 6 = `ConstInlineVisitor`, 7 = `TypeInferenceVisitor`).
 pub fn build_ssa(
     decoded: DecodedMethod,
     tries: &[TryData],
@@ -101,6 +103,7 @@ pub fn build_ssa(
 ) -> Result<MethodCfg, String> {
     let void_return = root.classes[cls].methods[mth].info.return_type.is_void();
     let mut cfg = build_processed_blocks(decoded, tries, &root.ctx, &root.clsp, void_return)?;
+    attach_method_details(&mut cfg, root);
     crate::passes::ssa::init_arguments(
         &mut cfg,
         frame.regs_count,
@@ -124,5 +127,27 @@ pub fn build_ssa(
     if stage >= 6 {
         crate::passes::const_inline::const_inline(&mut cfg)?;
     }
+    if std::env::var("JADX_RS_VALIDATE").is_ok() {
+        for p in cfg.validate_ssa() {
+            eprintln!("SSA-CHECK {p}");
+        }
+    }
+    if stage >= 7 {
+        crate::typeinf::run_type_inference(&mut cfg, root, cls, mth)?;
+    }
     Ok(cfg)
+}
+
+/// `AttachMethodDetails`: remember the resolved details of every invoke.
+fn attach_method_details(cfg: &mut MethodCfg, root: &crate::model::node::Root) {
+    for i in 0..cfg.insns.len() {
+        if cfg.insns[i].ty != InsnType::Invoke {
+            continue;
+        }
+        if let Some(m) = crate::method_utils::call_method(&cfg.insns[i]).cloned() {
+            if crate::method_utils::get_method_details(root, &m).is_some() {
+                cfg.insns[i].details = Some(m);
+            }
+        }
+    }
 }

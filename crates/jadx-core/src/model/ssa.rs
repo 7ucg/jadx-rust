@@ -73,6 +73,78 @@ pub struct SsaVar {
     pub code_var: Option<CodeVarId>,
     /// Current type (`getTypeInfo().getType()`), unknown until type inference.
     pub ty: ArgType,
+    /// `getTypeInfo().getBounds()` (insertion ordered set).
+    pub bounds: Vec<TypeBound>,
+}
+
+/// `BoundEnum`
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BoundKind {
+    Assign,
+    Use,
+}
+
+/// `ITypeBound`
+#[derive(Debug, Clone)]
+pub enum TypeBound {
+    /// `TypeBoundConst`
+    Const {
+        kind: BoundKind,
+        ty: ArgType,
+        arg: Option<ArgRef>,
+    },
+    /// `TypeBoundCheckCastAssign`
+    CheckCastAssign { insn: InsnId },
+    /// `TypeBoundFieldGetAssign`
+    FieldGetAssign { insn: InsnId, init_type: ArgType },
+    /// `TypeBoundInvokeAssign`
+    InvokeAssign {
+        insn: InsnId,
+        generic_return: ArgType,
+    },
+    /// `TypeBoundInvokeUse`
+    InvokeUse {
+        insn: InsnId,
+        arg: ArgRef,
+        generic_arg: ArgType,
+    },
+}
+
+impl PartialEq for TypeBound {
+    fn eq(&self, other: &Self) -> bool {
+        use TypeBound::*;
+        match (self, other) {
+            (
+                Const {
+                    kind: k1, ty: t1, ..
+                },
+                Const {
+                    kind: k2, ty: t2, ..
+                },
+            ) => k1 == k2 && t1 == t2,
+            (CheckCastAssign { insn: a }, CheckCastAssign { insn: b }) => a == b,
+            (FieldGetAssign { insn: a, .. }, FieldGetAssign { insn: b, .. }) => a == b,
+            (InvokeAssign { insn: a, .. }, InvokeAssign { insn: b, .. }) => a == b,
+            (InvokeUse { insn: a, .. }, InvokeUse { insn: b, .. }) => a == b,
+            _ => false,
+        }
+    }
+}
+
+impl TypeBound {
+    pub fn kind(&self) -> BoundKind {
+        match self {
+            TypeBound::Const { kind, .. } => *kind,
+            TypeBound::CheckCastAssign { .. }
+            | TypeBound::FieldGetAssign { .. }
+            | TypeBound::InvokeAssign { .. } => BoundKind::Assign,
+            TypeBound::InvokeUse { .. } => BoundKind::Use,
+        }
+    }
+
+    pub fn is_dynamic(&self) -> bool {
+        !matches!(self, TypeBound::Const { .. })
+    }
 }
 
 impl SsaVar {
@@ -88,7 +160,10 @@ impl MethodCfg {
     /// Register argument at `r` (panics if the location is empty).
     pub fn reg(&self, r: ArgRef) -> &RegisterArg {
         match r {
-            ArgRef::Result(i) => self.insns[i].result.as_ref().expect("result register"),
+            ArgRef::Result(i) => self.insns[i]
+                .result
+                .as_ref()
+                .unwrap_or_else(|| panic!("result register of insn {i} {:?}", self.insns[i].ty)),
             ArgRef::Arg(i, k) => match &self.insns[i].args[k] {
                 InsnArg::Register(reg) => reg,
                 other => panic!("not a register: {other:?}"),
@@ -212,6 +287,7 @@ impl MethodCfg {
             used_in_phi: None,
             code_var: None,
             ty: ArgType::unknown_any(),
+            bounds: Vec::new(),
         });
         self.reg_mut(assign).svar = Some(id);
         self.svar_list.push(id);
@@ -683,5 +759,140 @@ impl MethodCfg {
         if let Some(v) = self.insns[insn].result.as_ref().and_then(|r| r.svar) {
             self.svars[v].ty = ty;
         }
+    }
+}
+
+impl MethodCfg {
+    /// `InsnArg.getType` for any argument location.
+    pub fn arg_type(&self, at: ArgRef) -> ArgType {
+        if let ArgRef::Arg(i, k) = at {
+            match &self.insns[i].args[k] {
+                InsnArg::Literal(l) => return l.ty.clone(),
+                InsnArg::Wrapped(w) => return w.ty.clone(),
+                InsnArg::Register(_) => {}
+            }
+        }
+        self.reg_type(at)
+    }
+
+    /// `InsnArg.isTypeImmutable`
+    pub fn arg_type_immutable(&self, at: ArgRef) -> bool {
+        if let ArgRef::Arg(i, k) = at {
+            if !matches!(&self.insns[i].args[k], InsnArg::Register(_)) {
+                return false;
+            }
+        }
+        let r = self.reg(at);
+        match r.svar {
+            Some(v) => self.svar_type_immutable(v),
+            None => r.immutable_type,
+        }
+    }
+
+    /// `SSAVar.isTypeImmutable`
+    pub fn svar_type_immutable(&self, var: SsaId) -> bool {
+        self.reg(self.svars[var].assign).immutable_type
+    }
+
+    /// `InsnArg.setType`
+    pub fn set_arg_type(&mut self, at: ArgRef, ty: ArgType) -> Result<(), String> {
+        if let ArgRef::Arg(i, k) = at {
+            match &mut self.insns[i].args[k] {
+                InsnArg::Literal(l) => {
+                    l.ty = ty;
+                    return Ok(());
+                }
+                InsnArg::Wrapped(w) => {
+                    w.ty = ty;
+                    return Ok(());
+                }
+                InsnArg::Register(_) => {}
+            }
+        }
+        let Some(var) = self.reg(at).svar else {
+            return Err("Can't change type for register without SSA variable".into());
+        };
+        self.svar_set_type(var, ty)
+    }
+
+    /// `SSAVar.setType`
+    pub fn svar_set_type(&mut self, var: SsaId, ty: ArgType) -> Result<(), String> {
+        if let Some(im) = self.svar_immutable_type(var) {
+            if im != ty {
+                return Err(format!(
+                    "Can't change immutable type {im} to {ty} for r{}v{}",
+                    self.svars[var].reg_num, self.svars[var].version
+                ));
+            }
+        }
+        self.svars[var].ty = ty.clone();
+        if let Some(cv) = self.svars[var].code_var {
+            self.code_vars[cv].ty = Some(ty);
+        }
+        Ok(())
+    }
+
+    /// `SSAVar.markAsImmutable`
+    pub fn svar_mark_immutable(&mut self, var: SsaId, ty: ArgType) {
+        let at = self.svars[var].assign;
+        let r = self.reg_mut(at);
+        r.immutable_type = true;
+        if r.init_type != ty {
+            r.init_type = ty;
+        }
+    }
+
+    /// Add a bound if not present (`LinkedHashSet.add`).
+    pub fn svar_add_bound(&mut self, var: SsaId, bound: TypeBound) {
+        if !self.svars[var].bounds.contains(&bound) {
+            self.svars[var].bounds.push(bound);
+        }
+    }
+}
+
+impl MethodCfg {
+    /// Consistency check of SSA variables, their uses and the registers of the block
+    /// instructions (developer aid, see `JADX_RS_VALIDATE`).
+    pub fn validate_ssa(&mut self) -> Vec<String> {
+        let mut problems = Vec::new();
+        for v in self.svar_list.clone() {
+            let (a, uses) = (self.svars[v].assign, self.svars[v].uses.clone());
+            match self.try_reg_mut(a).map(|r| r.svar) {
+                Some(s) if s == Some(v) => {}
+                other => problems.push(format!("var {v}: assign {a:?} holds {other:?}")),
+            }
+            for u in uses {
+                match self.try_reg_mut(u).map(|r| r.svar) {
+                    Some(s) if s == Some(v) => {}
+                    other => problems.push(format!("var {v}: use {u:?} holds {other:?}")),
+                }
+            }
+        }
+        for b in self.blocks.clone() {
+            for i in self.arena[b].insns.clone() {
+                for k in 0..self.insns[i].args.len() {
+                    let var = match &self.insns[i].args[k] {
+                        InsnArg::Register(r) => r.svar,
+                        _ => continue,
+                    };
+                    match var {
+                        Some(v) if self.svar_list.contains(&v) => {
+                            if !self.svars[v].uses.contains(&ArgRef::Arg(i, k)) {
+                                problems.push(format!(
+                                    "insn {i} ({:?} @{:x}) arg {k}: not in uses of var {v}",
+                                    self.insns[i].ty, self.insns[i].offset
+                                ));
+                            }
+                        }
+                        Some(v) => problems.push(format!(
+                            "insn {i} ({:?} @{:x}) arg {k}: removed var {v} (assign {:?})",
+                            self.insns[i].ty, self.insns[i].offset, self.svars[v].assign
+                        )),
+                        None => {}
+                    }
+                }
+            }
+        }
+        problems
     }
 }
