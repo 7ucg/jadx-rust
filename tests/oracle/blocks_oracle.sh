@@ -11,7 +11,7 @@ JAVAC="${JDK_BIN:+$JDK_BIN/}javac"; JAVA="${JDK_BIN:+$JDK_BIN/}java"
 LIB="$JADX_REF/jadx-cli/build/install/jadx/lib/*"
 JOPTS="-Duser.language=en -Duser.country=US -Xss16m"
 STAGE="${STAGE:-0}"
-SUB="insn-blocks"; [ "$STAGE" = "1" ] && SUB="insn-cfg"; [ "$STAGE" = "2" ] && SUB="insn-ssa"
+SUB="insn-blocks"; [ "$STAGE" = "1" ] && SUB="insn-cfg"; [ "$STAGE" -ge 2 ] && SUB="insn-ssa"; export JADX_RS_STAGE="$STAGE"
 mkdir -p "$WORK/cls"
 cargo build --release -p jadx-cli --manifest-path "$ROOT/Cargo.toml" 2>/dev/null
 "$JAVAC" -cp "$LIB" -d "$WORK/cls" "$ROOT/tests/oracle/java/InsnNodeDump.java" "$ROOT/tests/oracle/java/BlockDump.java"

@@ -301,6 +301,10 @@ fn insn_nodes(dexes: &[DexFile], blocks: bool, analysis: bool, ssa: bool) -> Res
                 };
                 let tries = dex.tries_api(&code)?;
                 let void = m.info.return_type.is_void();
+                let stage: u32 = std::env::var("JADX_RS_STAGE")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(2);
                 let built = if ssa {
                     let frame = jadx_core::passes::pipeline::FrameInfo {
                         regs_count: code.registers_size as usize,
@@ -309,7 +313,7 @@ fn insn_nodes(dexes: &[DexFile], blocks: bool, analysis: bool, ssa: bool) -> Res
                         arg_types: m.arg_types.clone(),
                     };
                     jadx_core::passes::pipeline::build_ssa(
-                        decoded, &tries, &root.ctx, &root.clsp, void, &frame,
+                        decoded, &tries, &root.ctx, &root.clsp, void, &frame, stage,
                     )
                 } else if analysis {
                     jadx_core::passes::pipeline::build_processed_blocks(

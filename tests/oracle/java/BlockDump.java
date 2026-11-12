@@ -22,6 +22,7 @@ import jadx.core.dex.visitors.ProcessInstructionsVisitor;
 import jadx.core.dex.visitors.blocks.BlockProcessor;
 import jadx.core.dex.visitors.blocks.BlockFinisher;
 import jadx.core.dex.visitors.ssa.SSATransform;
+import jadx.core.dex.visitors.MoveInlineVisitor;
 import jadx.core.dex.instructions.PhiInsn;
 import jadx.core.dex.instructions.args.RegisterArg;
 import jadx.core.dex.instructions.args.SSAVar;
@@ -68,6 +69,9 @@ public class BlockDump {
 							new BlockFinisher().visit(mth);
 							new SSATransform().visit(mth);
 							InsnNodeDump.SSA = true;
+						}
+						if (stage >= 3) {
+							new MoveInlineVisitor().visit(mth);
 						}
 					} catch (Throwable e) {
 						sb.append("M ").append(mth.getMethodInfo().getRawFullId()).append(" LOAD_ERROR\n");

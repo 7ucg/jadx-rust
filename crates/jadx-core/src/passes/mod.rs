@@ -6,6 +6,7 @@ pub mod block_splitter;
 pub mod block_utils;
 pub mod dominators;
 pub mod exception_handler;
+pub mod move_inline;
 pub mod override_methods;
 pub mod pipeline;
 pub mod process_insns;

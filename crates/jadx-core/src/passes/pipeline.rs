@@ -65,7 +65,8 @@ pub struct FrameInfo {
     pub arg_types: Vec<crate::model::types::ArgType>,
 }
 
-/// [`build_processed_blocks`] followed by `SSATransform`.
+/// [`build_processed_blocks`] followed by `SSATransform` and, depending on `stage`, the later
+/// SSA passes (3 = `MoveInlineVisitor`).
 pub fn build_ssa(
     decoded: DecodedMethod,
     tries: &[TryData],
@@ -73,6 +74,7 @@ pub fn build_ssa(
     clsp: &crate::clsp::ClspGraph,
     void_return: bool,
     frame: &FrameInfo,
+    stage: u32,
 ) -> Result<MethodCfg, String> {
     let mut cfg = build_processed_blocks(decoded, tries, root, clsp, void_return)?;
     crate::passes::ssa::init_arguments(
@@ -83,5 +85,8 @@ pub fn build_ssa(
         &frame.arg_types,
     );
     crate::passes::ssa::ssa_transform(&mut cfg)?;
+    if stage >= 3 {
+        crate::passes::move_inline::move_inline(&mut cfg)?;
+    }
     Ok(cfg)
 }

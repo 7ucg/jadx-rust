@@ -380,3 +380,28 @@ impl MethodCfg {
         }
     }
 }
+
+impl MethodCfg {
+    /// `InsnNode.replaceArg(from, to)` for a direct argument: unbinds the old register's use and
+    /// attaches the new argument to its SSA variable.
+    pub fn replace_arg(&mut self, insn: InsnId, index: usize, to: InsnArg) {
+        self.unbind_arg_usage(insn, index);
+        let var = match &to {
+            InsnArg::Register(r) => r.svar,
+            _ => None,
+        };
+        self.insns[insn].args[index] = to;
+        if let Some(v) = var {
+            self.svar_use(v, ArgRef::Arg(insn, index));
+        }
+    }
+
+    /// `InsnNode.inheritMetadata` (no source lines or comments are modelled yet).
+    pub fn inherit_metadata(&mut self, target: InsnId, source: InsnId) {
+        let off = self.insns[source].offset;
+        let t = &mut self.insns[target];
+        if t.ty == InsnType::Return && t.contains_flag(iflag::SYNTHETIC) {
+            t.offset = off;
+        }
+    }
+}
