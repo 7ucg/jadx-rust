@@ -20,6 +20,7 @@ fn method(name: &str, code: Option<u32>) -> MethodData {
         signature: None,
         code_offset: code,
         annotation_refs: vec![],
+        attrs: Default::default(),
     }
 }
 
@@ -41,9 +42,11 @@ fn class(desc: &str, sup: &str, methods: Vec<MethodData>, fields: Vec<&str>) -> 
                 signature: None,
                 const_value: None,
                 annotation_refs: vec![],
+                attrs: Default::default(),
             })
             .collect(),
         methods,
+        attrs: Default::default(),
     }
 }
 

@@ -373,7 +373,7 @@ fn insn_nodes(
             let ctx = MethodCtx {
                 return_type: m.return_type.clone(),
                 parent_class: cls.info.clone(),
-                root: root.clone(),
+                root: &root,
             };
             let decoded = InsnDecoder::new(dex, &ctx).process(&raw, code.insns.len());
             if blocks || analysis || ssa {

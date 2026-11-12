@@ -5,11 +5,17 @@
 //! instructions that were inlined into other instructions are wrapped arguments and are
 //! printed as expressions.
 
+pub mod annotation_gen;
+pub mod class_body;
 pub mod class_gen;
+pub mod code_gen;
 pub mod code_writer;
+pub mod condition_gen;
 pub mod insn_gen;
 pub mod method_gen;
 pub mod name_gen;
+pub mod prepare;
+pub mod region_gen;
 pub mod string_utils;
 pub mod type_gen;
 mod unicode_tables;
@@ -22,6 +28,7 @@ pub use code_writer::{CodeInfo, CodeWriter};
 pub use insn_gen::{Flags, InsnGen};
 pub use method_gen::MethodGen;
 pub use name_gen::NameGen;
+pub use region_gen::RegionGen;
 pub use string_utils::{IntegerFormat, StringUtils};
 
 /// `CodegenException`
@@ -71,3 +78,42 @@ impl fmt::Display for CodegenError {
 }
 
 impl std::error::Error for CodegenError {}
+
+/// `CommentsLevel`
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum CommentsLevel {
+    None,
+    UserOnly,
+    Error,
+    Warn,
+    Info,
+    Debug,
+}
+
+impl CommentsLevel {
+    /// `filter`: a comment of level `self` is shown when `limit` is at least that level.
+    pub fn filter(self, limit: CommentsLevel) -> bool {
+        self <= limit
+    }
+}
+
+/// `DecompilationMode`
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DecompilationMode {
+    Auto,
+    Restructure,
+    Simple,
+    Fallback,
+}
+
+/// Provides the processed code of the methods of the input (decoding and the pass pipeline).
+pub trait MethodLoader {
+    /// Code state of method `mth` of class `cls`; methods without code get a state with only the
+    /// arguments.
+    fn load(&self, cls: usize, mth: usize) -> Result<crate::model::cfg::MethodCfg, String>;
+
+    /// Line of the source code the method starts at (`0` if unknown).
+    fn source_line(&self, _cls: usize, _mth: usize) -> u32 {
+        0
+    }
+}

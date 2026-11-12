@@ -209,3 +209,57 @@ impl DexFile {
         Ok(out)
     }
 }
+
+impl DexFile {
+    /// Source line positions `(code offset, line)` of a `debug_info_item` in execution order.
+    pub fn debug_lines(&self, off: u32, code_size: u32) -> Result<Vec<(u32, u32)>> {
+        let mut out = Vec::new();
+        if off == 0 {
+            return Ok(out);
+        }
+        let mut r = Reader::new(self.bytes(), off as usize);
+        let mut line = r.uleb128()? as i64;
+        let params = r.uleb128()?;
+        for _ in 0..params {
+            r.uleb128p1()?;
+        }
+        let mut addr: u32 = 0;
+        loop {
+            let op = r.u8()?;
+            match op {
+                0x00 => break,
+                0x01 => {
+                    addr = addr
+                        .saturating_add(r.uleb128()?)
+                        .min(code_size.saturating_sub(1))
+                }
+                0x02 => line += i64::from(r.sleb128()?),
+                0x03 => {
+                    r.uleb128()?;
+                    r.uleb128p1()?;
+                    r.uleb128p1()?;
+                }
+                0x04 => {
+                    r.uleb128()?;
+                    r.uleb128p1()?;
+                    r.uleb128p1()?;
+                    r.uleb128p1()?;
+                }
+                0x05 | 0x06 => {
+                    r.uleb128()?;
+                }
+                0x07 | 0x08 => {}
+                0x09 => {
+                    r.uleb128p1()?;
+                }
+                _ => {
+                    let adj = u32::from(op) - 0x0a;
+                    line += -4 + i64::from(adj % 15);
+                    addr = (addr + adj / 15).min(code_size.saturating_sub(1));
+                    out.push((addr, line.max(0) as u32));
+                }
+            }
+        }
+        Ok(out)
+    }
+}

@@ -302,7 +302,31 @@ pub struct MethodCfg {
     pub regions: super::region::Regions,
 }
 
+/// Warnings added by `addWarn` (they also mark the method code as inconsistent), identified by
+/// their text.
+const INCONSISTENT_WARN_PREFIXES: &[&str] = &[
+    "Code restructure failed",
+    "Incorrect condition in loop",
+    "Can't wrap try/catch for region",
+    "Unexpected end of synchronized block",
+    "Missing exception handler attribute",
+    "Incorrect type for fill-array insn",
+    "Bottom block not found for handler",
+    "CFG modification limit reached",
+    "Incorrect type for immutable var",
+    "Unknown variable types count",
+    "Unsupported boolean condition",
+    "Failed to move",
+];
+
 impl MethodCfg {
+    /// `AFlag.INCONSISTENT_CODE`
+    pub fn is_inconsistent(&self) -> bool {
+        self.warnings
+            .iter()
+            .any(|w| INCONSISTENT_WARN_PREFIXES.iter().any(|p| w.starts_with(p)))
+    }
+
     pub fn block(&self, id: BlockId) -> &BlockNode {
         &self.arena[id]
     }

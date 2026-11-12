@@ -61,7 +61,7 @@ pub fn insn_code(dexes: &[DexFile]) -> Result<()> {
             let ctx = MethodCtx {
                 return_type: m.return_type.clone(),
                 parent_class: cls.info.clone(),
-                root: root.clone(),
+                root: &root,
             };
             let Ok(decoded) = InsnDecoder::new(dex, &ctx).process(&raw, code.insns.len()) else {
                 writeln!(out, "M {id} LOAD_ERROR")?;

@@ -91,6 +91,7 @@ impl JavaClass {
                 ty: f.descriptor,
                 access_flags: f.access_flags,
                 signature: f.signature,
+                attrs: Default::default(),
             })
             .collect();
         let mut methods = Vec::new();
@@ -108,6 +109,7 @@ impl JavaClass {
                 signature: m.signature,
                 code_offset: m.code_offset,
                 annotation_refs: refs,
+                attrs: Default::default(),
             });
         }
         Ok(ClassData {
@@ -120,6 +122,7 @@ impl JavaClass {
             fields,
             methods,
             type_desc,
+            attrs: Default::default(),
         })
     }
 

@@ -2,11 +2,14 @@
 //! bookkeeping and the short/full name decision.
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 use super::code_writer::CodeWriter;
+use super::name_gen::NameGen;
 use super::string_utils::StringUtils;
-use super::CodegenError;
+use super::{CodegenError, CommentsLevel, DecompilationMode, MethodLoader};
+use crate::model::cfg::MethodCfg;
 use crate::model::info::ClassInfo;
 use crate::model::node::Root;
 use crate::model::types::{ArgType, PrimitiveType, WildcardBound};
@@ -23,9 +26,36 @@ pub struct GenEnv<'a> {
     pub use_imports: bool,
     /// `JadxArgs.isFallbackMode`
     pub fallback: bool,
+    /// `JadxArgs.getCommentsLevel`
+    pub comments_level: CommentsLevel,
+    /// `JadxArgs.isShowInconsistentCode`
+    pub show_inconsistent_code: bool,
+    /// `JadxArgs.getDecompilationMode`
+    pub decompilation_mode: DecompilationMode,
+    /// `JadxArgs.getCodeNewLineStr`
+    pub code_new_line_str: String,
+    /// `JadxArgs.getCodeIndentStr`
+    pub code_indent_str: String,
+    /// Source of the processed code of the methods.
+    pub loader: Option<&'a dyn MethodLoader>,
+    cfgs: RefCell<HashMap<(usize, usize), Rc<Result<MethodCfg, String>>>>,
+    errors: RefCell<Vec<String>>,
 }
 
 impl<'a> GenEnv<'a> {
+    /// Environment with the member classes and root packages computed by the caller.
+    pub fn with_inner_classes(
+        root: &'a Root,
+        inner_classes: Vec<Vec<usize>>,
+        root_pkgs: HashSet<String>,
+    ) -> Self {
+        GenEnv {
+            inner_classes,
+            root_pkgs,
+            ..GenEnv::empty(root)
+        }
+    }
+
     pub fn new(root: &'a Root) -> Self {
         let mut inner_classes: Vec<Vec<usize>> = vec![Vec::new(); root.classes.len()];
         let mut root_pkgs = HashSet::new();
@@ -39,13 +69,58 @@ impl<'a> GenEnv<'a> {
             }
         }
         GenEnv {
-            root,
             inner_classes,
             root_pkgs,
+            ..GenEnv::empty(root)
+        }
+    }
+
+    fn empty(root: &'a Root) -> Self {
+        GenEnv {
+            root,
+            inner_classes: Vec::new(),
+            root_pkgs: HashSet::new(),
             string_utils: StringUtils::default(),
             use_imports: true,
             fallback: false,
+            comments_level: CommentsLevel::Info,
+            show_inconsistent_code: false,
+            decompilation_mode: DecompilationMode::Auto,
+            code_new_line_str: "\n".to_string(),
+            code_indent_str: "    ".to_string(),
+            loader: None,
+            cfgs: RefCell::new(HashMap::new()),
+            errors: RefCell::new(Vec::new()),
         }
+    }
+
+    /// Record an error of the code generation (reported with the class).
+    pub fn add_error(&self, msg: String) {
+        self.errors.borrow_mut().push(msg);
+    }
+
+    /// Errors recorded so far.
+    pub fn errors(&self) -> Vec<String> {
+        self.errors.borrow().clone()
+    }
+
+    /// `checkCommentsLevel`
+    pub fn check_comments_level(&self, required: CommentsLevel) -> bool {
+        required.filter(self.comments_level)
+    }
+
+    /// Processed code of a method (loaded once).
+    pub fn method_cfg(&self, cls: usize, mth: usize) -> Rc<Result<MethodCfg, String>> {
+        if let Some(c) = self.cfgs.borrow().get(&(cls, mth)) {
+            return c.clone();
+        }
+        let loaded = match self.loader {
+            Some(l) => l.load(cls, mth),
+            None => Err("method code is not available".to_string()),
+        };
+        let rc = Rc::new(loaded);
+        self.cfgs.borrow_mut().insert((cls, mth), rc.clone());
+        rc
     }
 
     /// `ClassInfo.fromType`
@@ -91,6 +166,12 @@ pub struct ClassGen<'a> {
     body_gen_started: Cell<bool>,
     /// Own member classes are not in scope in the class header (JLS 6.3).
     in_class_header: Cell<bool>,
+    fallback: bool,
+    use_imports: bool,
+    /// Names used by the method that contains this (anonymous) class.
+    outer_name_gen: RefCell<Option<NameGen>>,
+    /// Length of the code at the start of the class body.
+    pub(super) cls_decl_offset: Cell<usize>,
 }
 
 impl<'a> ClassGen<'a> {
@@ -102,6 +183,10 @@ impl<'a> ClassGen<'a> {
             imports: RefCell::new(HashSet::new()),
             body_gen_started: Cell::new(false),
             in_class_header: Cell::new(false),
+            fallback: env.fallback,
+            use_imports: env.use_imports,
+            outer_name_gen: RefCell::new(None),
+            cls_decl_offset: Cell::new(0),
         }
     }
 
@@ -109,8 +194,37 @@ impl<'a> ClassGen<'a> {
     pub fn with_parent(env: &'a GenEnv<'a>, cls: usize, parent: &'a ClassGen<'a>) -> Self {
         ClassGen {
             parent: Some(parent),
+            fallback: parent.fallback,
+            use_imports: parent.use_imports,
             ..ClassGen::new(env, cls)
         }
+    }
+
+    /// `MethodGen.getFallbackMethodGen`: generator without imports in fallback mode.
+    pub fn new_fallback(env: &'a GenEnv<'a>, cls: usize) -> Self {
+        ClassGen {
+            fallback: true,
+            use_imports: false,
+            ..ClassGen::new(env, cls)
+        }
+    }
+
+    pub fn use_imports(&self) -> bool {
+        self.use_imports
+    }
+
+    /// `getOuterNameGen`
+    pub fn outer_name_gen(&self) -> Option<NameGen> {
+        self.outer_name_gen.borrow().clone()
+    }
+
+    /// `setOuterNameGen`
+    pub fn set_outer_name_gen(&self, ng: NameGen) {
+        *self.outer_name_gen.borrow_mut() = Some(ng);
+    }
+
+    pub fn comments_level_info(&self) -> bool {
+        self.env.check_comments_level(CommentsLevel::Info)
     }
 
     pub fn env(&self) -> &'a GenEnv<'a> {
@@ -126,7 +240,7 @@ impl<'a> ClassGen<'a> {
     }
 
     pub fn is_fallback_mode(&self) -> bool {
-        self.env.fallback
+        self.fallback
     }
 
     pub fn is_body_gen_started(&self) -> bool {
@@ -153,7 +267,7 @@ impl<'a> ClassGen<'a> {
         }
     }
 
-    fn add_import(&self, ci: &ClassInfo) {
+    pub(super) fn add_import(&self, ci: &ClassInfo) {
         match self.parent {
             Some(p) => p.add_import(ci),
             None => {
@@ -291,7 +405,7 @@ impl<'a> ClassGen<'a> {
     fn use_class_internal(&self, use_cls: &ClassInfo, ext: &ClassInfo) -> String {
         let env = self.env;
         let mut full_name = env.full_name(ext);
-        if env.fallback || !env.use_imports {
+        if self.fallback || !self.use_imports {
             return full_name;
         }
         let short_name = env.short_name(ext);

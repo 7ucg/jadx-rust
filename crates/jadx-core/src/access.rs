@@ -17,6 +17,10 @@ pub const ACC_STRICT: u32 = 0x0800;
 pub const ACC_SYNTHETIC: u32 = 0x1000;
 pub const ACC_ANNOTATION: u32 = 0x2000;
 pub const ACC_ENUM: u32 = 0x4000;
+pub const ACC_MODULE: u32 = 0x8000;
+pub const ACC_CONSTRUCTOR: u32 = 0x10000;
+pub const ACC_DECLARED_SYNCHRONIZED: u32 = 0x20000;
+pub const ACC_DATA: u32 = 0x40000;
 
 /// What the flags belong to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,6 +78,18 @@ impl AccessInfo {
     pub fn is_synthetic(&self) -> bool {
         self.has(ACC_SYNTHETIC)
     }
+    pub fn is_constructor(&self) -> bool {
+        self.has(ACC_CONSTRUCTOR)
+    }
+    pub fn is_bridge(&self) -> bool {
+        self.has(ACC_BRIDGE)
+    }
+    pub fn is_var_args(&self) -> bool {
+        self.has(ACC_VARARGS)
+    }
+    pub fn is_synchronized(&self) -> bool {
+        self.has(ACC_SYNCHRONIZED | ACC_DECLARED_SYNCHRONIZED)
+    }
 
     /// Same flags with `flags` cleared.
     pub fn remove(self, flags: u32) -> Self {
@@ -109,7 +125,7 @@ impl AccessInfo {
         }
         match self.kind {
             AccessKind::Method => {
-                if self.has(ACC_SYNCHRONIZED) {
+                if self.is_synchronized() {
                     s.push_str("synchronized ");
                 }
                 if show_hidden && self.has(ACC_BRIDGE) {
@@ -127,6 +143,14 @@ impl AccessInfo {
             AccessKind::Class => {
                 if self.has(ACC_STRICT) {
                     s.push_str("strict ");
+                }
+                if show_hidden {
+                    if self.has(ACC_DATA) {
+                        s.push_str("/* data */ ");
+                    }
+                    if self.has(ACC_MODULE) {
+                        s.push_str("/* module-info */ ");
+                    }
                 }
             }
         }

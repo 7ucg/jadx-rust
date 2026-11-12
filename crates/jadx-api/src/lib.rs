@@ -15,9 +15,10 @@
 //! jadx.save().unwrap();
 //! ```
 
-pub mod access;
+pub use jadx_core::access;
 pub mod args;
 pub mod code;
+pub mod core_gen;
 pub mod decompiler;
 pub mod error;
 pub mod generator;
@@ -35,6 +36,7 @@ pub use args::{
     UserRenamesMappingsMode,
 };
 pub use code::{CodeWriter, ICodeInfo, SimpleCodeInfo};
+pub use core_gen::CoreClassGenerator;
 pub use decompiler::{class_output_path, ClassResult, JadxDecompiler, ProgressFn};
 pub use error::{ErrorsCounter, JadxError, Result};
 pub use generator::{

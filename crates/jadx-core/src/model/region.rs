@@ -155,6 +155,8 @@ pub struct Regions {
     pub request_code_shrink: bool,
     /// `AFlag.REQUEST_IF_REGION_OPTIMIZE`
     pub request_if_region_optimize: bool,
+    /// `AType.DECLARE_VARIABLES`: variables declared before the container is generated.
+    pub declare_vars: HashMap<Container, Vec<super::ssa::CodeVarId>>,
 }
 
 impl Regions {

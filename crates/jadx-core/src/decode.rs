@@ -21,10 +21,10 @@ fn err<T>(msg: impl Into<String>) -> Result<T, DecodeError> {
 
 /// What the decoder needs to know about the method being decoded.
 #[derive(Debug, Clone)]
-pub struct MethodCtx {
+pub struct MethodCtx<'r> {
     pub return_type: ArgType,
     pub parent_class: ClassInfo,
-    pub root: std::sync::Arc<crate::model::node::Root>,
+    pub root: &'r crate::model::node::Root,
 }
 
 /// Decoded instruction array indexed by code-unit offset (`None` at non-instruction offsets).
@@ -36,11 +36,11 @@ pub struct DecodedMethod {
 
 pub struct InsnDecoder<'a> {
     resolver: &'a dyn InsnResolver,
-    ctx: &'a MethodCtx,
+    ctx: &'a MethodCtx<'a>,
 }
 
 impl<'a> InsnDecoder<'a> {
-    pub fn new(resolver: &'a dyn InsnResolver, ctx: &'a MethodCtx) -> Self {
+    pub fn new(resolver: &'a dyn InsnResolver, ctx: &'a MethodCtx<'a>) -> Self {
         InsnDecoder { resolver, ctx }
     }
 

@@ -23,10 +23,10 @@ pub struct NameGen {
 
 impl NameGen {
     /// `new NameGen(mth, classGen)` for method `mth` of class `cls`.
-    pub fn new(env: &GenEnv<'_>, cls: usize, outer: Option<&NameGen>) -> Self {
+    pub fn new(env: &GenEnv<'_>, cls: usize, outer: Option<&NameGen>, fallback: bool) -> Self {
         let mut ng = NameGen {
             var_names: HashSet::new(),
-            fallback: env.fallback,
+            fallback,
             assigned: HashMap::new(),
         };
         if let Some(o) = outer {

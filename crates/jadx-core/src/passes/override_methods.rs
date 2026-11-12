@@ -116,6 +116,15 @@ pub fn process_overrides(root: &mut Root) {
     for (m, attr) in &cx.attrs {
         if let MthRef::App(c, i) = m {
             root.classes[*c].methods[*i].override_set = Some(attr.related);
+            let decls: Vec<ArgType> = attr
+                .override_list
+                .iter()
+                .filter_map(|o| details(root, o).map(|d| d.decl_class))
+                .collect();
+            let is_base = attr.base_methods.contains(m);
+            let node = &mut root.classes[*c].methods[*i];
+            node.override_decls = decls;
+            node.override_is_base = is_base;
             if let [base] = attr.base_methods.as_slice() {
                 if let Some(d) = details(root, base) {
                     root.classes[*c].methods[*i].override_base_decl = Some(d.decl_class);

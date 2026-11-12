@@ -2,7 +2,10 @@
 
 use std::collections::HashMap;
 
-use jadx_input_api::{AnnotationRef, ConstValue, FieldRefData, InnerClassData};
+use jadx_input_api::{
+    pack_annotations, AnnotationData, AnnotationRef, AnnotationVisibility, ConstValue,
+    EncodedValueData, FieldRefData, InnerClassData,
+};
 
 use crate::error::{DexError, Result};
 use crate::file::{ClassDef, DexFile};
@@ -413,9 +416,132 @@ impl DexFile {
         }))
     }
 
+    fn value_data(&self, v: &EncodedValue) -> Result<EncodedValueData> {
+        Ok(match v {
+            EncodedValue::Byte(x) => EncodedValueData::Byte(*x),
+            EncodedValue::Short(x) => EncodedValueData::Short(*x),
+            EncodedValue::Char(x) => EncodedValueData::Char(*x),
+            EncodedValue::Int(x) => EncodedValueData::Int(*x),
+            EncodedValue::Long(x) => EncodedValueData::Long(*x),
+            EncodedValue::Float(x) => EncodedValueData::Float(x.to_bits()),
+            EncodedValue::Double(x) => EncodedValueData::Double(x.to_bits()),
+            EncodedValue::String(i) => EncodedValueData::Str(self.string_utf16(*i)?),
+            EncodedValue::Type(t) => EncodedValueData::Type(self.type_descriptor(*t)?),
+            EncodedValue::Field(f) | EncodedValue::Enum(f) => {
+                let r = self.field_ref(*f)?;
+                let fr = FieldRefData {
+                    parent_class: r.class,
+                    name: r.name,
+                    ty: r.ty,
+                };
+                if matches!(v, EncodedValue::Enum(_)) {
+                    EncodedValueData::Enum(fr)
+                } else {
+                    EncodedValueData::Field(fr)
+                }
+            }
+            EncodedValue::Method(_) => EncodedValueData::Method,
+            EncodedValue::MethodType(_) => EncodedValueData::Unsupported("METHOD_TYPE".into()),
+            EncodedValue::MethodHandle(_) => EncodedValueData::Unsupported("METHOD_HANDLE".into()),
+            EncodedValue::Array(items) => EncodedValueData::Array(
+                items
+                    .iter()
+                    .map(|i| self.value_data(i))
+                    .collect::<Result<_>>()?,
+            ),
+            EncodedValue::Annotation(a) => EncodedValueData::Annotation(
+                self.annotation_data(a, AnnotationVisibility::Runtime)?,
+            ),
+            EncodedValue::Null => EncodedValueData::Null,
+            EncodedValue::Boolean(b) => EncodedValueData::Boolean(*b),
+        })
+    }
+
+    fn annotation_data(
+        &self,
+        a: &EncodedAnnotation,
+        visibility: AnnotationVisibility,
+    ) -> Result<AnnotationData> {
+        let mut values = Vec::with_capacity(a.elements.len());
+        for (name_idx, v) in &a.elements {
+            values.push((self.string(*name_idx)?, self.value_data(v)?));
+        }
+        Ok(AnnotationData {
+            type_desc: self.type_descriptor(a.type_idx)?,
+            visibility,
+            values,
+        })
+    }
+
+    fn annotation_list_data(&self, anns: &[Annotation]) -> Result<Vec<AnnotationData>> {
+        let mut out = Vec::with_capacity(anns.len());
+        for a in anns {
+            let vis = match a.visibility {
+                Visibility::Build => AnnotationVisibility::Build,
+                Visibility::Runtime => AnnotationVisibility::Runtime,
+                Visibility::System => AnnotationVisibility::System,
+            };
+            out.push(self.annotation_data(&a.annotation, vis)?);
+        }
+        Ok(out)
+    }
+
+    /// Declared exceptions (`dalvik.annotation.Throws`).
+    fn throws_of(&self, anns: &[Annotation]) -> Result<Vec<String>> {
+        for a in anns {
+            if a.visibility != Visibility::System
+                || self.type_descriptor(a.annotation.type_idx)? != "Ldalvik/annotation/Throws;"
+            {
+                continue;
+            }
+            for (name_idx, value) in &a.annotation.elements {
+                if self.string(*name_idx)? != "value" {
+                    continue;
+                }
+                if let EncodedValue::Array(parts) = value {
+                    let mut out = Vec::new();
+                    for p in parts {
+                        if let EncodedValue::Type(t) = p {
+                            out.push(self.type_descriptor(*t)?);
+                        }
+                    }
+                    return Ok(out);
+                }
+            }
+        }
+        Ok(Vec::new())
+    }
+
+    /// Default values of the annotation methods (`dalvik.annotation.AnnotationDefault`).
+    fn annotation_defaults_of(
+        &self,
+        anns: &[Annotation],
+    ) -> Result<Vec<(String, EncodedValueData)>> {
+        for a in anns {
+            if a.visibility != Visibility::System
+                || self.type_descriptor(a.annotation.type_idx)?
+                    != "Ldalvik/annotation/AnnotationDefault;"
+            {
+                continue;
+            }
+            for (name_idx, value) in &a.annotation.elements {
+                if self.string(*name_idx)? != "value" {
+                    continue;
+                }
+                if let EncodedValue::Annotation(def) = value {
+                    let data = self.annotation_data(def, AnnotationVisibility::Runtime)?;
+                    return Ok(data.values);
+                }
+            }
+        }
+        Ok(Vec::new())
+    }
+
     /// Class members in the form handed to the decompiler core (no code, only locations).
     pub fn class_api(&self, def: &ClassDef) -> Result<jadx_input_api::ClassData> {
-        use jadx_input_api::{ClassData, FieldData, MethodData};
+        use jadx_input_api::{
+            ClassAttrs, ClassData, FieldAttrs, FieldData, MethodAttrs, MethodData,
+        };
         let anns = self.class_annotations(def)?;
         let data = self.class_data(def)?.unwrap_or_default();
         let static_values = self.static_values(def).unwrap_or_default();
@@ -442,7 +568,14 @@ impl DexFile {
                 Some(l) => self.annotation_refs_of(l)?,
                 None => Vec::new(),
             };
+            let attrs = FieldAttrs {
+                annotations: match anns.fields.get(&f.field_idx) {
+                    Some(l) => pack_annotations(self.annotation_list_data(l)?),
+                    None => Vec::new(),
+                },
+            };
             fields.push(FieldData {
+                attrs,
                 name: fr.name,
                 ty: fr.ty,
                 access_flags: f.access_flags,
@@ -451,6 +584,7 @@ impl DexFile {
                 annotation_refs,
             });
         }
+        let defaults = self.annotation_defaults_of(&anns.class)?;
         let mut methods = Vec::new();
         for m in data.direct_methods.iter().chain(&data.virtual_methods) {
             let mr = self.method_ref(m.method_idx)?;
@@ -465,7 +599,31 @@ impl DexFile {
             for params in anns.parameters.get(&m.method_idx).into_iter().flatten() {
                 annotation_refs.extend(self.annotation_refs_of(params)?);
             }
+            let own = anns
+                .methods
+                .get(&m.method_idx)
+                .map(Vec::as_slice)
+                .unwrap_or_default();
+            let mut param_annotations = Vec::new();
+            for params in anns.parameters.get(&m.method_idx).into_iter().flatten() {
+                param_annotations.push(pack_annotations(self.annotation_list_data(params)?));
+            }
+            let annotation_default = match defaults
+                .iter()
+                .find(|(n, _)| *n == mr.name)
+                .map(|(_, v)| v.clone())
+            {
+                Some(v) => Some(v),
+                None => None,
+            };
+            let attrs = MethodAttrs {
+                annotations: pack_annotations(self.annotation_list_data(own)?),
+                param_annotations,
+                throws: self.throws_of(own)?,
+                annotation_default,
+            };
             methods.push(MethodData {
+                attrs,
                 name: mr.name,
                 arg_types: mr.arg_types,
                 return_type: mr.return_type,
@@ -485,6 +643,13 @@ impl DexFile {
             annotation_refs: self.annotation_refs_of(&anns.class)?,
             fields,
             methods,
+            attrs: ClassAttrs {
+                source_file: self
+                    .opt_string(def.source_file_idx)?
+                    .filter(|s| !s.is_empty()),
+                input_file_name: Some(self.name().to_string()),
+                annotations: pack_annotations(self.annotation_list_data(&anns.class)?),
+            },
         })
     }
 }

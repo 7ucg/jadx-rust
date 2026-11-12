@@ -123,6 +123,7 @@ pub struct FieldData {
     pub const_value: Option<ConstValue>,
     /// Classes and fields referenced by the (non system) annotations of the field.
     pub annotation_refs: Vec<AnnotationRef>,
+    pub attrs: FieldAttrs,
 }
 
 /// Method of a class as read from the input.
@@ -138,6 +139,7 @@ pub struct MethodData {
     /// Classes and fields referenced by the (non system) annotations of the method and of its
     /// parameters.
     pub annotation_refs: Vec<AnnotationRef>,
+    pub attrs: MethodAttrs,
 }
 
 /// Class as read from the input (members only, code is loaded on demand).
@@ -154,6 +156,7 @@ pub struct ClassData {
     pub annotation_refs: Vec<AnnotationRef>,
     pub fields: Vec<FieldData>,
     pub methods: Vec<MethodData>,
+    pub attrs: ClassAttrs,
 }
 
 /// Data of the `InnerClass` annotation of a nested class.
@@ -241,4 +244,134 @@ pub struct TryData {
     pub start: u32,
     pub end: u32,
     pub catch: CatchData,
+}
+
+/// Visibility of an annotation in the input.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnnotationVisibility {
+    Build,
+    Runtime,
+    System,
+}
+
+/// Value of an annotation element or a method default.
+#[derive(Debug, Clone, PartialEq)]
+pub enum EncodedValueData {
+    Null,
+    Boolean(bool),
+    Byte(i8),
+    Short(i16),
+    Char(u16),
+    Int(i32),
+    Long(i64),
+    /// Bits of the `f32` value.
+    Float(u32),
+    /// Bits of the `f64` value.
+    Double(u64),
+    /// String as UTF-16 code units.
+    Str(Vec<u16>),
+    /// Class descriptor.
+    Type(String),
+    /// Static field reference.
+    Field(FieldRefData),
+    /// Enum constant reference.
+    Enum(FieldRefData),
+    /// Method reference (not printed).
+    Method,
+    Array(Vec<EncodedValueData>),
+    Annotation(AnnotationData),
+    /// Value kind that can not be printed (method handle or type).
+    Unsupported(String),
+}
+
+/// An annotation with its element values (in input order).
+#[derive(Debug, Clone, PartialEq)]
+pub struct AnnotationData {
+    /// Annotation class descriptor.
+    pub type_desc: String,
+    pub visibility: AnnotationVisibility,
+    pub values: Vec<(String, EncodedValueData)>,
+}
+
+/// Collect the annotations of one node like `AnnotationsAttr.pack`: system annotations are
+/// dropped, annotations of the same class replace each other and the result is in the iteration
+/// order of the reference's hash map (keyed by the class descriptor).
+pub fn pack_annotations(list: Vec<AnnotationData>) -> Vec<AnnotationData> {
+    if list.is_empty() {
+        return Vec::new();
+    }
+    let initial = list.len();
+    let mut cap = initial.next_power_of_two().max(1);
+    let mut buckets: Vec<Vec<AnnotationData>> = Vec::new();
+    let mut size = 0usize;
+    for ann in list {
+        if ann.visibility == AnnotationVisibility::System {
+            continue;
+        }
+        if buckets.is_empty() {
+            buckets = vec![Vec::new(); cap];
+        }
+        let idx = java_hash_index(&ann.type_desc, cap);
+        if let Some(slot) = buckets[idx]
+            .iter_mut()
+            .find(|a| a.type_desc == ann.type_desc)
+        {
+            *slot = ann;
+            continue;
+        }
+        buckets[idx].push(ann);
+        size += 1;
+        if size * 4 > cap * 3 {
+            let new_cap = cap * 2;
+            let mut next: Vec<Vec<AnnotationData>> = vec![Vec::new(); new_cap];
+            for bucket in buckets {
+                for a in bucket {
+                    let i = java_hash_index(&a.type_desc, new_cap);
+                    next[i].push(a);
+                }
+            }
+            buckets = next;
+            cap = new_cap;
+        }
+    }
+    buckets.into_iter().flatten().collect()
+}
+
+/// `HashMap` bucket index of a string key in a table of `cap` entries.
+fn java_hash_index(key: &str, cap: usize) -> usize {
+    let mut h: i32 = 0;
+    for u in key.encode_utf16() {
+        h = h.wrapping_mul(31).wrapping_add(i32::from(u));
+    }
+    let h = (h as u32) ^ ((h as u32) >> 16);
+    (h as usize) & (cap - 1)
+}
+
+/// Attributes of a class that are only needed to print it.
+#[derive(Debug, Clone, Default)]
+pub struct ClassAttrs {
+    /// `SourceFile` attribute.
+    pub source_file: Option<String>,
+    /// Name of the input file the class was read from.
+    pub input_file_name: Option<String>,
+    /// Visible annotations (see [`pack_annotations`]).
+    pub annotations: Vec<AnnotationData>,
+}
+
+/// Attributes of a field that are only needed to print it.
+#[derive(Debug, Clone, Default)]
+pub struct FieldAttrs {
+    pub annotations: Vec<AnnotationData>,
+}
+
+/// Attributes of a method that are only needed to print it.
+#[derive(Debug, Clone, Default)]
+pub struct MethodAttrs {
+    pub annotations: Vec<AnnotationData>,
+    /// Annotations of the parameters, by parameter index (may be shorter than the parameters).
+    pub param_annotations: Vec<Vec<AnnotationData>>,
+    /// Declared exceptions (class descriptors).
+    pub throws: Vec<String>,
+    /// Default value of an annotation method.
+    pub annotation_default: Option<EncodedValueData>,
 }

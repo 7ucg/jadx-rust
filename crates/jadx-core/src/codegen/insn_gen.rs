@@ -7,6 +7,7 @@ use super::method_gen::MethodGen;
 use super::type_gen::literal_to_string;
 use super::{CodegenError, GenEnv};
 use crate::model::cfg::MethodCfg;
+use crate::model::condition::{CondMode, IfCondition};
 use crate::model::info::{ClassInfo, FieldInfo, MethodInfo};
 use crate::model::insn::{
     iflag, ArithOp, CallType, IfOp, IndexValue, InsnArg, InsnId, InsnKind, InsnNode, InsnType,
@@ -47,11 +48,19 @@ impl<'m, 'a> InsnGen<'m, 'a> {
         InsnGen { mgen, fallback }
     }
 
-    fn cfg(&self) -> &'a MethodCfg {
+    pub(super) fn cfg(&self) -> &'a MethodCfg {
         self.mgen.cfg()
     }
 
-    fn env(&self) -> &'a GenEnv<'a> {
+    pub(super) fn mgen(&self) -> &'m MethodGen<'a> {
+        self.mgen
+    }
+
+    pub(super) fn is_fallback(&self) -> bool {
+        self.fallback
+    }
+
+    pub(super) fn env(&self) -> &'a GenEnv<'a> {
         self.mgen.class_gen().env()
     }
 
@@ -59,16 +68,16 @@ impl<'m, 'a> InsnGen<'m, 'a> {
         self.env().root
     }
 
-    fn cls_gen(&self) -> &'a ClassGen<'a> {
+    pub(super) fn cls_gen(&self) -> &'a ClassGen<'a> {
         self.mgen.class_gen()
     }
 
-    fn insn(&self, id: InsnId) -> &'a InsnNode {
+    pub(super) fn insn(&self, id: InsnId) -> &'a InsnNode {
         &self.cfg().insns[id]
     }
 
     /// `InsnArg.getType`
-    fn arg_type(&self, arg: &InsnArg) -> ArgType {
+    pub(super) fn arg_type(&self, arg: &InsnArg) -> ArgType {
         match arg {
             InsnArg::Register(r) => match r.svar {
                 Some(v) => self.cfg().svars[v].ty.clone(),
@@ -80,11 +89,11 @@ impl<'m, 'a> InsnGen<'m, 'a> {
         }
     }
 
-    fn use_class_info(&self, code: &mut CodeWriter, ci: &ClassInfo) -> Res {
+    pub(super) fn use_class_info(&self, code: &mut CodeWriter, ci: &ClassInfo) -> Res {
         self.cls_gen().use_class_info(code, ci)
     }
 
-    fn use_type(&self, code: &mut CodeWriter, ty: &ArgType) -> Res {
+    pub(super) fn use_type(&self, code: &mut CodeWriter, ty: &ArgType) -> Res {
         self.cls_gen().use_type(code, ty)
     }
 
@@ -170,11 +179,16 @@ impl<'m, 'a> InsnGen<'m, 'a> {
 
     /// `declareVar`
     pub fn declare_var(&self, code: &mut CodeWriter, reg: &RegisterArg) -> Res {
-        let cfg = self.cfg();
         let cv = reg
             .svar
-            .and_then(|v| cfg.svars[v].code_var)
+            .and_then(|v| self.cfg().svars[v].code_var)
             .ok_or_else(|| CodegenError::new("Code variable not set"))?;
+        self.declare_code_var(code, cv)
+    }
+
+    /// `declareVar(ICodeWriter, CodeVar)`
+    pub fn declare_code_var(&self, code: &mut CodeWriter, cv: crate::model::ssa::CodeVarId) -> Res {
+        let cfg = self.cfg();
         let var = &cfg.code_vars[cv];
         if var.is_final {
             code.add("final ");
@@ -320,6 +334,14 @@ impl<'m, 'a> InsnGen<'m, 'a> {
             }
             InsnType::Break => {
                 code.add("break");
+                if let Some(l) = self.cfg().regions.insn_loop_label.get(&id) {
+                    let label = self
+                        .mgen
+                        .name_gen()
+                        .borrow_mut()
+                        .loop_label(self.cfg().loop_infos[*l].id);
+                    code.add(" ").add(&label);
+                }
             }
             InsnType::Continue => {
                 code.add("continue");
@@ -725,7 +747,7 @@ impl<'m, 'a> InsnGen<'m, 'a> {
         }
     }
 
-    fn generate_method_arguments(
+    pub(super) fn generate_method_arguments(
         &self,
         code: &mut CodeWriter,
         insn: &InsnNode,
@@ -815,8 +837,14 @@ impl<'m, 'a> InsnGen<'m, 'a> {
 
     fn make_ternary(&self, code: &mut CodeWriter, id: InsnId, state: State) -> Res {
         let insn = self.insn(id);
-        let InsnKind::Ternary { cond } = insn.kind else {
-            return Err(CodegenError::new("Missing ternary condition"));
+        let cond = match &insn.kind {
+            InsnKind::Ternary { cond } => IfCondition {
+                mode: CondMode::Compare,
+                args: Vec::new(),
+                compare: Some(*cond),
+            },
+            InsnKind::TernaryCond(c) => (**c).clone(),
+            _ => return Err(CodegenError::new("Missing ternary condition")),
         };
         let wrap = state == State::BodyOnly;
         if wrap {
@@ -825,9 +853,9 @@ impl<'m, 'a> InsnGen<'m, 'a> {
         let first = self.arg_of(insn, 0)?;
         let second = self.arg_of(insn, 1)?;
         if is_true(first) && is_false(second) {
-            self.cond_add(code, cond)?;
+            self.cond_add(code, &cond)?;
         } else {
-            self.cond_add(code, cond)?;
+            self.cond_wrap(code, &cond)?;
             code.add(" ? ");
             self.add_arg(code, first, false)?;
             code.add(" : ");
@@ -878,124 +906,6 @@ impl<'m, 'a> InsnGen<'m, 'a> {
         self.add_arg(code, res_arg, false)?;
         code.add(" ").add(op.symbol()).add("= ");
         self.add_arg(code, arg, false)
-    }
-
-    // ---- conditions (ConditionGen) -----------------------------------------------------------
-
-    /// `ConditionGen.add` of a single comparison.
-    fn cond_add(&self, code: &mut CodeWriter, if_insn: InsnId) -> Res {
-        self.add_compare(code, if_insn, 1)
-    }
-
-    fn add_compare(&self, code: &mut CodeWriter, if_insn: InsnId, stack_size: usize) -> Res {
-        let insn = self.insn(if_insn);
-        let InsnKind::If { op, .. } = insn.kind else {
-            return Err(CodegenError::new("Condition is not an if instruction"));
-        };
-        let mut op = op;
-        let first = self.arg_of(insn, 0)?;
-        let second = self.arg_of(insn, 1)?;
-        if let (InsnArg::Wrapped(w), InsnArg::Literal(l)) = (first, second) {
-            let wrap_insn = self.insn(w.insn);
-            if l.literal == 0
-                && matches!(wrap_insn.ty, InsnType::CmpL | InsnType::CmpG)
-                && self.is_float_cmp(wrap_insn)?
-            {
-                return self.add_float_cmp_compare(code, op, wrap_insn);
-            }
-        }
-        if self.arg_type(first) == ArgType::boolean() {
-            if let InsnArg::Literal(l) = second {
-                if l.ty == ArgType::boolean() {
-                    if l.literal == 0 {
-                        op = op.invert();
-                    }
-                    if op == IfOp::Eq {
-                        // == true
-                        if stack_size == 1 {
-                            self.add_arg(code, first, false)?;
-                        } else {
-                            self.wrap_arg(code, first)?;
-                        }
-                        return Ok(());
-                    } else if op == IfOp::Ne {
-                        // != true
-                        code.add("!");
-                        return self.wrap_arg(code, first);
-                    }
-                }
-            }
-        }
-        self.add_arg(code, first, self.is_arg_wrap_needed(first))?;
-        code.add(" ").add(op.symbol()).add(" ");
-        self.add_arg(code, second, self.is_arg_wrap_needed(second))
-    }
-
-    /// Condition on the result of a float comparison: `cmp(a, b) op 0`, as the plain operator on
-    /// the compared values. 'cmpg' returns 1 and 'cmpl' returns -1 if any arg is NaN, but
-    /// `a < b`, `a <= b`, `a > b` and `a >= b` are all false for NaN, so `!(a inverted_op b)` is
-    /// used if the condition must be true for NaN.
-    fn add_float_cmp_compare(&self, code: &mut CodeWriter, op: IfOp, cmp: &InsnNode) -> Res {
-        let true_for_nan = if cmp.ty == InsnType::CmpG {
-            matches!(op, IfOp::Gt | IfOp::Ge)
-        } else {
-            matches!(op, IfOp::Lt | IfOp::Le)
-        };
-        let result_op = if true_for_nan { op.invert() } else { op };
-        if true_for_nan {
-            code.add("!(");
-        }
-        let first = self.arg_of(cmp, 0)?;
-        let second = self.arg_of(cmp, 1)?;
-        self.add_arg(code, first, self.is_arg_wrap_needed(first))?;
-        code.add(" ").add(result_op.symbol()).add(" ");
-        self.add_arg(code, second, self.is_arg_wrap_needed(second))?;
-        if true_for_nan {
-            code.add(")");
-        }
-        Ok(())
-    }
-
-    fn wrap_arg(&self, code: &mut CodeWriter, first: &InsnArg) -> Res {
-        let wrap = self.is_arg_wrap_needed(first);
-        if wrap {
-            code.add("(");
-        }
-        self.add_arg(code, first, false)?;
-        if wrap {
-            code.add(")");
-        }
-        Ok(())
-    }
-
-    /// `IfCondition.isFloatCmp`
-    fn is_float_cmp(&self, cmp: &InsnNode) -> Res<bool> {
-        let ty = self.arg_type(self.arg_of(cmp, 0)?);
-        Ok(ty == ArgType::float() || ty == ArgType::double())
-    }
-
-    fn is_arg_wrap_needed(&self, arg: &InsnArg) -> bool {
-        let InsnArg::Wrapped(w) = arg else {
-            return false;
-        };
-        let insn = self.insn(w.insn);
-        if insn.ty == InsnType::Arith {
-            return !matches!(
-                insn.kind,
-                InsnKind::Arith(
-                    ArithOp::Add | ArithOp::Sub | ArithOp::Mul | ArithOp::Div | ArithOp::Rem
-                )
-            );
-        }
-        !matches!(
-            insn.ty,
-            InsnType::Invoke
-                | InsnType::Sget
-                | InsnType::Iget
-                | InsnType::Aget
-                | InsnType::Const
-                | InsnType::ArrayLength
-        )
     }
 }
 

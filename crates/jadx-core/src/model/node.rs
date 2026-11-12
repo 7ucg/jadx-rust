@@ -3,7 +3,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use jadx_input_api::{AnnotationRef, ClassData, ConstValue, InnerClassData};
+use jadx_input_api::{
+    AnnotationRef, ClassAttrs, ClassData, ConstValue, FieldAttrs, InnerClassData, MethodAttrs,
+};
 
 use super::const_storage::ConstStorage;
 use super::info::{ClassInfo, FieldInfo, MethodInfo};
@@ -37,6 +39,22 @@ pub struct FieldNode {
     pub inline_instance_field: bool,
     /// Name used in the output when it differs from the name in the bytecode.
     pub alias: Option<String>,
+    /// Annotations of the input.
+    pub attrs: FieldAttrs,
+    /// `AFlag.DONT_GENERATE`: the field is not part of the output.
+    pub dont_generate: bool,
+    /// Why the field was renamed (`RenameReasonAttr`).
+    pub alias_reason: Option<String>,
+    /// `AType.FIELD_INIT_INSN`: instruction that initializes the field.
+    pub init_insn: Option<FieldInitInsn>,
+}
+
+/// `FieldInitInsnAttr`: the initializer instruction lives in the code state of method `mth` of
+/// the class that declares the field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FieldInitInsn {
+    pub mth: usize,
+    pub insn: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -79,8 +97,16 @@ pub struct MethodNode {
     /// `AType.METHOD_OVERRIDE`: index into [`Root::override_sets`] of the set of all methods of
     /// the override hierarchy (this method included).
     pub override_set: Option<usize>,
+    /// Declaring classes of all methods overridden by this method (`getOverrideList`).
+    pub override_decls: Vec<ArgType>,
+    /// The method is one of the base methods of its override hierarchy (`getBaseMethods`).
+    pub override_is_base: bool,
     /// `AFlag.DONT_RENAME`
     pub dont_rename: bool,
+    /// Annotations, declared exceptions and defaults of the input.
+    pub attrs: MethodAttrs,
+    /// Why the method was renamed (`RenameReasonAttr`).
+    pub alias_reason: Option<String>,
 }
 
 impl MethodNode {
@@ -145,6 +171,34 @@ pub struct ClassNode {
     pub dont_generate: bool,
     /// Short name used in the output when it differs from the name in the bytecode.
     pub alias: Option<String>,
+    /// Source file, input file and annotations of the input.
+    pub attrs: ClassAttrs,
+    /// `AType.ENUM_CLASS`
+    pub enum_class: Option<EnumClassAttr>,
+    /// `AFlag.REMOVE_SUPER_CLASS`
+    pub remove_super_class: bool,
+    /// Why the class was renamed (`RenameReasonAttr`).
+    pub alias_reason: Option<String>,
+}
+
+/// `EnumClassAttr.EnumField`: an enum constant with the constructor call that creates it. The
+/// constructor instruction lives in the code of the static initializer (`ctr_insn` is an
+/// instruction id in the code state of method `static_method`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnumFieldAttr {
+    /// Field index in the class.
+    pub field: usize,
+    pub ctr_insn: usize,
+    /// Class of the constant body (`getCls`), if any.
+    pub cls: Option<usize>,
+}
+
+/// `EnumClassAttr`
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnumClassAttr {
+    pub fields: Vec<EnumFieldAttr>,
+    /// Index of the static initializer method holding the constructor instructions.
+    pub static_method: usize,
 }
 
 impl ClassNode {
@@ -215,6 +269,10 @@ impl Root {
                     use_in: Vec::new(),
                     inline_instance_field: false,
                     alias: None,
+                    attrs: f.attrs,
+                    dont_generate: false,
+                    alias_reason: None,
+                    init_insn: None,
                 });
             }
             let mut methods = Vec::with_capacity(c.methods.len());
@@ -253,7 +311,11 @@ impl Root {
                     dont_generate: false,
                     alias: None,
                     override_set: None,
+                    override_decls: Vec::new(),
+                    override_is_base: false,
                     dont_rename: false,
+                    attrs: m.attrs,
+                    alias_reason: None,
                 });
             }
             by_raw.insert(info.raw_name(), classes.len());
@@ -277,6 +339,10 @@ impl Root {
                 inlined_into: None,
                 dont_generate: false,
                 alias: None,
+                attrs: c.attrs,
+                enum_class: None,
+                remove_super_class: false,
+                alias_reason: None,
             });
         }
         let mut root = Root {
