@@ -568,3 +568,67 @@ fn read_type(desc: &str, pos: &mut usize) -> Result<String> {
         ))),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use jadx_input_api::Opcode;
+
+    fn utf8(out: &mut Vec<u8>, s: &str) {
+        out.push(1);
+        out.extend((s.len() as u16).to_be_bytes());
+        out.extend(s.as_bytes());
+    }
+
+    /// `class T { static int f() { return 1; } }`
+    fn tiny_class() -> Vec<u8> {
+        let mut b = vec![0xCA, 0xFE, 0xBA, 0xBE, 0, 0, 0, 52, 0, 8];
+        utf8(&mut b, "T");
+        b.extend([7, 0, 1]);
+        utf8(&mut b, "java/lang/Object");
+        b.extend([7, 0, 3]);
+        utf8(&mut b, "f");
+        utf8(&mut b, "()I");
+        utf8(&mut b, "Code");
+        // access, this, super, interfaces, fields
+        b.extend([0, 0x21, 0, 2, 0, 4, 0, 0, 0, 0]);
+        // one method with a Code attribute: iconst_1, ireturn
+        b.extend([0, 1, 0, 9, 0, 5, 0, 6, 0, 1, 0, 7, 0, 0, 0, 14]);
+        b.extend([0, 1, 0, 0, 0, 0, 0, 2, 4, 0xac, 0, 0, 0, 0]);
+        // class attributes
+        b.extend([0, 0]);
+        b
+    }
+
+    #[test]
+    fn parse_and_decode_tiny_class() {
+        let cls = JavaClass::parse("T.class", tiny_class()).unwrap();
+        assert_eq!(cls.type_desc().unwrap(), "LT;");
+        assert_eq!(
+            cls.super_type().unwrap().as_deref(),
+            Some("Ljava/lang/Object;")
+        );
+        let methods = cls.methods().unwrap();
+        assert_eq!(methods.len(), 1);
+        assert_eq!(methods[0].descriptor, "()I");
+        let code = methods[0].code_offset.unwrap();
+        let info = cls.code_info(code).unwrap();
+        assert_eq!((info.max_stack, info.code_length), (1, 2));
+        let insns = cls.decode_insns(code).unwrap();
+        assert_eq!(insns.len(), 2);
+        assert_eq!(insns[0].opcode, Opcode::Const);
+        assert_eq!(insns[0].literal, 1);
+        assert_eq!(insns[0].regs, vec![0]);
+        assert_eq!(insns[1].opcode, Opcode::Return);
+        assert_eq!(insns[1].regs, vec![0]);
+        assert!(cls.tries(code).unwrap().is_empty());
+        assert!(cls.debug_info(code).unwrap().is_none());
+    }
+
+    #[test]
+    fn truncated_class_is_an_error() {
+        let mut b = tiny_class();
+        b.truncate(40);
+        assert!(JavaClass::parse("T.class", b).is_err());
+    }
+}

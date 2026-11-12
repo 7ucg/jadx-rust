@@ -14,6 +14,9 @@ use crate::types::{CodeInfo, DebugInfo, LocalVar};
 /// Entries of the exception table: `(start, end, handler, catch type index)`.
 type ExcEntry = (u32, u32, u32, u32);
 
+/// Catches (handler, type) of the exception table entries with the same `(start, end)` range.
+type TryGroup = ((u32, u32), Vec<(u32, Option<String>)>);
+
 impl JavaClass {
     /// Sizes of the `Code` attribute whose data starts at `code_offset`.
     pub fn code_info(&self, code_offset: u32) -> Result<CodeInfo> {
@@ -68,7 +71,7 @@ impl JavaClass {
             return Ok(Vec::new());
         }
         // group the entries with the same range in order of appearance
-        let mut groups: Vec<((u32, u32), Vec<(u32, Option<String>)>)> = Vec::new();
+        let mut groups: Vec<TryGroup> = Vec::new();
         for (start, end, handler, ty) in &table {
             let ty = if *ty == 0 {
                 None

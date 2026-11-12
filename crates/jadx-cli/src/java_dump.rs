@@ -297,7 +297,7 @@ fn dump_insns(out: &mut String, cls: &JavaClass) -> jadx_java_input::Result<()> 
                     .types
                     .iter()
                     .zip(&c.handlers)
-                    .map(|(t, h)| format!("{t}->{h}"))
+                    .map(|(t, h)| format!("{}->{h}", if t.is_empty() { "null" } else { t }))
                     .collect();
                 let _ = writeln!(
                     s,

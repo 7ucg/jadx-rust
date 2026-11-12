@@ -120,7 +120,7 @@ pub(crate) fn parse_attrs(
         // an attribute that fails to parse is ignored
         if let Ok(name) = cls.utf8(name_idx) {
             if filter.accepts(&name) {
-                let mut ar = r.clone();
+                let mut ar = *r;
                 let _ = parse_one(cls, &mut ar, &name, &mut attrs);
             }
         }
@@ -425,7 +425,7 @@ fn read_stack_map(r: &mut Reader<'_>) -> Result<Vec<StackFrame>> {
                     stack,
                 }
             }
-            248..=250 | 251 => {
+            248..=251 => {
                 let delta = r.u2()?;
                 StackFrame {
                     offset: calc(delta),
