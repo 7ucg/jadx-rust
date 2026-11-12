@@ -7,6 +7,8 @@ members = [
     "crates/jadx-dex-input",
     "crates/jadx-resources",
     "crates/jadx-java-input",
+    "crates/jadx-package",
+    "crates/jadx-index",
     "crates/jadx-cli",
     "crates/jadx-mcp",
 ]
@@ -30,6 +32,8 @@ jadx-input-api = { path = "crates/jadx-input-api" }
 jadx-dex-input = { path = "crates/jadx-dex-input" }
 jadx-resources = { path = "crates/jadx-resources" }
 jadx-java-input = { path = "crates/jadx-java-input" }
+jadx-package = { path = "crates/jadx-package" }
+jadx-index = { path = "crates/jadx-index" }
 jadx-mcp = { path = "crates/jadx-mcp" }
 
 [profile.release]

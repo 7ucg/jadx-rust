@@ -1,0 +1,14 @@
+[package]
+name = "jadx-package"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Package containers (APK, XAPK, APKS, APKM, nested archives): split-aware entry paths and input loading"
+
+[dependencies]
+thiserror.workspace = true
+zip.workspace = true
+jadx-dex-input.workspace = true
+jadx-java-input.workspace = true
+jadx-resources.workspace = true

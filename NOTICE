@@ -44,3 +44,24 @@ material was taken. Modifications relative to RDX:
 
 RDX is distributed without per-file license headers; the attribution above and the header comments
 of the adapted modules take their place.
+
+Further parts adapted from RDX (Copyright 2026 Ch0pin and RDX contributors, Apache License,
+Version 2.0), Rust non-GUI engine code; each adapted file names its origin and the modifications
+in its module documentation:
+
+- crates/jadx-package: the split-package container reader (bundletool `toc.pb` reader, split
+  identity validation, logical split-aware entry paths, bounded ZIP directory check, temporary
+  APK handling) is adapted from RDX `src/package_container.rs`. Modifications: the selection
+  policy of the reference jadx plugins as default, `.apkm` support, manifest decoding with
+  `jadx-resources`, a dependency free JSON reader, no dependency on the RDX engine.
+- crates/jadx-index: the posting store (fingerprint keyed fixed size records, sorted runs on disk
+  merged into one file that lookups binary-search) is adapted from RDX `src/invoke_index.rs`; the
+  package scope filter from `src/package_scope.rs`; the bounded call graph (depth, node and edge
+  caps, component classification, dispatch targets) from `src/call_graph.rs`; the call site, field
+  access and integer literal scans from `src/native_xrefs.rs`, `src/field_references.rs` and
+  `src/integer_references.rs`; the name and literal search ideas from `src/identifier_search.rs`
+  and `src/search.rs`. Modifications: the index works on the `jadx-core` root and on instructions
+  decoded by `jadx-dex-input` instead of the RDX engine, uses a dependency free fingerprint, a
+  memory budget with external merge, and verifies every hit against the decoded code.
+
+No fonts, icons, themes or GUI code of RDX are part of this repository.

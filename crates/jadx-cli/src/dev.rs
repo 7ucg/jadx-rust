@@ -7,6 +7,8 @@
 //!   jadx-rs pre-info    <file>   class level state after the pre decompile passes
 //!   jadx-rs java-classes <file>  class data of .class/.jar input (oracle comparison format)
 //!   jadx-rs java-insns  <file>   decoded JVM instructions of .class/.jar input
+//!   jadx-rs input-classes <file>...   all classes of all code inputs (dex, nested archives, splits)
+//!   jadx-rs xref <file> <query>...    cross reference queries (see index_dump.rs)
 //!   jadx-rs mcp [--socket PATH] [input]   MCP server over stdio or a local socket
 //!   jadx-rs res-dump    <apk> <outDir>   decoded text resources of an APK
 
@@ -32,6 +34,8 @@ pub const COMMANDS: &[&str] = &[
     "res-dump",
     "java-classes",
     "java-insns",
+    "input-classes",
+    "xref",
     "mcp",
     "insn-code",
 ];
@@ -45,6 +49,12 @@ pub fn run() -> Result<()> {
     }
     if cmd == "res-dump" {
         return crate::res_dump::res_dump(&args.collect::<Vec<_>>());
+    }
+    if cmd == "input-classes" {
+        return crate::input_dump::run(&args.collect::<Vec<_>>());
+    }
+    if cmd == "xref" {
+        return crate::index_dump::run(&args.collect::<Vec<_>>());
     }
     let path = args.next().map(PathBuf::from);
     if matches!(cmd.as_str(), "java-classes" | "java-insns") {
