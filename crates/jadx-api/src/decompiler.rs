@@ -135,7 +135,9 @@ impl JadxDecompiler {
         };
         let mut dexes: Vec<DexFile> = Vec::new();
         for file in &inputs {
-            match load_path(file, &opts) {
+            // plain dex files are named by their absolute path (shown in the `loaded from` comment)
+            let abs = std::path::absolute(file).unwrap_or_else(|_| file.clone());
+            match load_path(&abs, &opts) {
                 Ok(res) => {
                     for w in &res.warnings {
                         self.log(Level::Warn, w);

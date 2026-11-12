@@ -296,6 +296,17 @@ mod tests {
     }
 
     #[test]
+    fn finish_drops_the_first_empty_line() {
+        let mut w = CodeWriter::new();
+        w.start_line_str("package a;");
+        w.start_line_str("class A {}");
+        assert_eq!(w.finish().code, "package a;\nclass A {}");
+        let mut w = CodeWriter::new();
+        w.add("x");
+        assert_eq!(w.finish().code, "x");
+    }
+
+    #[test]
     fn utf16_length() {
         let mut w = CodeWriter::new();
         w.add("é\u{1F600}");

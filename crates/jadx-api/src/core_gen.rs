@@ -10,12 +10,12 @@ use jadx_core::codegen::method_gen::no_code_cfg;
 use jadx_core::codegen::prepare::{apply_method_parameters, prepare_variables};
 use jadx_core::codegen::string_utils::{IntegerFormat as CoreIntegerFormat, StringUtils};
 use jadx_core::codegen::{
-    code_gen, CommentsLevel as CoreCommentsLevel, DecompilationMode as CoreMode, GenEnv,
-    MethodLoader,
+    code_gen, CommentsLevel as CoreCommentsLevel, DecompilationMode as CoreMode, FallbackCode,
+    GenEnv, MethodLoader,
 };
 use jadx_core::decode::{InsnDecoder, MethodCtx};
 use jadx_core::model::cfg::MethodCfg;
-use jadx_core::passes::pipeline::{build_ssa, FrameInfo};
+use jadx_core::passes::pipeline::{build_ssa, fallback_decode, FrameInfo};
 
 use crate::args::{CommentsLevel, DecompilationMode, IntegerFormat};
 use crate::code::SimpleCodeInfo;
@@ -161,6 +161,27 @@ impl MethodLoader for DexMethodLoader<'_> {
     fn load(&self, cls: usize, mth: usize) -> Result<MethodCfg, String> {
         catch_unwind(AssertUnwindSafe(|| self.process(cls, mth)))
             .unwrap_or_else(|_| Err("panic in method processing".to_string()))
+    }
+
+    fn fallback_code(&self, cls: usize, mth: usize) -> Result<FallbackCode, String> {
+        let root = self.ctx.root;
+        let m = &root.classes[cls].methods[mth];
+        let off = m.code_offset.ok_or("no code")?;
+        let dex = self.ctx.dex_of(cls);
+        let code = dex.code_item(off).map_err(|e| e.to_string())?;
+        let raw =
+            jadx_dex_input::insns::decode_insn_data(&code.insns).map_err(|e| e.to_string())?;
+        let mctx = MethodCtx {
+            return_type: m.return_type.clone(),
+            parent_class: root.classes[cls].info.clone(),
+            root,
+        };
+        let decoded = InsnDecoder::new(dex, &mctx)
+            .process(&raw, code.insns.len())
+            .map_err(|e| e.to_string())?;
+        let tries = dex.tries_api(&code).map_err(|e| e.to_string())?;
+        let (insns, handlers) = fallback_decode(decoded, &tries, &root.ctx)?;
+        Ok(FallbackCode { insns, handlers })
     }
 
     fn source_line(&self, cls: usize, mth: usize) -> u32 {

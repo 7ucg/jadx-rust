@@ -6,18 +6,42 @@ use std::cell::RefCell;
 use super::annotation_gen;
 use super::class_gen::ClassGen;
 use super::code_writer::CodeWriter;
+use super::insn_gen::{label_name, Flags, InsnGen};
 use super::name_gen::NameGen;
 use super::region_gen::RegionGen;
 use super::{CodegenError, CommentsLevel, DecompilationMode};
 use crate::access::{
     AccessInfo, AccessKind, ACC_ABSTRACT, ACC_ANNOTATION, ACC_PUBLIC, ACC_VARARGS,
 };
-use crate::model::cfg::MethodCfg;
+use crate::model::cfg::{ExceptionHandler, MethodCfg};
+use crate::model::insn::{InsnKind, InsnNode, InsnType};
 use crate::model::node::MethodNode;
 use crate::model::types::ArgType;
 use crate::passes::pipeline::FrameInfo;
 
 type Res<T = ()> = Result<T, CodegenError>;
+
+/// `MethodGen.needLabel`
+fn need_label(insn: &InsnNode, prev: Option<&InsnNode>) -> bool {
+    if insn.exc_handler.is_some() {
+        return true;
+    }
+    if !insn.jumps.is_empty() {
+        // don't add label for ifs else branch
+        if let Some(p) = prev {
+            if p.ty == InsnType::If && insn.jumps.len() == 1 {
+                let j = &insn.jumps[0];
+                if j.src == p.offset && j.dest == insn.offset {
+                    if let InsnKind::If { target, .. } = &p.kind {
+                        return insn.offset == *target;
+                    }
+                }
+            }
+        }
+        return true;
+    }
+    false
+}
 
 /// `MethodGen`
 pub struct MethodGen<'a> {
@@ -348,6 +372,99 @@ impl<'a> MethodGen<'a> {
             ));
             code.start_line_str("To view this dump add '--comments-level debug' option");
             code.dec_indent();
+            return;
+        }
+        let cidx = self.cls_gen.class_index();
+        let Some(loader) = env.loader else {
+            return;
+        };
+        let fallback = match loader.fallback_code(cidx, self.mth) {
+            Ok(f) => f,
+            Err(e) => {
+                code.start_line_str(&format!("// Can't load method instructions: {e}"));
+                return;
+            }
+        };
+        let cls_gen = ClassGen::new_fallback(env, cidx);
+        let fcfg = MethodCfg {
+            insns: fallback.insns.iter().flatten().cloned().collect(),
+            this_arg: self.cfg.this_arg.clone(),
+            arg_regs: self.cfg.arg_regs.clone(),
+            ..Default::default()
+        };
+        // instruction ids follow the order of the instruction array
+        let mgen = MethodGen::new(&cls_gen, &fcfg, self.mth);
+        let ig = InsnGen::new(&mgen, true);
+        code.inc_indent();
+        if let Some(this) = &fcfg.this_arg {
+            code.start_line_str(&format!("r{} = this;", this.reg_num));
+        }
+        let start_indent = code.indent();
+        let list: Vec<&InsnNode> = fallback.insns.iter().flatten().collect();
+        let mut prev: Option<&InsnNode> = None;
+        for (id, insn) in list.iter().enumerate() {
+            if let Some(err) = &insn.error {
+                code.start_line_str("// ").add(err);
+                prev = Some(insn);
+                continue;
+            }
+            if need_label(insn, prev) {
+                code.dec_indent();
+                code.start_line_str(&format!("{}:", label_name(insn.offset)));
+                code.inc_indent();
+            }
+            if insn.ty == InsnType::Nop {
+                prev = Some(insn);
+                continue;
+            }
+            let escape_comment = insn.ty == InsnType::ConstStr
+                && matches!(&insn.kind, InsnKind::ConstStr(u) if String::from_utf16_lossy(u).contains("*/"));
+            if escape_comment {
+                code.dec_indent();
+                code.start_line_str("*/");
+                code.start_line_str("//  ");
+            } else {
+                code.start_line();
+            }
+            if let Some(res) = &insn.result {
+                if res.init_type.is_type_known() {
+                    code.add(&res.init_type.to_string()).add(" ");
+                }
+            }
+            match ig.make_insn(id, code, Some(Flags::Inline)) {
+                Ok(()) => {
+                    if escape_comment {
+                        code.start_line_str("/*");
+                        code.inc_indent();
+                    }
+                    self.add_catch_comment(code, insn, &fallback.handlers);
+                }
+                Err(_) => {
+                    code.set_indent(start_indent);
+                    code.start_line_str(&format!("// error: {}", crate::dump::dump_insn(insn)));
+                }
+            }
+            prev = Some(insn);
+        }
+        code.dec_indent();
+    }
+
+    /// `addCatchComment` (raw mode)
+    fn add_catch_comment(
+        &self,
+        code: &mut CodeWriter,
+        insn: &InsnNode,
+        handlers: &[ExceptionHandler],
+    ) {
+        let Some(catch) = &insn.catch else {
+            return;
+        };
+        code.add("     // Catch:");
+        for &h in catch {
+            let handler = &handlers[h];
+            code.add(" ");
+            let _ = self.cls_gen.use_class(code, &handler.arg_type());
+            code.add(" -> ").add(&label_name(handler.handler_offset));
         }
     }
 }

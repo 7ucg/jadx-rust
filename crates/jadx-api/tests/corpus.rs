@@ -257,6 +257,30 @@ fn class_code_is_available_without_saving() {
     assert!(tree(&out).is_empty() || tree(&out).keys().all(|k| !k.ends_with(".java")));
 }
 
+#[test]
+fn core_generator_writes_method_bodies_and_comments() {
+    let out = tmp("core-gen");
+    let mut jadx = JadxDecompiler::new(args_for(&corpus(), &out));
+    jadx.set_class_generator(Arc::new(jadx_api::CoreClassGenerator::new()));
+    jadx.load().unwrap();
+    let code = jadx.search_class("corpus.Finally").unwrap().code();
+    assert!(code.starts_with("package corpus;\n\n/* JADX INFO: compiled from: Finally.smali */\n"));
+    assert!(code.contains("/* JADX INFO: loaded from: "));
+    assert!(code.contains("    public static int g(int i) {\n        return i;\n    }\n"));
+    assert!(code.contains(
+        "        try {\n            g(i);\n        } catch (RuntimeException e) {\n            h();\n        } finally {\n            cleanup();\n        }\n"
+    ));
+    // a method that can not be loaded is reported and replaced by a stub
+    let ops = jadx.search_class("corpus.Ops").unwrap().code();
+    assert!(ops.contains("/*  JADX ERROR: Method load error"));
+    assert!(ops.contains(
+        "throw new UnsupportedOperationException(\"Method not decompiled: corpus.Ops.newer():void\");"
+    ));
+    assert!(jadx.errors_count() >= 1);
+    // abstract methods keep their declaration
+    assert!(ops.contains("public abstract native synchronized /* bridge */ void foo(long j2, double d2, int... iArr);"));
+}
+
 fn build_zip(path: &Path, entries: &[(&str, &[u8])]) {
     let file = std::fs::File::create(path).unwrap();
     let mut z = zip::ZipWriter::new(file);

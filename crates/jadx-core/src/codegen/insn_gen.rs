@@ -81,7 +81,7 @@ impl<'m, 'a> InsnGen<'m, 'a> {
         match arg {
             InsnArg::Register(r) => match r.svar {
                 Some(v) => self.cfg().svars[v].ty.clone(),
-                None => ArgType::unknown_any(),
+                None => r.init_type.clone(),
             },
             InsnArg::Literal(l) => l.ty.clone(),
             InsnArg::Wrapped(w) => w.ty.clone(),
@@ -465,10 +465,13 @@ impl<'m, 'a> InsnGen<'m, 'a> {
             | InsnType::MoveMulti
             | InsnType::JavaJsr
             | InsnType::JavaRet => {
-                return Err(CodegenError::unsupported(format!(
-                    "{} instruction can be used only in fallback mode",
-                    insn.ty
-                )));
+                if !self.fallback {
+                    return Err(CodegenError::unsupported(format!(
+                        "{} instruction can be used only in fallback mode",
+                        insn.ty
+                    )));
+                }
+                self.make_fallback_insn(code, insn)?;
             }
             InsnType::RegionArg | InsnType::Nop => {
                 return Err(CodegenError::new(format!(
@@ -476,6 +479,109 @@ impl<'m, 'a> InsnGen<'m, 'a> {
                     insn.ty
                 )));
             }
+        }
+        Ok(())
+    }
+
+    /// Instructions that exist only in fallback mode.
+    fn make_fallback_insn(&self, code: &mut CodeWriter, insn: &InsnNode) -> Res {
+        match insn.ty {
+            InsnType::If => {
+                let InsnKind::If {
+                    op,
+                    target,
+                    then_block,
+                    ..
+                } = &insn.kind
+                else {
+                    return Err(CodegenError::new("Missing if data"));
+                };
+                code.add("if (");
+                self.add_arg(code, self.arg_of(insn, 0)?, true)?;
+                code.add(" ").add(op.symbol()).add(" ");
+                self.add_arg(code, self.arg_of(insn, 1)?, true)?;
+                let label = match then_block {
+                    Some(b) => format!("L{b}"),
+                    None => label_name(*target),
+                };
+                code.add(") goto ").add(&label);
+            }
+            InsnType::Goto => {
+                let InsnKind::Goto { target } = &insn.kind else {
+                    return Err(CodegenError::new("Missing goto data"));
+                };
+                code.add("goto ").add(&label_name(*target));
+            }
+            InsnType::MoveException => {
+                code.add("move-exception");
+            }
+            InsnType::Switch => {
+                let InsnKind::Switch { data, def, .. } = &insn.kind else {
+                    return Err(CodegenError::new("Missing switch data"));
+                };
+                code.add("switch(");
+                self.add_arg(code, self.arg_of(insn, 0)?, true)?;
+                code.add(") {");
+                code.inc_indent();
+                if let Some(d) = data {
+                    for (k, t) in d.keys.iter().zip(&d.targets) {
+                        code.start_line_str("case ")
+                            .add(&k.to_string())
+                            .add(": goto ")
+                            .add(&label_name(*t))
+                            .add(";");
+                    }
+                }
+                code.start_line_str("default: goto ")
+                    .add(&label_name(*def))
+                    .add(";");
+                code.dec_indent();
+                code.start_line_char('}');
+            }
+            InsnType::NewInstance => {
+                let ty = insn
+                    .result
+                    .as_ref()
+                    .map(|r| r.init_type.to_string())
+                    .unwrap_or_default();
+                code.add("new ").add(&ty);
+            }
+            InsnType::Phi => {
+                code.add(insn.ty.name()).add("(");
+                for a in &insn.args {
+                    self.add_arg(code, a, true)?;
+                    code.add(" ");
+                }
+                code.add(")");
+            }
+            InsnType::MoveResult => {
+                code.add("move-result");
+            }
+            InsnType::FillArrayData => {
+                code.add("fill-array ").add(&crate::dump::dump_insn(insn));
+            }
+            InsnType::SwitchData => {
+                code.add(&crate::dump::dump_insn(insn));
+            }
+            InsnType::MoveMulti => {
+                let n = insn.args.len();
+                let mut i = 0;
+                while i + 1 < n {
+                    self.add_arg(code, &insn.args[i], true)?;
+                    code.add(" = ");
+                    self.add_arg(code, &insn.args[i + 1], true)?;
+                    code.add("; ");
+                    i += 2;
+                }
+            }
+            InsnType::JavaJsr => {
+                code.add("jsr -> ");
+            }
+            InsnType::JavaRet => {
+                code.add("ret ");
+                self.add_arg(code, self.arg_of(insn, 0)?, true)?;
+            }
+            _ => {}
         }
         Ok(())
     }
@@ -935,6 +1041,15 @@ impl<'m, 'a> InsnGen<'m, 'a> {
         self.add_arg(code, res_arg, false)?;
         code.add(" ").add(op.symbol()).add("= ");
         self.add_arg(code, arg, false)
+    }
+}
+
+/// `MethodGen.getLabelName(int)`
+pub fn label_name(offset: i32) -> String {
+    if offset < 0 {
+        format!("LB_{:x}", -offset)
+    } else {
+        format!("L{offset:x}")
     }
 }
 

@@ -325,6 +325,33 @@ pub fn is_inconsistent_warning(w: &str) -> bool {
 }
 
 impl MethodCfg {
+    /// `BlockNode.toString`: `B:<cid>:0x<offset>`
+    pub fn block_to_string(&self, b: BlockId) -> String {
+        let blk = &self.arena[b];
+        if blk.start_offset < 0 {
+            format!("B:{}:?", blk.cid)
+        } else {
+            format!("B:{}:0x{:04x}", blk.cid, blk.start_offset)
+        }
+    }
+
+    /// `getAttributesString` of a block: `A[...]` with the sorted flag names (attributes
+    /// other than flags are not included), empty without flags.
+    pub fn block_attributes_string(&self, b: BlockId) -> String {
+        let flags = self.arena[b].flags;
+        let mut names: Vec<&str> = bflag::NAMES
+            .iter()
+            .chain(bflag::REGION_NAMES.iter())
+            .filter(|(f, _)| flags & f != 0)
+            .map(|(_, n)| *n)
+            .collect();
+        if names.is_empty() {
+            return String::new();
+        }
+        names.sort_unstable();
+        format!("A[{}]", names.join(", "))
+    }
+
     /// `AFlag.INCONSISTENT_CODE`
     pub fn is_inconsistent(&self) -> bool {
         self.warnings.iter().any(|w| is_inconsistent_warning(w))

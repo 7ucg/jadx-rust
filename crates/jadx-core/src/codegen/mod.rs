@@ -106,11 +106,23 @@ pub enum DecompilationMode {
     Fallback,
 }
 
+/// Original instructions of a method (`MethodNode.getInstructions` in fallback mode).
+pub struct FallbackCode {
+    pub insns: Vec<Option<crate::model::insn::InsnNode>>,
+    pub handlers: Vec<crate::model::cfg::ExceptionHandler>,
+}
+
 /// Provides the processed code of the methods of the input (decoding and the pass pipeline).
 pub trait MethodLoader {
     /// Code state of method `mth` of class `cls`; methods without code get a state with only the
     /// arguments.
     fn load(&self, cls: usize, mth: usize) -> Result<crate::model::cfg::MethodCfg, String>;
+
+    /// The original instructions of the method for the instruction dump (fallback mode):
+    /// instruction array by offset and the exception handlers.
+    fn fallback_code(&self, _cls: usize, _mth: usize) -> Result<FallbackCode, String> {
+        Err("instructions are not available".to_string())
+    }
 
     /// Line of the source code the method starts at (`0` if unknown).
     fn source_line(&self, _cls: usize, _mth: usize) -> u32 {

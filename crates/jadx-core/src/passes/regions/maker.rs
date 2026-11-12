@@ -128,9 +128,11 @@ impl<'a> RegionMaker<'a> {
             // Add block to multiple regions (duplicate the instructions in decompiled code)
             // and allow processing to continue
             if !self.cfg.block(start_block).contains(bflag::DUPLICATED) {
-                self.cfg
-                    .warnings
-                    .push(format!("Code duplicated, block: {start_block}"));
+                self.cfg.warnings.push(format!(
+                    "Code duplicated, block: {} {}",
+                    self.cfg.block_to_string(start_block),
+                    self.cfg.block_attributes_string(start_block)
+                ));
                 self.cfg.block_mut(start_block).add(bflag::DUPLICATED);
             }
         }

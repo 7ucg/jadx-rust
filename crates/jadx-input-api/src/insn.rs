@@ -377,3 +377,99 @@ pub struct MethodAttrs {
     /// Names and access flags of the parameters (`dalvik.annotation.MethodParameters`).
     pub method_parameters: Vec<(Option<String>, u32)>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ann(desc: &str, vis: AnnotationVisibility) -> AnnotationData {
+        AnnotationData {
+            type_desc: desc.to_string(),
+            visibility: vis,
+            values: Vec::new(),
+        }
+    }
+
+    fn packed(descs: &[&str]) -> Vec<String> {
+        let list = descs
+            .iter()
+            .map(|d| {
+                let vis = if d.starts_with("Ldalvik") {
+                    AnnotationVisibility::System
+                } else {
+                    AnnotationVisibility::Runtime
+                };
+                ann(d, vis)
+            })
+            .collect();
+        pack_annotations(list)
+            .into_iter()
+            .map(|a| a.type_desc)
+            .collect()
+    }
+
+    /// Orders taken from `HashMap` iteration of the reference runtime.
+    #[test]
+    fn annotations_follow_the_hash_map_order() {
+        assert_eq!(
+            packed(&[
+                "Lkotlin/Metadata;",
+                "Ljava/lang/Deprecated;",
+                "Landroidx/annotation/Nullable;"
+            ]),
+            [
+                "Landroidx/annotation/Nullable;",
+                "Lkotlin/Metadata;",
+                "Ljava/lang/Deprecated;"
+            ]
+        );
+        assert_eq!(
+            packed(&[
+                "Ldalvik/annotation/Signature;",
+                "Ljava/lang/Deprecated;",
+                "Lkotlin/Metadata;",
+                "Landroidx/annotation/RestrictTo;",
+                "Lcom/google/Foo;",
+                "Lb/B;",
+                "Lc/C;",
+                "Ld/D;",
+                "Le/E;"
+            ]),
+            [
+                "Le/E;",
+                "Ljava/lang/Deprecated;",
+                "Ld/D;",
+                "Lkotlin/Metadata;",
+                "Lc/C;",
+                "Lcom/google/Foo;",
+                "Lb/B;",
+                "Landroidx/annotation/RestrictTo;"
+            ]
+        );
+        assert_eq!(
+            packed(&[
+                "Ljavax/annotation/Nonnull;",
+                "Ljavax/annotation/meta/TypeQualifier;",
+                "Ljava/lang/annotation/Documented;",
+                "Ljava/lang/annotation/Retention;"
+            ]),
+            [
+                "Ljavax/annotation/Nonnull;",
+                "Ljavax/annotation/meta/TypeQualifier;",
+                "Ljava/lang/annotation/Documented;",
+                "Ljava/lang/annotation/Retention;"
+            ]
+        );
+    }
+
+    #[test]
+    fn later_annotation_of_a_class_replaces_the_earlier() {
+        let mut a = ann("Lx/A;", AnnotationVisibility::Runtime);
+        a.values.push(("v".into(), EncodedValueData::Int(1)));
+        let mut b = ann("Lx/A;", AnnotationVisibility::Build);
+        b.values.push(("v".into(), EncodedValueData::Int(2)));
+        let out = pack_annotations(vec![a, b]);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].values[0].1, EncodedValueData::Int(2));
+    }
+}
