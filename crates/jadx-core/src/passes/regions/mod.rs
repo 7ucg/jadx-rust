@@ -1,12 +1,14 @@
 //! Region building stages: `RegionMakerVisitor` and the passes that follow it.
 
 pub mod block_ext;
+pub mod check;
 pub mod clean;
 pub mod if_maker;
 pub mod if_visitor;
 pub mod loop_maker;
 pub mod maker;
 pub mod post_process;
+pub mod switch_break;
 pub mod switch_maker;
 pub mod sync_maker;
 pub mod ternary_mod;
@@ -38,6 +40,12 @@ pub fn run_region_stages(cfg: &mut MethodCfg, env: &MethodEnv, stage: u32) -> Re
     }
     if stage >= 16 {
         shrink_method(cfg)?;
+    }
+    if stage >= 17 {
+        check::check_regions(cfg)?;
+    }
+    if stage >= 19 {
+        switch_break::switch_break_visitor(cfg, env)?;
     }
     Ok(())
 }

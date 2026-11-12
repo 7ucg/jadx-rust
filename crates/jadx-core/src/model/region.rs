@@ -153,6 +153,8 @@ pub struct Regions {
     pub insn_region_ref: HashMap<InsnId, RegionId>,
     /// `AFlag.REQUEST_CODE_SHRINK`
     pub request_code_shrink: bool,
+    /// `AFlag.REQUEST_IF_REGION_OPTIMIZE`
+    pub request_if_region_optimize: bool,
 }
 
 impl Regions {

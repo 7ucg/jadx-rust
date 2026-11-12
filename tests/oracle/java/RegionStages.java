@@ -1,8 +1,10 @@
 import jadx.core.dex.nodes.MethodNode;
+import jadx.core.dex.visitors.regions.CheckRegions;
 import jadx.core.dex.visitors.regions.CleanRegions;
 import jadx.core.dex.visitors.regions.IfRegionVisitor;
 import jadx.core.dex.visitors.regions.RegionMakerVisitor;
 import jadx.core.dex.visitors.regions.ReturnVisitor;
+import jadx.core.dex.visitors.regions.SwitchBreakVisitor;
 import jadx.core.dex.visitors.shrink.CodeShrinkVisitor;
 
 /**
@@ -28,6 +30,12 @@ public class RegionStages {
 		}
 		if (stage >= 16) {
 			new CodeShrinkVisitor().visit(mth);
+		}
+		if (stage >= 17) {
+			new CheckRegions().visit(mth);
+		}
+		if (stage >= 19) {
+			new SwitchBreakVisitor().visit(mth);
 		}
 	}
 }

@@ -429,7 +429,12 @@ fn insn_nodes(
                             )?
                         }
                     }
-                    Err(_) => writeln!(out, "M {id} LOAD_ERROR")?,
+                    Err(e) => {
+                        if std::env::var("JADX_RS_ERRORS").is_ok() {
+                            eprintln!("ERROR {id}: {e}");
+                        }
+                        writeln!(out, "M {id} LOAD_ERROR")?
+                    }
                 }
                 continue;
             }

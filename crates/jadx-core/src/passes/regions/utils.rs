@@ -437,10 +437,15 @@ fn is_region_contains_exc_handler_region(
 
 /// `RegionUtils.getBlockContainer`
 pub fn get_block_container(cfg: &MethodCfg, c: Container, block: BlockId) -> Option<Container> {
+    get_container_of(cfg, c, Container::Block(block))
+}
+
+/// `RegionUtils.getBlockContainer` for any block-like container.
+pub fn get_container_of(cfg: &MethodCfg, c: Container, block: Container) -> Option<Container> {
     match c {
         Container::Region(r) => {
             for s in subs(cfg, r) {
-                if let Some(res) = get_block_container(cfg, s, block) {
+                if let Some(res) = get_container_of(cfg, s, block) {
                     return Some(if is_block_like(res) {
                         Container::Region(r)
                     } else {
@@ -451,7 +456,7 @@ pub fn get_block_container(cfg: &MethodCfg, c: Container, block: BlockId) -> Opt
             None
         }
         _ => {
-            if c == Container::Block(block) {
+            if c == block {
                 Some(c)
             } else {
                 None
