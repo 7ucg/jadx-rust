@@ -7,6 +7,10 @@
 //!   jadx-rs smali       <file>   smali text of every class (oracle comparison format)
 //!   jadx-rs dex-counts  <file>   id table counts (oracle comparison format)
 //!   jadx-rs pre-info    <file>   class level state after the pre decompile passes
+//!   jadx-rs java-classes <file>  class data of .class/.jar input (oracle comparison format)
+//!   jadx-rs java-insns  <file>   decoded JVM instructions of .class/.jar input
+
+mod java_dump;
 
 use std::path::PathBuf;
 
@@ -17,6 +21,10 @@ fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
     let cmd = args.next().unwrap_or_default();
     let path = args.next().map(PathBuf::from);
+    if matches!(cmd.as_str(), "java-classes" | "java-insns") {
+        let path = path.context("usage: jadx-rs <java-classes|java-insns> <file.class|.jar>")?;
+        return java_dump::run(&cmd, &path);
+    }
     let no_verify = args.any(|a| a == "--no-verify-checksum");
     let path = match (cmd.as_str(), path) {
         ("dex-info" | "dex-classes" | "dex-map" | "dex-counts" | "smali" | "dex-opcodes" | "insn-dump" | "insn-nodes" | "insn-blocks" | "insn-cfg" | "insn-ssa" | "pre-info", Some(p)) => p,

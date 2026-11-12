@@ -112,6 +112,7 @@ dependencies = [
  "jadx-core",
  "jadx-dex-input",
  "jadx-input-api",
+ "jadx-java-input",
 ]
 
 [[package]]
@@ -139,6 +140,11 @@ version = "0.1.0"
 [[package]]
 name = "jadx-java-input"
 version = "0.1.0"
+dependencies = [
+ "jadx-input-api",
+ "thiserror",
+ "zip",
+]
 
 [[package]]
 name = "jadx-mcp"

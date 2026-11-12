@@ -109,6 +109,7 @@ fn convert(insn: &Insn) -> InsnData {
         literal,
         target,
         index,
+        result_reg: None,
         payload,
     }
 }
@@ -131,6 +132,7 @@ pub fn decode_insn_data(units: &[u16]) -> Result<Vec<InsnData>> {
                 literal: 0,
                 target: 0,
                 index: 0,
+                result_reg: None,
                 payload: None,
             }
         } else {
