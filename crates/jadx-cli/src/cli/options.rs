@@ -655,9 +655,6 @@ pub fn parse(argv: &[String]) -> Result<Cli, ParseError> {
         let _ = p;
         cli.unimplemented.push("--mappings-path".into());
     }
-    if cli.args.deobfuscation_on {
-        cli.unimplemented.push("--deobf".into());
-    }
     cli.args.input_files = files.into_iter().map(PathBuf::from).collect();
     Ok(cli)
 }
@@ -757,7 +754,6 @@ mod tests {
         assert_eq!(c.args.deobfuscation_min_length, 2);
         assert_eq!(c.args.deobfuscation_max_length, 40);
         assert_eq!(c.args.rename_flags.len(), 2);
-        assert!(c.unimplemented.contains(&"--deobf".to_string()));
         let c = p(&["--rename-flags", "none", "x"]).unwrap();
         assert!(c.args.rename_flags.is_empty());
     }

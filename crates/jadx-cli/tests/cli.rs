@@ -137,6 +137,29 @@ fn single_class_mode() {
 }
 
 #[test]
+fn deobfuscation_renames_short_names() {
+    let out = tmp("deobf");
+    let o = run(&[
+        s("-d"),
+        out.as_os_str(),
+        s("--deobf"),
+        s("--deobf-min"),
+        s("20"),
+        corpus().as_os_str(),
+    ]);
+    assert_eq!(o.status.code(), Some(3), "{}", stdout(&o));
+    // every corpus class, field and method name is shorter than 20 chars, so all of them are
+    // renamed and the output tree moves to the generated alias names.
+    let names = list_files(&out);
+    assert!(
+        names.iter().all(|n| n.contains("C0")),
+        "expected deobfuscated class names, got {names:?}"
+    );
+    let any = std::fs::read_to_string(out.join(&names[0])).unwrap();
+    assert!(any.contains("reason: deobfuscation"), "{any}");
+}
+
+#[test]
 fn error_exit_codes() {
     let o = run(&[]);
     assert_eq!(o.status.code(), Some(1));
