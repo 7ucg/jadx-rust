@@ -260,3 +260,60 @@ impl Root {
         self.const_storage.set_resource_names(plan.names, resolved);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn input() -> ResourceInput {
+        let field = |id, t: &str, n: &str| ResourceField {
+            id,
+            type_name: t.into(),
+            name: n.into(),
+        };
+        ResourceInput {
+            app_package: Some("a.b".into()),
+            names: HashMap::from([(0x7f01_0000, "id/main".to_string())]),
+            fields: vec![
+                field(0x7f01_0000, "id", "main"),
+                field(0x7f02_0000, "layout", "act"),
+            ],
+        }
+    }
+
+    #[test]
+    fn creates_the_app_r_class_when_missing() {
+        let mut classes = Vec::new();
+        let plan = add_resource_classes(&mut classes, &input(), true);
+        let names: Vec<_> = classes.iter().map(|c| c.type_desc.as_str()).collect();
+        assert_eq!(names, ["La/b/R;", "La/b/R$id;", "La/b/R$layout;"]);
+        assert_eq!(classes[1].fields[0].name, "main");
+        assert_eq!(
+            classes[1].fields[0].const_value,
+            Some(ConstValue::Int(0x7f01_0000))
+        );
+        assert_eq!(plan.synthetic.len(), 3);
+        // only the top class carries a comment, the new members are not "added"
+        assert_eq!(plan.class_comments.len(), 1);
+        assert!(plan.field_comments.is_empty());
+    }
+
+    #[test]
+    fn extends_an_existing_r_class() {
+        let mut classes = vec![synthetic_class("a.b.R", ACC_PUBLIC, Vec::new())];
+        classes.push(synthetic_class(
+            "a.b.R$id",
+            ACC_PUBLIC | ACC_STATIC,
+            vec![resource_field(&ResourceField {
+                id: 0x7f01_0000,
+                type_name: "id".into(),
+                name: "main".into(),
+            })],
+        ));
+        let plan = add_resource_classes(&mut classes, &input(), true);
+        assert_eq!(classes.len(), 3, "only the layout class is created");
+        assert_eq!(classes[1].fields.len(), 1, "existing field is kept");
+        assert_eq!(plan.field_comments.len(), 1);
+        assert_eq!(plan.field_comments[0].1, "act");
+    }
+}
