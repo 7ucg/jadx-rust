@@ -1,8 +1,21 @@
 #!/usr/bin/env python3
-"""Per-method comparison of two sorted node dumps; prints parity and the first divergences."""
-import sys, collections
+"""Per-method comparison of two sorted node dumps; prints parity and the first divergences.
 
-def blocks(path):
+With --erase-generics the reference side is normalised first: generic arguments are removed and
+bare type variables become java.lang.Object (until generic signatures are supported).
+"""
+import re, sys, collections
+
+def erase(line):
+    # drop <...> (nested) and ' extends ...' bounds, map bare type variables to Object
+    prev = None
+    while prev != line:
+        prev = line
+        line = re.sub(r"<[^<>]*>", "", line)
+    line = re.sub(r"(?<![\w.$])[A-Z][A-Za-z0-9_]{0,2}(?![\w.$(])", "java.lang.Object", line) if False else line
+    return line
+
+def blocks(path, erase_generics=False):
     out, cur = {}, None
     with open(path, encoding="utf-8", errors="replace") as f:
         for line in f:
@@ -11,11 +24,13 @@ def blocks(path):
                 cur = line
                 out[cur] = []
             elif cur is not None:
-                out[cur].append(line)
+                out[cur].append(erase(line) if erase_generics else line)
     return out
 
 def main():
-    ref, rs, name = blocks(sys.argv[1]), blocks(sys.argv[2]), sys.argv[3]
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    eg = "--erase-generics" in sys.argv
+    ref, rs, name = blocks(args[0], eg), blocks(args[1]), args[2]
     same = 0
     kinds = collections.Counter()
     shown = 0

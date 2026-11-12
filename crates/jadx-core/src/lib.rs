@@ -4,3 +4,4 @@ pub mod decode;
 pub mod dump;
 pub mod model;
 pub mod passes;
+pub mod root;

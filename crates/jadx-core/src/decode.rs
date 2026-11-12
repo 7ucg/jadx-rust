@@ -24,8 +24,7 @@ fn err<T>(msg: impl Into<String>) -> Result<T, DecodeError> {
 pub struct MethodCtx {
     pub return_type: ArgType,
     pub parent_class: ClassInfo,
-    /// Root option `moveInnerClasses` (default true).
-    pub can_be_inner: bool,
+    pub root: std::sync::Arc<crate::root::RootCtx>,
 }
 
 /// Decoded instruction array indexed by code-unit offset (`None` at non-instruction offsets).
@@ -77,7 +76,7 @@ impl<'a> InsnDecoder<'a> {
 
     fn class_info(&self, desc: &str) -> Result<ClassInfo, DecodeError> {
         let ty = ArgType::parse(desc).map_err(|e| DecodeError::Msg(e.to_string()))?;
-        ClassInfo::from_type(&ty, self.ctx.can_be_inner).map_err(|e| DecodeError::Msg(e.0))
+        self.ctx.root.class_info(&ty).map_err(DecodeError::Msg)
     }
 
     fn parse_type(&self, desc: &str) -> Result<ArgType, DecodeError> {

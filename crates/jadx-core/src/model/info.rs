@@ -52,6 +52,43 @@ impl ClassInfo {
         Self::from_type(&ArgType::object(name), can_be_inner)
     }
 
+    /// Top level (or "not inner") class: the whole name after the last dot is the short name.
+    pub fn new_top_level(ty: &ArgType) -> Result<ClassInfo, InfoError> {
+        let ty = check_class_type(ty)?;
+        let full = ty.object_name().unwrap_or_default();
+        let (pkg, name) = match full.rfind('.') {
+            None => (String::new(), full.clone()),
+            Some(dot) => (full[..dot].to_string(), full[dot + 1..].to_string()),
+        };
+        let full_name = make_full_name(&pkg, &name, None, false);
+        Ok(ClassInfo(Arc::new(ClassInfoInner {
+            ty,
+            name,
+            pkg: Some(pkg),
+            full_name,
+            parent: None,
+        })))
+    }
+
+    /// Inner class of `parent`; the short name is the part after the last `$`.
+    pub fn new_inner(ty: &ArgType, parent: ClassInfo) -> Result<ClassInfo, InfoError> {
+        let ty = check_class_type(ty)?;
+        let full = ty.object_name().unwrap_or_default();
+        let cls_name = full.rsplit('.').next().unwrap_or(&full).to_string();
+        let name = match cls_name.rfind('$') {
+            Some(sep) if sep > 0 && sep != cls_name.len() - 1 => cls_name[sep + 1..].to_string(),
+            _ => cls_name,
+        };
+        let full_name = make_full_name("", &name, Some(&parent), false);
+        Ok(ClassInfo(Arc::new(ClassInfoInner {
+            ty,
+            name,
+            pkg: None,
+            full_name,
+            parent: Some(parent),
+        })))
+    }
+
     fn split(ty: ArgType, can_be_inner: bool) -> ClassInfoInner {
         let full_object_name = ty.object_name().unwrap_or_default();
         let (cls_pkg, mut cls_name) = match full_object_name.rfind('.') {

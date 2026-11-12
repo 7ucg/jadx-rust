@@ -248,20 +248,27 @@ fn insn_dump(dex: &DexFile) -> Result<()> {
 fn insn_nodes(dex: &DexFile) -> Result<()> {
     use jadx_core::decode::{InsnDecoder, MethodCtx};
     use jadx_core::dump::dump_insn;
-    use jadx_core::model::info::{make_short_id, ClassInfo};
+    use jadx_core::model::info::make_short_id;
     use jadx_core::model::types::ArgType;
     use jadx_core::passes::process_insns::process_instructions;
     use std::io::Write;
 
     let stdout = std::io::stdout();
     let mut out = std::io::BufWriter::new(stdout.lock());
+    let mut root = jadx_core::root::RootCtx::new(true);
+    for def in dex.class_defs() {
+        root.add_class(&dex.type_descriptor(def?.class_idx)?);
+    }
+    let root = std::sync::Arc::new(root);
     for def in dex.class_defs() {
         let def = def?;
         let Some(data) = dex.class_data(&def)? else {
             continue;
         };
         let cls_type = dex.type_descriptor(def.class_idx)?;
-        let parent = ClassInfo::from_name(&cls_type, true).map_err(|e| anyhow::anyhow!(e.0))?;
+        let parent = root
+            .class_info(&ArgType::object(&cls_type))
+            .map_err(|e| anyhow::anyhow!(e))?;
         for m in data.direct_methods.iter().chain(&data.virtual_methods) {
             if m.code_off == 0 {
                 continue;
@@ -283,7 +290,7 @@ fn insn_nodes(dex: &DexFile) -> Result<()> {
             let ctx = MethodCtx {
                 return_type: ret,
                 parent_class: parent.clone(),
-                can_be_inner: true,
+                root: root.clone(),
             };
             let decoded = InsnDecoder::new(dex, &ctx).process(&raw, code.insns.len());
             let mut decoded = match decoded {
