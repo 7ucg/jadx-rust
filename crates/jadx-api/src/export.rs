@@ -139,6 +139,7 @@ fn java_null_str(v: Option<&str>) -> String {
 /// string template (`${...}`/`"""`).
 pub fn sanitize_gradle_groovy(s: &str) -> String {
     s.replace('\\', "\\\\")
+        .replace('$', "\\$")
         .replace('\'', "\\'")
         .replace('"', "\\\"")
         .replace('\n', " ")
