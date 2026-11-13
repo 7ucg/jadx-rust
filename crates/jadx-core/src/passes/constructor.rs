@@ -168,6 +168,11 @@ fn process_invoke(
     );
     co.args = co_args;
     let co_id = cfg.add_insn(co);
+    // `co.inheritMetadata(inv)`: before the new-instance assign chain is folded in below, so a
+    // debug line on the still-live `invoke-direct` is picked up first (`addSourceLineFrom` only
+    // fills a still-unset source line, so this does not take priority over the `new-instance`
+    // line inherited next).
+    cfg.inherit_metadata(co_id, inv);
     let Some(mut instance_arg) = instance_arg_reg(cfg, inv) else {
         return Err("constructor call without instance register".into());
     };
@@ -182,6 +187,10 @@ fn process_invoke(
             } else if let Some(new_inst) =
                 remove_assign_chain(cfg, assign, remover, InsnType::NewInstance)?
             {
+                // `co.inheritMetadata(newInstInsn)`: the debug line table usually marks the
+                // `new-instance` offset rather than the `invoke-direct` one, so this is where a
+                // constructor call most often actually gets its source line from.
+                cfg.inherit_metadata(co_id, new_inst);
                 cfg.insns[new_inst].flags |= iflag::REMOVE;
                 remover.add_without_unbind(new_inst);
             }

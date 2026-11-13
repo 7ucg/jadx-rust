@@ -310,6 +310,20 @@ pub struct MethodCfg {
     /// `AFlag.USE_LINES_HINTS`: the method's debug line numbers are trustworthy enough to decide
     /// `if`/`else` branch order (`DebugInfoAttachVisitor.verifyDebugLines`).
     pub use_lines_hints: bool,
+    /// Extra candidate offsets to also try (in order, after the instruction's own `offset`) when
+    /// looking up its debug source line, recorded by [`MethodCfg::inherit_metadata`] whenever a
+    /// non-`RETURN` instruction inherits metadata from another one it folds or replaces.
+    ///
+    /// The reference attaches source lines to every decoded instruction object before any of
+    /// these folds happen (`DebugInfoAttachVisitor` runs first in its pipeline), so by the time
+    /// e.g. `ConstructorVisitor` merges a `new-instance` and its `invoke-direct` into one
+    /// `ConstructorInsn`, `inheritMetadata` is really just copying an already-known line value
+    /// (`addSourceLineFrom`, filling only if still unset) from one in-memory object to another.
+    /// This port applies source lines once, late, by instruction offset (see
+    /// `passes::debug_info`), after such folds already happened; by then the instruction that
+    /// used to sit at the folded-away offset (e.g. the `new-instance`) is an orphaned arena entry
+    /// that nothing looks at. Recording its offset here lets the later line lookup still find it.
+    pub debug_fallback_offsets: std::collections::HashMap<super::insn::InsnId, Vec<i32>>,
 }
 
 /// Warnings added by `addWarn` (they also mark the method code as inconsistent), identified by

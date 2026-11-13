@@ -690,12 +690,42 @@ impl MethodCfg {
         }
     }
 
-    /// `InsnNode.inheritMetadata` (no source lines or comments are modelled yet).
+    /// `InsnNode.inheritMetadata` (comments are not modelled yet). For a `RETURN` instruction the
+    /// source line (and, if `SYNTHETIC`, the offset) is copied unconditionally
+    /// (`LineAttrNode.copyLines`); for every other instruction the source line is only filled in
+    /// when the target does not already have one (`LineAttrNode.addSourceLineFrom`), since this
+    /// is called more than once while building some instructions (e.g. `ConstructorVisitor`
+    /// inherits first from the replaced `invoke-direct`, then from the folded `new-instance`,
+    /// and the debug line table often marks only the `new-instance` offset).
     pub fn inherit_metadata(&mut self, target: InsnId, source: InsnId) {
         let off = self.insns[source].offset;
-        let t = &mut self.insns[target];
-        if t.ty == InsnType::Return && t.contains_flag(iflag::SYNTHETIC) {
-            t.offset = off;
+        let src_line = self.insns[source].source_line;
+        let is_return = self.insns[target].ty == InsnType::Return;
+        if is_return {
+            let t = &mut self.insns[target];
+            t.source_line = src_line;
+            if t.contains_flag(iflag::SYNTHETIC) {
+                t.offset = off;
+            }
+        } else {
+            if self.insns[target].source_line == 0 {
+                self.insns[target].source_line = src_line;
+            }
+            // Record `source`'s offset (and anything already recorded as reachable through it)
+            // as a fallback line-lookup candidate for `target`; see the field doc on
+            // `MethodCfg::debug_fallback_offsets`. Harmless once source lines are already
+            // attached (the forward-looking lookup only consults it when the primary offset
+            // comes up empty), and necessary when this runs before they are (the common case,
+            // since most of these folds happen well before `passes::debug_info` applies lines).
+            let mut extra = self
+                .debug_fallback_offsets
+                .remove(&source)
+                .unwrap_or_default();
+            extra.insert(0, off);
+            self.debug_fallback_offsets
+                .entry(target)
+                .or_default()
+                .extend(extra);
         }
     }
 }

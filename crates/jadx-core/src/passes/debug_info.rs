@@ -30,13 +30,35 @@ pub fn apply_debug_info(cfg: &mut MethodCfg, debug: &DebugInfo) {
 
 fn apply_source_lines(cfg: &mut MethodCfg, lines: &[(u32, u32)]) {
     let map: HashMap<u32, u32> = lines.iter().copied().collect();
-    for insn in cfg.insns.iter_mut() {
-        if insn.offset >= 0 {
-            if let Some(&line) = map.get(&(insn.offset as u32)) {
-                insn.source_line = line;
+    for id in 0..cfg.insns.len() {
+        let offset = cfg.insns[id].offset;
+        let mut line = if offset >= 0 {
+            map.get(&(offset as u32)).copied()
+        } else {
+            None
+        };
+        if line.is_none() || line == Some(0) {
+            // see `MethodCfg::debug_fallback_offsets`: offsets of instructions this one folded
+            // in (e.g. a constructor call's `new-instance`) that may carry the line this
+            // instruction's own offset does not.
+            if let Some(fallbacks) = cfg.debug_fallback_offsets.get(&id) {
+                for &off in fallbacks {
+                    if off >= 0 {
+                        if let Some(&l) = map.get(&(off as u32)) {
+                            if l != 0 {
+                                line = Some(l);
+                                break;
+                            }
+                        }
+                    }
+                }
             }
         }
+        if let Some(line) = line {
+            cfg.insns[id].source_line = line;
+        }
     }
+    cfg.debug_fallback_offsets.clear();
     cfg.use_lines_hints = verify_debug_lines(lines);
 }
 
