@@ -272,8 +272,71 @@ impl<'m, 'a> InsnGen<'m, 'a> {
         Ok(())
     }
 
+    /// `staticField`: a field marked `InlineType::InstanceField` (a singleton instance of an
+    /// inlinable anonymous class, held in a `public static final` field initialized in its own
+    /// class's initializer) is printed as the anonymous class body at its first/only use instead
+    /// of a plain static field read.
     fn static_field(&self, code: &mut CodeWriter, field: &FieldInfo) -> Res {
+        if let Some((fc, fi)) = self.root().resolve_field_id(field) {
+            let field_node = &self.root().classes[fc].fields[fi];
+            if field_node.inline_instance_field && self.root().classes[fc].anonymous.is_some() {
+                if let Some(init) = field_node.init_insn {
+                    let loaded = self.env().method_cfg(fc, init.mth);
+                    if let Ok(field_cfg) = loaded.as_ref() {
+                        let insn = &field_cfg.insns[init.insn];
+                        if insn.ty == InsnType::Constructor {
+                            return self.inline_instance_field_constructor(
+                                code, fc, field_cfg, init.mth, insn,
+                            );
+                        }
+                    }
+                }
+            }
+        }
         make_static_field_access(code, field, self.cls_gen())
+    }
+
+    /// `InsnGen.staticField`'s inline branch: the constructor call lives in the field's own
+    /// initializer code (`FieldInitInsn`), a different method than the one currently being
+    /// generated, so argument names are resolved against that method's own code state (`NameGen`
+    /// keyed by its own SSA vars) instead of the current one; everything else (recursion check,
+    /// base type, trailing class body) uses the current generator, same as
+    /// `inline_anonymous_constructor`.
+    fn inline_instance_field_constructor(
+        &self,
+        code: &mut CodeWriter,
+        cls: usize,
+        field_cfg: &MethodCfg,
+        field_mth: usize,
+        insn: &InsnNode,
+    ) -> Res {
+        if self.cls_gen().class_index() == cls {
+            return Err(CodegenError::new(format!(
+                "Anonymous inner class unlimited recursion detected. Convert class to inner: {}",
+                self.root().classes[cls].info.full_name()
+            )));
+        }
+        let root = self.root();
+        let Some(anon) = &root.classes[cls].anonymous else {
+            return Err(CodegenError::new("Missing anonymous class attribute"));
+        };
+        let InsnKind::Constructor { call_mth, .. } = &insn.kind else {
+            return Err(CodegenError::new("Missing constructor data"));
+        };
+        code.add("new ");
+        self.use_type(code, &anon.base_type)?;
+        let call_node = root.resolve_method(call_mth);
+        let call_mth_node = call_node.map(|(c, m)| &root.classes[c].methods[m]);
+        let field_cls_gen = ClassGen::new(self.env(), cls);
+        let field_mgen = MethodGen::new(&field_cls_gen, field_cfg, field_mth);
+        let field_ig = InsnGen::new(&field_mgen, self.fallback);
+        field_ig.generate_method_arguments(code, insn, 0, call_mth_node)?;
+        code.add(" ");
+
+        let cls_gen = ClassGen::with_parent(self.env(), cls, self.cls_gen().parent_gen());
+        cls_gen.set_outer_name_gen(self.mgen.name_gen().borrow().clone());
+        cls_gen.set_inlined(true);
+        cls_gen.add_class_body(code, true)
     }
 
     // ---- instructions ----------------------------------------------------------------------
