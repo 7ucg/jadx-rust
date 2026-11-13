@@ -1,8 +1,14 @@
 //! End to end tests of `jadx-rs --export-gradle` against the small fixtures also used by the
 //! reference CLI's own export tests (`jadx-cli/src/test/java/jadx/cli/TestExport.java`):
-//! `fixtures/small.apk` (Android app), `fixtures/test-lib.aar` (Android library) and
+//! `fixtures/small.apk.bin` (Android app), `fixtures/test-lib.aar` (Android library) and
 //! `fixtures/HelloWorld.class` (plain Java). The expected file counts and build.gradle values
 //! below were cross checked against a run of the reference `jadx` CLI on the same inputs.
+//!
+//! The APK fixture is tracked as `small.apk.bin` (copied to a `small.apk` path in the test's
+//! own temp dir below) because the project's `.gitignore` blocks `*.apk` everywhere to keep
+//! real/private decompilation subjects out of version control; the loader only looks at the
+//! zip magic bytes and the archive content, not the extension, so this makes no difference to
+//! what is exercised.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -57,14 +63,28 @@ fn list_files(dir: &Path) -> Vec<String> {
     v
 }
 
+/// Copies the `.bin`-suffixed fixture to a real `.apk` path below a sibling input directory of
+/// `name` (never below the output directory itself, so it does not show up as an extra output
+/// file). The loader only looks at the zip magic bytes and archive content, not the extension,
+/// so this makes no difference to what the test exercises; see the module doc comment for why
+/// the fixture itself is not tracked as `.apk`.
+fn apk_fixture(name: &str) -> PathBuf {
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("gradle-{name}-input"));
+    std::fs::create_dir_all(&dir).unwrap();
+    let dest = dir.join("small.apk");
+    std::fs::copy(fixture("small.apk.bin"), &dest).unwrap();
+    dest
+}
+
 #[test]
 fn gradle_export_android_app() {
     let out = tmp("app");
+    let apk = apk_fixture("app");
     let o = run(&[
         s("-d"),
         out.as_os_str(),
         s("--export-gradle"),
-        fixture("small.apk").as_os_str(),
+        apk.as_os_str(),
     ]);
     assert_eq!(o.status.code(), Some(0), "{}", stdout(&o));
 
