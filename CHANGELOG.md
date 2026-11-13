@@ -7,6 +7,7 @@ cites its verification (oracle parity, benchmark, or test result).
 ## [Unreleased]
 
 ### Fixed
+- `jadx-core::passes::regions::check`: the "missing block, code lost" warning (`CheckRegions`) printed the block's raw internal arena index instead of its `B:<id>:0x<offset>` form (`BlockNode.toString()`); fixed. The warning still does not append the dumped block code the reference appends after the colon.
 - `jadx-core::codegen::class_body`: the enum constant code generator never called the general field-comment helper, so no enum constant ever printed its info comments (`Fake field, exist only in values array` for a synthetic constant with no backing static field in the bytecode, plus any rename comment); now added, matching `ClassGen.addEnumFields`. Also, the synthetic field name of such a fake constant used hexadecimal formatting of its instruction offset instead of the reference's plain decimal one (`EnumVisitor.createFakeField`), e.g. `EF1a` instead of `EF26`. Verification: `tests/oracle/source_oracle.sh` on a large app improves from 19,842/21,984 (90.3%) to 19,908/21,984 (90.6%) classes and 262,768/268,037 (98.0%) to 262,838/268,037 (98.1%) members identical.
 
 ### Added

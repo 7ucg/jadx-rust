@@ -62,7 +62,8 @@ pub fn check_regions(cfg: &mut MethodCfg) -> Res<()> {
                 && !b.contains(bflag::REMOVE)
             {
                 cfg.warnings.push(format!(
-                    "Code restructure failed: missing block: {block}, code lost"
+                    "Code restructure failed: missing block: {}, code lost",
+                    cfg.block_to_string(block)
                 ));
             }
         }
