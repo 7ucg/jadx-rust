@@ -8,6 +8,7 @@ description = "Public decompiler API: arguments, decompiler facade, class and re
 
 [dependencies]
 zip.workspace = true
+serde_json.workspace = true
 jadx-core.workspace = true
 jadx-dex-input.workspace = true
 jadx-input-api.workspace = true

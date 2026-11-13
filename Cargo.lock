@@ -116,6 +116,7 @@ dependencies = [
  "jadx-java-input",
  "jadx-package",
  "jadx-resources",
+ "serde_json",
  "zip",
 ]
 
@@ -133,6 +134,7 @@ dependencies = [
  "jadx-mcp",
  "jadx-package",
  "jadx-resources",
+ "serde_json",
 ]
 
 [[package]]

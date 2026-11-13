@@ -125,7 +125,7 @@ const OPTIONS: &[Opt] = &[
     val(
         &["--output-format"],
         "<format>",
-        "can be 'java' or 'json', default: java (json is not implemented yet)",
+        "can be 'java' or 'json', default: java",
     ),
     flag(
         &["-e", "--export-gradle"],
