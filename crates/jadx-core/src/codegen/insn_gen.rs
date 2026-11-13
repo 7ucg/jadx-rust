@@ -874,6 +874,18 @@ impl<'m, 'a> InsnGen<'m, 'a> {
                 } else {
                     self.cls_gen().add_cls_name(code, &call_mth.decl_class);
                 }
+                if let Some(generic_info) = &insn.generic_info {
+                    code.add("<");
+                    if generic_info.explicit {
+                        for (i, ty) in generic_info.types.iter().enumerate() {
+                            if i != 0 {
+                                code.add(",");
+                            }
+                            self.use_type(code, ty)?;
+                        }
+                    }
+                    code.add(">");
+                }
             }
         }
         self.generate_method_arguments(code, insn, 0, call_mth_node)
