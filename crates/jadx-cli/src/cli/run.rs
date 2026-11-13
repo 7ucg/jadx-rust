@@ -82,17 +82,28 @@ fn execute(cli: Cli) -> i32 {
     let mut jadx = JadxDecompiler::new(cli.args.clone());
     jadx.set_log_sink(log.clone());
     jadx.set_class_generator(std::sync::Arc::new(jadx_api::CoreClassGenerator::new()));
+    let timing = std::env::var("JADX_RS_TIMING").is_ok();
+    let t0 = std::time::Instant::now();
     if let Err(e) = jadx.load() {
         return report_failure(&*log, e);
+    }
+    if timing {
+        eprintln!("TIMING load: {:?}", t0.elapsed());
     }
     if check_for_errors(&mut jadx, &*log) {
         return EXIT_LOAD_FAILED;
     }
+    let t1 = std::time::Instant::now();
     let saved = match single_class(&jadx, &cli, &*log) {
         Ok(true) => Ok(()),
         Ok(false) => save(&jadx, cli.log_level, &*log),
         Err(e) => Err(e),
     };
+    if timing {
+        eprintln!("TIMING save: {:?}", t1.elapsed());
+        jadx_api::core_gen::print_timing_report();
+        jadx_core::passes::driver::print_pass_timing_report();
+    }
     if let Err(e) = saved {
         return report_failure(&*log, e);
     }

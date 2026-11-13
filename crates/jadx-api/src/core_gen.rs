@@ -4,7 +4,27 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+
+/// Diagnostic timing (`JADX_RS_TIMING`): nanoseconds spent in the class pass driver
+/// (`process_with_deps`) vs. pure codegen (`f`), accumulated across all classes, to find where
+/// the single-threaded save phase actually spends its time before trying to parallelize it.
+static PASS_NANOS: AtomicU64 = AtomicU64::new(0);
+static CODEGEN_NANOS: AtomicU64 = AtomicU64::new(0);
+
+/// Prints the accumulated split from [`PASS_NANOS`]/[`CODEGEN_NANOS`] if `JADX_RS_TIMING` is set.
+pub fn print_timing_report() {
+    if std::env::var("JADX_RS_TIMING").is_ok() {
+        let pass = PASS_NANOS.load(Ordering::Relaxed);
+        let codegen = CODEGEN_NANOS.load(Ordering::Relaxed);
+        eprintln!(
+            "TIMING class passes: {:?}, codegen: {:?}",
+            std::time::Duration::from_nanos(pass),
+            std::time::Duration::from_nanos(codegen)
+        );
+    }
+}
 
 use jadx_core::codegen::method_gen::no_code_cfg;
 use jadx_core::codegen::string_utils::{IntegerFormat as CoreIntegerFormat, StringUtils};
@@ -257,14 +277,25 @@ impl CoreClassGenerator {
             .as_ref()
             .is_none_or(|s| s.root_key != key || s.generated.contains(&cls));
         if stale {
+            let mut driver = Self::new_driver(ctx);
+            // Safe to parallelize (no cross-method dependency, unlike the class passes run
+            // later over an accumulating, order-dependent state) - see TODO.md
+            // "Performance/Parallelitaet".
+            let t = std::time::Instant::now();
+            driver.preload_all_methods(ctx.args.threads_count);
+            if std::env::var("JADX_RS_TIMING").is_ok() {
+                eprintln!("TIMING preload_all_methods: {:?}", t.elapsed());
+            }
             *guard = Some(DriverState {
                 root_key: key,
-                driver: Self::new_driver(ctx),
+                driver,
                 generated: HashSet::new(),
             });
         }
         let st = guard.as_mut().expect("driver state");
+        let t = std::time::Instant::now();
         let processed = catch_unwind(AssertUnwindSafe(|| st.driver.process_with_deps(cls)));
+        PASS_NANOS.fetch_add(t.elapsed().as_nanos() as u64, Ordering::Relaxed);
         if processed.is_err() {
             return Err("panic in class processing".to_string());
         }
@@ -278,7 +309,9 @@ impl CoreClassGenerator {
             lines: RefCell::new(HashMap::new()),
         };
         let env = self.make_env(ctx, &st.driver.root, &loader);
+        let t = std::time::Instant::now();
         let generated = catch_unwind(AssertUnwindSafe(|| f(&env, cls)));
+        CODEGEN_NANOS.fetch_add(t.elapsed().as_nanos() as u64, Ordering::Relaxed);
         for e in env.errors() {
             diag.error(e);
         }

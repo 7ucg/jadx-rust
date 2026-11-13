@@ -6,8 +6,32 @@
 //! method code is provided by a [`CodeSource`].
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 
 use jadx_input_api::TryData;
+
+/// Diagnostic timing (`JADX_RS_TIMING`): a coarse, 3-way split of [`ClassDriver::run_passes`]'s
+/// time, to find which group of passes dominates before trying to optimize or parallelize any
+/// of them. "early" = debug info through `REPLACE_NEW_ARRAY`; "regions" = region building
+/// through `CLEAN_REGIONS`; "late" = `METHOD_THROWS` through `PREPARE_FOR_CODEGEN`.
+static EARLY_PASS_NANOS: AtomicU64 = AtomicU64::new(0);
+static REGION_PASS_NANOS: AtomicU64 = AtomicU64::new(0);
+static LATE_PASS_NANOS: AtomicU64 = AtomicU64::new(0);
+static LOAD_METHODS_NANOS: AtomicU64 = AtomicU64::new(0);
+
+/// Prints the accumulated split from the pass-timing statics above if `JADX_RS_TIMING` is set.
+pub fn print_pass_timing_report() {
+    if std::env::var("JADX_RS_TIMING").is_ok() {
+        eprintln!(
+            "TIMING load_methods: {:?}, passes early: {:?}, regions: {:?}, late: {:?}",
+            std::time::Duration::from_nanos(LOAD_METHODS_NANOS.load(Ordering::Relaxed)),
+            std::time::Duration::from_nanos(EARLY_PASS_NANOS.load(Ordering::Relaxed)),
+            std::time::Duration::from_nanos(REGION_PASS_NANOS.load(Ordering::Relaxed)),
+            std::time::Duration::from_nanos(LATE_PASS_NANOS.load(Ordering::Relaxed)),
+        );
+    }
+}
 
 use crate::decode::DecodedMethod;
 use crate::model::cfg::MethodCfg;
@@ -106,15 +130,21 @@ enum Visit {
 
 pub struct ClassDriver<'s> {
     pub root: Root,
-    src: Box<dyn CodeSource + Send + 's>,
+    src: Box<dyn CodeSource + Send + Sync + 's>,
     opts: DriverOptions,
     pub methods: HashMap<MethodId, MethodState>,
+    /// Results of [`ClassDriver::preload_all_methods`], drained into `methods` one class's
+    /// worth at a time by `load_methods` as each class is reached. Kept separate from `methods`
+    /// so the per-class cleanup in `core_gen::generate_with_env` (`methods.retain(...)`, run
+    /// once per top-level class) keeps scanning only the bounded, current working set instead
+    /// of the whole, O(method count) preloaded set every time.
+    preloaded: HashMap<MethodId, MethodState>,
     phase: Vec<ClassPhase>,
     children: Vec<Vec<usize>>,
 }
 
 impl<'s> ClassDriver<'s> {
-    pub fn new<S: CodeSource + Send + 's>(
+    pub fn new<S: CodeSource + Send + Sync + 's>(
         root: Root,
         src: S,
         opts: DriverOptions,
@@ -135,6 +165,7 @@ impl<'s> ClassDriver<'s> {
             src: Box::new(src),
             opts,
             methods: HashMap::new(),
+            preloaded: HashMap::new(),
             phase: vec![ClassPhase::NotLoaded; n],
             children,
         }
@@ -190,7 +221,12 @@ impl<'s> ClassDriver<'s> {
         }
         let mut visits = Vec::new();
         self.collect_visits(top, &mut visits);
+        let timing = std::env::var("JADX_RS_TIMING").is_ok();
+        let t = std::time::Instant::now();
         self.load_methods(&visits);
+        if timing {
+            LOAD_METHODS_NANOS.fetch_add(t.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        }
         self.run_passes(&visits);
         self.phase[top] = ClassPhase::Complete;
     }
@@ -205,7 +241,9 @@ impl<'s> ClassDriver<'s> {
         }
     }
 
-    /// Method loading and the passes up to the type inference.
+    /// Method loading and the passes up to the type inference. Drains a method already decoded
+    /// by [`ClassDriver::preload_all_methods`] out of `preloaded` into `methods` instead of
+    /// redoing the work (see `preloaded`'s doc comment for why it is a separate map).
     fn load_methods(&mut self, visits: &[Visit]) {
         for v in visits {
             let Visit::Method(c, m) = *v else {
@@ -214,51 +252,91 @@ impl<'s> ClassDriver<'s> {
             if self.root.classes[c].methods[m].code_offset.is_none() {
                 continue;
             }
-            let state = self.load_method(c, m);
+            if self.methods.contains_key(&(c, m)) {
+                continue;
+            }
+            let state = match self.preloaded.remove(&(c, m)) {
+                Some(state) => state,
+                None => self.load_method(c, m),
+            };
             self.methods.insert((c, m), state);
         }
     }
 
     fn load_method(&mut self, c: usize, m: usize) -> MethodState {
-        let loaded = match self.src.load_code(&self.root, c, m) {
-            Ok(l) => l,
-            Err(e) => {
-                return MethodState {
-                    cfg: None,
-                    failed: Some(e),
+        decode_method(
+            &self.root,
+            self.src.as_ref(),
+            self.opts.extract_finally,
+            c,
+            m,
+        )
+    }
+
+    /// Decodes and builds the SSA state of every method of the whole root up front, across
+    /// `threads` OS threads (clamped to the method count). Bytecode decoding and per-method SSA
+    /// construction (`decode_method`) only reads the shared `Root`/`CodeSource` and only writes
+    /// its own method's result, so unlike the later class passes (which accumulate state across
+    /// classes in a way that is NOT safe to split across independent threads - see TODO.md's
+    /// "Performance/Parallelitaet" investigation, e.g. override/throws information) this part
+    /// has no cross-method dependency and is safe to parallelize. Call once, before any
+    /// `process_class`/`process_with_deps`/`process_all` call, so `load_methods` finds every
+    /// entry already present and skips redoing the work.
+    ///
+    /// Holding every method's decoded state at once (instead of only the current class's, like
+    /// the non-preloaded path) costs extra peak memory proportional to the method count -
+    /// measured at about 65 KB/method on a real app. If that would not comfortably fit the
+    /// system's available memory, this silently does nothing (`load_methods` already falls back
+    /// to loading on demand when a method is not in `preloaded`), trading the speedup for
+    /// safety on very large inputs instead of risking a hang or an OOM kill.
+    pub fn preload_all_methods(&mut self, threads: usize) {
+        let mut targets = Vec::new();
+        for (c, cls) in self.root.classes.iter().enumerate() {
+            for m in 0..cls.methods.len() {
+                if cls.methods[m].code_offset.is_some() {
+                    targets.push((c, m));
                 }
             }
-        };
-        let root = &self.root;
-        let mut frame = FrameInfo::new(root, c, m, loaded.regs_count);
-        frame.args_start_reg = loaded.args_start_reg;
-        let extract_finally = self.opts.extract_finally;
-        let built = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            build_ssa(
-                loaded.decoded,
-                &loaded.tries,
-                root,
-                c,
-                m,
-                &frame,
-                9,
-                extract_finally,
-            )
-        }));
-        match built {
-            Ok(Ok(cfg)) => MethodState {
-                cfg: Some(cfg),
-                failed: None,
-            },
-            Ok(Err(e)) => MethodState {
-                cfg: None,
-                failed: Some(e),
-            },
-            Err(_) => MethodState {
-                cfg: None,
-                failed: Some("panic while loading".to_string()),
-            },
         }
+        const BYTES_PER_METHOD_ESTIMATE: u64 = 70_000;
+        const BUDGET_NUMERATOR: u64 = 3;
+        const BUDGET_DENOMINATOR: u64 = 5;
+        let estimated_bytes = (targets.len() as u64).saturating_mul(BYTES_PER_METHOD_ESTIMATE);
+        if estimated_bytes > available_memory_bytes() * BUDGET_NUMERATOR / BUDGET_DENOMINATOR {
+            return;
+        }
+        let threads = threads.clamp(1, targets.len().max(1));
+        let root = &self.root;
+        let src = self.src.as_ref();
+        let extract_finally = self.opts.extract_finally;
+        let next = std::sync::atomic::AtomicUsize::new(0);
+        let results: Mutex<Vec<(MethodId, MethodState)>> =
+            Mutex::new(Vec::with_capacity(targets.len()));
+        std::thread::scope(|scope| {
+            for _ in 0..threads {
+                scope.spawn(|| {
+                    let mut local = Vec::new();
+                    loop {
+                        let i = next.fetch_add(1, Ordering::Relaxed);
+                        if i >= targets.len() {
+                            break;
+                        }
+                        let (c, m) = targets[i];
+                        let state = decode_method(root, src, extract_finally, c, m);
+                        local.push(((c, m), state));
+                    }
+                    results
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .extend(local);
+                });
+            }
+        });
+        self.preloaded = results
+            .into_inner()
+            .unwrap_or_else(|e| e.into_inner())
+            .into_iter()
+            .collect();
     }
 
     /// `DebugInfoAttachVisitor` + `DebugInfoApplyVisitor` (local variable names and source
@@ -600,6 +678,8 @@ impl<'s> ClassDriver<'s> {
         use crate::passes::regions as rg;
         let stage = self.opts.stage;
         let on = |s: u32| stage >= s;
+        let timing = std::env::var("JADX_RS_TIMING").is_ok();
+        let t_group = std::time::Instant::now();
 
         if on(pass_stage::MOD_VISITOR) {
             self.apply_debug_info_pass(visits);
@@ -651,6 +731,10 @@ impl<'s> ClassDriver<'s> {
                 crate::passes::replace_new_array::replace_new_array(cfg, env)
             });
         }
+        if timing {
+            EARLY_PASS_NANOS.fetch_add(t_group.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        }
+        let t_group = std::time::Instant::now();
         if on(pass_stage::REGION_MAKER) {
             self.method_pass(visits, &|cfg, env, _| rg::region_maker_visitor(cfg, env));
         }
@@ -676,6 +760,10 @@ impl<'s> ClassDriver<'s> {
         if on(pass_stage::CLEAN_REGIONS) {
             self.method_pass(visits, &|cfg, _, _| rg::clean::clean_regions(cfg));
         }
+        if timing {
+            REGION_PASS_NANOS.fetch_add(t_group.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        }
+        let t_group = std::time::Instant::now();
         if on(pass_stage::METHOD_THROWS) {
             for v in visits {
                 if let Visit::Method(c, m) = *v {
@@ -788,6 +876,84 @@ impl<'s> ClassDriver<'s> {
                 crate::passes::prepare_for_codegen::prepare_for_codegen(cfg, env)
             });
         }
+        if timing {
+            LATE_PASS_NANOS.fetch_add(t_group.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        }
+    }
+}
+
+/// Decodes one method's bytecode and builds its SSA state (`MethodNode.load` + SSA
+/// construction). Only reads `root`/`src`; independent of any other method, so it is safe to
+/// call for different `(c, m)` from multiple threads at once as long as they share the same
+/// `root`/`src` (see [`ClassDriver::preload_all_methods`]).
+/// Bytes of system memory currently free to use, as a budget for [`ClassDriver::preload_all_methods`]:
+/// `MemAvailable` from `/proc/meminfo` on Linux, a fixed, deliberately low default elsewhere
+/// (understating the budget is the safe direction - it only turns off the preload, never risks
+/// memory pressure).
+fn available_memory_bytes() -> u64 {
+    const DEFAULT_BUDGET: u64 = 2_000_000_000;
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(text) = std::fs::read_to_string("/proc/meminfo") {
+            for line in text.lines() {
+                if let Some(rest) = line.strip_prefix("MemAvailable:") {
+                    if let Some(kb) = rest
+                        .trim()
+                        .strip_suffix("kB")
+                        .and_then(|s| s.trim().parse::<u64>().ok())
+                    {
+                        return kb * 1024;
+                    }
+                }
+            }
+        }
+    }
+    DEFAULT_BUDGET
+}
+
+fn decode_method(
+    root: &Root,
+    src: &dyn CodeSource,
+    extract_finally: bool,
+    c: usize,
+    m: usize,
+) -> MethodState {
+    let loaded = match src.load_code(root, c, m) {
+        Ok(l) => l,
+        Err(e) => {
+            return MethodState {
+                cfg: None,
+                failed: Some(e),
+            }
+        }
+    };
+    let mut frame = FrameInfo::new(root, c, m, loaded.regs_count);
+    frame.args_start_reg = loaded.args_start_reg;
+    let built = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        build_ssa(
+            loaded.decoded,
+            &loaded.tries,
+            root,
+            c,
+            m,
+            &frame,
+            9,
+            extract_finally,
+        )
+    }));
+    match built {
+        Ok(Ok(cfg)) => MethodState {
+            cfg: Some(cfg),
+            failed: None,
+        },
+        Ok(Err(e)) => MethodState {
+            cfg: None,
+            failed: Some(e),
+        },
+        Err(_) => MethodState {
+            cfg: None,
+            failed: Some("panic while loading".to_string()),
+        },
     }
 }
 
