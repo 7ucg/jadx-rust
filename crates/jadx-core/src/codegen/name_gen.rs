@@ -24,16 +24,28 @@ pub struct NameGen {
     /// named argument (e.g. a `Move` reading it) must resolve to this same name rather than
     /// re-deriving and re-deduplicating its own, since there is only ever one Java-side object.
     assigned_named: HashMap<HandlerId, String>,
+    /// `(cls, mth)` of the method whose variables this `NameGen` names, used as part of the key
+    /// into [`GenEnv`]'s cross-pass name cache (see `GenEnv::global_var_name`). `(0, 0)` for a
+    /// default/test instance that never consults the cache (`assign_arg` is only called with a
+    /// real `env` through the normal codegen paths).
+    cls_mth: (usize, usize),
 }
 
 impl NameGen {
     /// `new NameGen(mth, classGen)` for method `mth` of class `cls`.
-    pub fn new(env: &GenEnv<'_>, cls: usize, outer: Option<&NameGen>, fallback: bool) -> Self {
+    pub fn new(
+        env: &GenEnv<'_>,
+        cls: usize,
+        mth: usize,
+        outer: Option<&NameGen>,
+        fallback: bool,
+    ) -> Self {
         let mut ng = NameGen {
             var_names: HashSet::new(),
             fallback,
             assigned: HashMap::new(),
             assigned_named: HashMap::new(),
+            cls_mth: (cls, mth),
         };
         if let Some(o) = outer {
             ng.inherit_used_names(o);
@@ -71,16 +83,37 @@ impl NameGen {
     }
 
     /// `assignArg`: name of a variable at its declaration.
-    pub fn assign_arg(&mut self, cfg: &MethodCfg, cv: CodeVarId) -> String {
+    ///
+    /// The *first* call for a given `cv` within this `NameGen`'s pass over its method consults
+    /// (and then updates) `env`'s cross-pass name cache: another inlining site of the same
+    /// anonymous class's method may already have decided a name for this same `CodeVar`, which
+    /// must be reused so the same variable prints identically at every inlining site. A *repeat*
+    /// call for the same `cv` within this same pass (duplicated bytecode redeclaring the
+    /// variable at several text positions inside one method) must NOT consult or overwrite that
+    /// cache — it stays on the existing local-only dedup path (`self.assigned`/`var_names`),
+    /// exactly as before this cache existed, so distinct textual redeclarations keep getting
+    /// distinct suffixed names instead of all collapsing onto the first one's.
+    pub fn assign_arg(&mut self, env: &GenEnv<'_>, cfg: &MethodCfg, cv: CodeVarId) -> String {
         if self.fallback {
             return fallback_name_cv(cfg, cv);
         }
         if cfg.code_vars[cv].is_this {
             return THIS_ARG_NAME.to_string();
         }
-        let base = self.make_arg_name(cfg, cv);
+        let is_first_call_this_pass = !self.assigned.contains_key(&cv);
+        let base = if is_first_call_this_pass {
+            let (cls, mth) = self.cls_mth;
+            env.global_var_name(cls, mth, cv)
+                .unwrap_or_else(|| self.make_arg_name(cfg, cv))
+        } else {
+            self.make_arg_name(cfg, cv)
+        };
         let name = self.unique_var_name(&base);
         self.assigned.insert(cv, name.clone());
+        if is_first_call_this_pass {
+            let (cls, mth) = self.cls_mth;
+            env.set_global_var_name(cls, mth, cv, name.clone());
+        }
         name
     }
 

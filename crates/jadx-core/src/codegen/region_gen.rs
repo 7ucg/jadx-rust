@@ -450,7 +450,9 @@ impl<'m, 'a> RegionGen<'m, 'a> {
             let n = name_gen.borrow_mut().assign_named_arg_for_handler(h, name);
             code.add(&n);
         } else if let Some(cv) = self.handler_code_var(h) {
-            let n = name_gen.borrow_mut().assign_arg(cfg, cv);
+            let n = name_gen
+                .borrow_mut()
+                .assign_arg(self.ig.mgen().class_gen().env(), cfg, cv);
             code.add(&n);
         } else {
             // handler arguments not used

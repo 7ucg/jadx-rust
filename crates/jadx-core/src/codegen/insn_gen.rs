@@ -230,7 +230,11 @@ impl<'m, 'a> InsnGen<'m, 'a> {
             .ok_or_else(|| CodegenError::new("Code variable type not set"))?;
         self.use_type(code, ty)?;
         code.add(" ");
-        let name = self.mgen.name_gen().borrow_mut().assign_arg(cfg, cv);
+        let name =
+            self.mgen
+                .name_gen()
+                .borrow_mut()
+                .assign_arg(self.mgen.class_gen().env(), cfg, cv);
         code.add(&name);
         Ok(())
     }

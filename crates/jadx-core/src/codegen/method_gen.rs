@@ -75,6 +75,7 @@ impl<'a> MethodGen<'a> {
         let name_gen = NameGen::new(
             cls_gen.env(),
             cls_gen.class_index(),
+            mth,
             outer.as_ref(),
             cls_gen.is_fallback_mode(),
         );
@@ -110,7 +111,9 @@ impl<'a> MethodGen<'a> {
     pub fn assign_arg_names(&self) {
         for reg in &self.cfg.arg_regs {
             if let Some(cv) = reg.svar.and_then(|v| self.cfg.svars[v].code_var) {
-                self.name_gen.borrow_mut().assign_arg(self.cfg, cv);
+                self.name_gen
+                    .borrow_mut()
+                    .assign_arg(self.cls_gen.env(), self.cfg, cv);
             }
         }
     }
@@ -287,7 +290,10 @@ impl<'a> MethodGen<'a> {
             }
             code.add(" ");
             let var_name = match cv {
-                Some(cv) => self.name_gen.borrow_mut().assign_arg(cfg, cv),
+                Some(cv) => self
+                    .name_gen
+                    .borrow_mut()
+                    .assign_arg(self.cls_gen.env(), cfg, cv),
                 None => format!("r{}", mth_arg.reg_num),
             };
             code.add(&var_name);

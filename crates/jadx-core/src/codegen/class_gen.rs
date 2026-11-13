@@ -48,6 +48,17 @@ pub struct GenEnv<'a> {
     /// ([`inline_instance_field_constructor`](super::insn_gen::InsnGen::inline_instance_field_constructor)),
     /// guarding against an indirect cycle through several singleton fields.
     inlining: RefCell<HashSet<usize>>,
+    /// Name decided for a variable's first declaration, keyed by the `(cls, mth, CodeVarId)` of
+    /// the method whose code is being named (the anonymous class's own method when its body is
+    /// inlined, not the enclosing class/method doing the inlining). The same anonymous class's
+    /// constructor/method can be inlined at several call sites, each building its own
+    /// [`NameGen`](super::name_gen::NameGen); without this, each site picks a name independently
+    /// and the same `CodeVar` can end up printed under different names at different sites. Only
+    /// a `NameGen`'s *first* `assign_arg` call for a given `CodeVarId` consults/updates this
+    /// cache; a repeat call for the same `CodeVarId` within the same `NameGen` pass (duplicated
+    /// bytecode redeclaring the same variable at several text positions in one method) must stay
+    /// on the existing purely local dedup path instead.
+    global_var_names: RefCell<HashMap<(usize, usize, crate::model::ssa::CodeVarId), String>>,
 }
 
 /// Removes its class from [`GenEnv::inlining`] when dropped, even if generation returns early.
@@ -113,6 +124,7 @@ impl<'a> GenEnv<'a> {
             errors: RefCell::new(Vec::new()),
             warnings: RefCell::new(Vec::new()),
             inlining: RefCell::new(HashSet::new()),
+            global_var_names: RefCell::new(HashMap::new()),
         }
     }
 
@@ -165,6 +177,33 @@ impl<'a> GenEnv<'a> {
         let rc = Rc::new(loaded);
         self.cfgs.borrow_mut().insert((cls, mth), rc.clone());
         rc
+    }
+
+    /// Name already decided (at another inlining site) for this `(cls, mth)`'s `cv`, if any. See
+    /// [`GenEnv::global_var_names`].
+    pub fn global_var_name(
+        &self,
+        cls: usize,
+        mth: usize,
+        cv: crate::model::ssa::CodeVarId,
+    ) -> Option<String> {
+        self.global_var_names.borrow().get(&(cls, mth, cv)).cloned()
+    }
+
+    /// Records the name decided for this `(cls, mth)`'s `cv` at its first declaration in a
+    /// `NameGen` pass, for reuse by a later pass over the same method (e.g. another inlining
+    /// site of the same anonymous class). See [`GenEnv::global_var_names`].
+    pub fn set_global_var_name(
+        &self,
+        cls: usize,
+        mth: usize,
+        cv: crate::model::ssa::CodeVarId,
+        name: String,
+    ) {
+        self.global_var_names
+            .borrow_mut()
+            .entry((cls, mth, cv))
+            .or_insert(name);
     }
 
     /// `ClassInfo.fromType`
