@@ -692,22 +692,32 @@ impl JadxDecompiler {
         progress: Option<ProgressFn<'_>>,
     ) -> Result<()> {
         let l = self.loaded()?;
-        if self.args.export_gradle_type.is_some() {
+        let (src_dir, res_dir, gradle) = if let Some(export_type) = self.args.export_gradle_type {
+            let project_dir = self
+                .args
+                .out_dir
+                .clone()
+                .unwrap_or_else(|| PathBuf::from(DEFAULT_OUT_DIR));
+            let effective = crate::export::effective_export_type(Some(export_type), &l.resources);
             self.log(
-                Level::Warn,
-                "Gradle export is not implemented yet, saving sources and resources only",
+                Level::Info,
+                &format!("Export Gradle project using '{effective}' template"),
             );
-        }
-        let src_dir = self
-            .args
-            .out_dir_src
-            .clone()
-            .unwrap_or_else(|| PathBuf::from(DEFAULT_OUT_DIR).join(DEFAULT_SRC_DIR));
-        let res_dir = self
-            .args
-            .out_dir_res
-            .clone()
-            .unwrap_or_else(|| PathBuf::from(DEFAULT_OUT_DIR).join(DEFAULT_RES_DIR));
+            let out_dirs = crate::export::init_out_dirs(effective, &project_dir);
+            (out_dirs.src, out_dirs.res, Some((project_dir, effective)))
+        } else {
+            let src_dir = self
+                .args
+                .out_dir_src
+                .clone()
+                .unwrap_or_else(|| PathBuf::from(DEFAULT_OUT_DIR).join(DEFAULT_SRC_DIR));
+            let res_dir = self
+                .args
+                .out_dir_res
+                .clone()
+                .unwrap_or_else(|| PathBuf::from(DEFAULT_OUT_DIR).join(DEFAULT_RES_DIR));
+            (src_dir, res_dir, None)
+        };
         if !self.args.skip_files_save {
             std::fs::create_dir_all(&src_dir)?;
             std::fs::create_dir_all(&res_dir)?;
@@ -730,7 +740,53 @@ impl JadxDecompiler {
         if sources {
             self.save_sources_to(l, &src_dir, progress);
         }
+        if let Some((project_dir, effective)) = gradle {
+            self.generate_gradle_project(l, &project_dir, &res_dir, effective);
+        }
         Ok(())
+    }
+
+    /// Writes the Gradle project files (`build.gradle`, `settings.gradle`, `gradle.properties`)
+    /// around the sources/resources already saved below `res_dir`/`src_dir`
+    /// (`jadx.core.export.ExportGradle.generateGradleFiles`).
+    fn generate_gradle_project(
+        &self,
+        l: &Loaded,
+        project_dir: &Path,
+        res_dir: &Path,
+        export_type: crate::args::ExportGradleType,
+    ) {
+        use crate::args::ExportGradleType;
+        let want_app = export_type != ExportGradleType::AndroidLibrary;
+        let manifest_text = std::fs::read_to_string(res_dir.join("AndroidManifest.xml")).ok();
+        let strings_text = find_strings_xml(res_dir);
+        if manifest_text.is_none()
+            && matches!(
+                export_type,
+                ExportGradleType::AndroidApp | ExportGradleType::AndroidLibrary
+            )
+        {
+            self.log(
+                Level::Warn,
+                "AndroidManifest.xml not found, exported files will contain 'UNKNOWN' fields",
+            );
+        }
+        let application_params = crate::export::parse_application_params(
+            manifest_text.as_deref(),
+            strings_text.as_deref(),
+            want_app,
+        );
+        let input = crate::export::GradleExportInput {
+            args: &self.args,
+            project_dir,
+            resources: &l.resources,
+            app_package: l.root.app_package.as_deref(),
+            gradle_info: crate::export::GradleInfoStorage::default(),
+            application_params,
+        };
+        if let Err(e) = crate::export::generate_gradle_files(&input) {
+            self.log(Level::Error, &format!("Gradle export failed: {e}"));
+        }
     }
 
     fn save_sources_to(&self, l: &Loaded, src_dir: &Path, progress: Option<ProgressFn<'_>>) {
@@ -813,6 +869,39 @@ fn raw_class_name(desc: &str) -> String {
         .and_then(|d| d.strip_suffix(';'))
         .unwrap_or(desc)
         .replace('/', ".")
+}
+
+/// Finds a `strings.xml` file below `res_dir` (depth-bounded breadth-first search), preferring
+/// `res/values/strings.xml` to match the reference's `ApplicationParams` string lookup.
+fn find_strings_xml(res_dir: &Path) -> Option<String> {
+    let preferred = res_dir.join("res/values/strings.xml");
+    if let Ok(text) = std::fs::read_to_string(&preferred) {
+        return Some(text);
+    }
+    let mut dirs = vec![res_dir.to_path_buf()];
+    for _ in 0..6 {
+        let mut next = Vec::new();
+        for dir in &dirs {
+            let Ok(entries) = std::fs::read_dir(dir) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    next.push(path);
+                } else if path.file_name().and_then(|n| n.to_str()) == Some("strings.xml") {
+                    if let Ok(text) = std::fs::read_to_string(&path) {
+                        return Some(text);
+                    }
+                }
+            }
+        }
+        if next.is_empty() {
+            break;
+        }
+        dirs = next;
+    }
+    None
 }
 
 /// Output directory name derived from the first input file (`JadxArgsValidator`).

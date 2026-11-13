@@ -129,7 +129,7 @@ const OPTIONS: &[Opt] = &[
     ),
     flag(
         &["-e", "--export-gradle"],
-        "save as gradle project (set '--export-gradle-type' to 'auto'), not implemented yet",
+        "save as gradle project (set '--export-gradle-type' to 'auto')",
     ),
     val(
         &["--export-gradle-type"],
