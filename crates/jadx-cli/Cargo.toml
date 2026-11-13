@@ -20,3 +20,6 @@ jadx-resources.workspace = true
 jadx-package.workspace = true
 jadx-index.workspace = true
 jadx-mcp.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
