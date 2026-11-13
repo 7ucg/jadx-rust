@@ -38,6 +38,27 @@ enum State {
     BodyOnlyNoWrap,
 }
 
+/// Display name for each `FieldReplace::Var` field of `cls`, by field index: the name already
+/// assigned (and de-duplicated) to the corresponding argument of the constructor-call instruction
+/// `insn`, read via `name_gen`/`cfg` (the code state `insn` itself lives in). See `instance_field`.
+fn build_field_replace_names(
+    root: &Root,
+    cls: usize,
+    insn: &InsnNode,
+    name_gen: &super::name_gen::NameGen,
+    cfg: &MethodCfg,
+) -> std::collections::HashMap<usize, String> {
+    let mut names = std::collections::HashMap::new();
+    for (fi, field) in root.classes[cls].fields.iter().enumerate() {
+        if let Some(FieldReplace::Var { arg: arg_idx, .. }) = &field.replace {
+            if let Some(InsnArg::Register(reg)) = insn.args.get(*arg_idx) {
+                names.insert(fi, name_gen.use_arg(cfg, reg));
+            }
+        }
+    }
+    names
+}
+
 /// `InsnGen`: the generator works on the finished code state of one method.
 pub struct InsnGen<'m, 'a> {
     mgen: &'m MethodGen<'a>,
@@ -238,11 +259,21 @@ impl<'m, 'a> InsnGen<'m, 'a> {
                     return Ok(());
                 }
                 Some(FieldReplace::Var { ctor, arg: arg_idx }) => {
-                    // Reads the name straight off the constructor's own `CodeVar` (already
-                    // finalized by `ApplyVariableNames` on that method) instead of going through
-                    // the current method's `NameGen`: `CodeVarId` is a per-method-local index,
-                    // so looking it up in a NameGen built for a different method could collide
-                    // with an unrelated variable that happens to share the same index there.
+                    // Resolved once, when the class body was inlined (`build_field_replace_names`):
+                    // the name of the captured variable as already assigned at the single
+                    // constructor-call site, i.e. the *caller's* name, not a name independently
+                    // re-derived (and re-deduplicated against the wrong scope) from the
+                    // constructor's own, unrelated `CodeVarId` space. Two captured variables of
+                    // the same guessed base name (e.g. two `boolean`s, both guessed "z") must
+                    // keep the distinct, already-deduplicated names the caller gave them ("z",
+                    // "z2"), not collide on a freshly-recomputed base name.
+                    if let Some(name) = self.cls_gen().field_replace_name(fi) {
+                        code.add(&name);
+                        return Ok(());
+                    }
+                    // Fallback for a `FieldReplace::Var` field read outside an inlined class body
+                    // (not expected on the normal inlining paths, kept for robustness): read the
+                    // name straight off the constructor's own `CodeVar`.
                     let loaded = self.env().method_cfg(cls, *ctor);
                     if let Ok(ctor_cfg) = loaded.as_ref() {
                         if let Some(reg) = ctor_cfg.arg_regs.get(*arg_idx) {
@@ -345,6 +376,16 @@ impl<'m, 'a> InsnGen<'m, 'a> {
 
         let cls_gen = ClassGen::with_parent(self.env(), cls, self.cls_gen().parent_gen());
         cls_gen.set_outer_name_gen(self.mgen.name_gen().borrow().clone());
+        // The constructor call lives in the field initializer's own code (`field_cfg`/`field_mgen`
+        // above), not in the method currently being generated: resolve the captured arguments'
+        // names against that code state, matching `generate_method_arguments` just above.
+        cls_gen.set_field_replace_names(build_field_replace_names(
+            root,
+            cls,
+            insn,
+            &field_mgen.name_gen().borrow(),
+            field_cfg,
+        ));
         cls_gen.set_inlined(true);
         cls_gen.add_class_body(code, true)
     }
@@ -854,6 +895,13 @@ impl<'m, 'a> InsnGen<'m, 'a> {
 
         let cls_gen = ClassGen::with_parent(self.env(), cls, self.cls_gen().parent_gen());
         cls_gen.set_outer_name_gen(self.mgen.name_gen().borrow().clone());
+        cls_gen.set_field_replace_names(build_field_replace_names(
+            root,
+            cls,
+            insn,
+            &self.mgen.name_gen().borrow(),
+            self.cfg(),
+        ));
         cls_gen.set_inlined(true);
         cls_gen.add_class_body(code, true)
     }

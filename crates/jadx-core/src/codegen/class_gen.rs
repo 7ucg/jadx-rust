@@ -218,6 +218,13 @@ pub struct ClassGen<'a> {
     pub(super) cls_decl_offset: Cell<usize>,
     /// The class body is written inside the code of another class (anonymous class).
     inlined: Cell<bool>,
+    /// Display name for a `FieldReplace::Var` field of this (anonymous) class, by field index:
+    /// the already-resolved, de-duplicated name of the captured variable as it is named at the
+    /// single constructor-call site, not a name independently re-derived (and re-deduplicated)
+    /// from the constructor's own, unrelated `CodeVarId` space. Filled once when the class body
+    /// is inlined (`inline_anonymous_constructor`/`inline_instance_field_constructor`), read by
+    /// every one of its methods afterwards (they all share this `ClassGen`).
+    field_replace_names: RefCell<HashMap<usize, String>>,
 }
 
 impl<'a> ClassGen<'a> {
@@ -234,6 +241,7 @@ impl<'a> ClassGen<'a> {
             outer_name_gen: RefCell::new(None),
             cls_decl_offset: Cell::new(0),
             inlined: Cell::new(false),
+            field_replace_names: RefCell::new(HashMap::new()),
         }
     }
 
@@ -276,6 +284,16 @@ impl<'a> ClassGen<'a> {
     /// `setOuterNameGen`
     pub fn set_outer_name_gen(&self, ng: NameGen) {
         *self.outer_name_gen.borrow_mut() = Some(ng);
+    }
+
+    /// Names resolved for this class's `FieldReplace::Var` fields, by field index: see
+    /// `field_replace_names`.
+    pub fn set_field_replace_names(&self, names: HashMap<usize, String>) {
+        *self.field_replace_names.borrow_mut() = names;
+    }
+
+    pub fn field_replace_name(&self, field_idx: usize) -> Option<String> {
+        self.field_replace_names.borrow().get(&field_idx).cloned()
     }
 
     pub fn comments_level_info(&self) -> bool {
