@@ -191,7 +191,7 @@ fn arg_of(insn: &InsnNode, n: usize) -> Res<&InsnArg> {
 }
 
 fn is_wrap_needed(cond: &IfCondition) -> bool {
-    if cond.is_compare() {
+    if cond.is_compare() || cond.dont_wrap {
         return false;
     }
     cond.mode != CondMode::Not
