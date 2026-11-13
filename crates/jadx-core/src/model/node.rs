@@ -45,6 +45,15 @@ pub struct FieldNode {
     pub dont_generate: bool,
     /// `AType.FIELD_REPLACE`
     pub replace: Option<FieldReplace>,
+    /// Set by `anonymous_class_visitor` for the implicit outer-instance field (`this$0`) of an
+    /// inlined anonymous class: the index of the constructor argument (and, with it, of the
+    /// matching constructor-call argument at the single inlining site) that initializes this
+    /// field. Unlike `replace` (which elides a field entirely, printing the captured variable at
+    /// every read instead), this field keeps its normal declaration and reads (`this.this$0`);
+    /// only the one `Iput` that initializes it in the constructor body may print a different
+    /// name for the value, when that call-site argument turns out to be the caller's own `this`
+    /// (`RegisterArg::is_this`) rather than some other variable of the outer type.
+    pub outer_this_ctor_arg: Option<usize>,
     /// Why the field was renamed (`RenameReasonAttr`).
     pub alias_reason: Option<String>,
     /// Info comments added by the decompiler (`addInfoComment`).
@@ -420,6 +429,7 @@ impl Root {
                     attrs: f.attrs,
                     dont_generate: false,
                     replace: None,
+                    outer_this_ctor_arg: None,
                     alias_reason: None,
                     info_comments: Vec::new(),
                     init_insn: None,

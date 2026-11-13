@@ -9,6 +9,10 @@ use crate::model::node::{FieldReplace, MethodId, Root, ACC_SYNTHETIC};
 use crate::model::ssa::ArgRef;
 use crate::passes::driver::MethodState;
 
+/// Return type of `get_args_to_fields_mapping`: the constructor-argument-to-field mapping, plus
+/// the outer-instance field's own `(field index, argument index)`, if found. See that function.
+type ArgsFieldsMapping = (Vec<(usize, usize)>, Option<(usize, usize)>);
+
 pub fn anonymous_class_visitor(
     root: &mut Root,
     methods: &mut HashMap<MethodId, MethodState>,
@@ -40,7 +44,10 @@ fn process_anonymous_constructor(
         return Ok(());
     };
     let mut used_insns: Vec<InsnId> = Vec::new();
-    let args_map = get_args_to_fields_mapping(root, cfg, cls, mi, &mut used_insns)?;
+    let (args_map, outer_this) = get_args_to_fields_mapping(root, cfg, cls, mi, &mut used_insns)?;
+    if let Some((field_idx, arg_idx)) = outer_this {
+        root.classes[cls].fields[field_idx].outer_this_ctor_arg = Some(arg_idx);
+    }
     if args_map.is_empty() {
         root.classes[cls].methods[mi].no_skip_args = true;
     } else {
@@ -66,14 +73,19 @@ fn process_anonymous_constructor(
     Ok(())
 }
 
-/// Method argument index to the index of the synthetic field it is stored to.
+/// Method argument index to the index of the synthetic field it is stored to; plus, when the
+/// first constructor argument is excluded from that mapping because its type is the outer
+/// class's (the implicit `this$0`-style outer-instance reference, matching the reference's own
+/// `getArgsToFieldsMapping`), the `(field index, argument index)` of the field it initializes
+/// (if any), so codegen can later recognize a call-site argument that is actually the caller's
+/// own `this` and print it as such instead of a resolved variable name.
 fn get_args_to_fields_mapping(
     root: &Root,
     cfg: &crate::model::cfg::MethodCfg,
     cls: usize,
     mi: usize,
     used_insns: &mut Vec<InsnId>,
-) -> Result<Vec<(usize, usize)>, String> {
+) -> Result<ArgsFieldsMapping, String> {
     let call_mth = &root.classes[cls].methods[mi];
     let use_in = call_mth
         .use_in
@@ -86,24 +98,29 @@ fn get_args_to_fields_mapping(
     {
         start_arg = 1;
     }
+    let outer_this_field = if start_arg == 1 {
+        find_stored_field(root, cfg, cls, 0)
+    } else {
+        None
+    };
     let mut map: Vec<(usize, usize)> = Vec::new();
     for i in start_arg..cfg.arg_regs.len() {
         let Some(var) = cfg.arg_regs[i].svar else {
             return Err("method argument without variable".to_string());
         };
         let Some(use_insn) = get_parent_insn_skip_move(cfg, var) else {
-            return Ok(Vec::new());
+            return Ok((Vec::new(), outer_this_field.map(|fi| (fi, 0))));
         };
         match cfg.insn(use_insn).ty {
             InsnType::Iput => {
                 let InsnKind::Index(IndexValue::Field(f)) = &cfg.insn(use_insn).kind else {
-                    return Ok(Vec::new());
+                    return Ok((Vec::new(), outer_this_field.map(|fi| (fi, 0))));
                 };
                 let Some(fi) = root.classes[cls].fields.iter().position(|x| x.info == *f) else {
-                    return Ok(Vec::new());
+                    return Ok((Vec::new(), outer_this_field.map(|fi| (fi, 0))));
                 };
                 if root.classes[cls].fields[fi].access & ACC_SYNTHETIC == 0 {
-                    return Ok(Vec::new());
+                    return Ok((Vec::new(), outer_this_field.map(|fi| (fi, 0))));
                 }
                 map.push((i, fi));
                 used_insns.push(use_insn);
@@ -117,14 +134,36 @@ fn get_args_to_fields_mapping(
                     }
                 );
                 if !is_super {
-                    return Ok(Vec::new());
+                    return Ok((Vec::new(), outer_this_field.map(|fi| (fi, 0))));
                 }
                 used_insns.push(use_insn);
             }
-            _ => return Ok(Vec::new()),
+            _ => return Ok((Vec::new(), outer_this_field.map(|fi| (fi, 0)))),
         }
     }
-    Ok(map)
+    Ok((map, outer_this_field.map(|fi| (fi, 0))))
+}
+
+/// The field index that constructor argument `arg_idx` is stored to via a plain `Iput` (no
+/// other use, skipping an intermediate `Move`), if any; used only to locate the implicit
+/// outer-instance field for the excluded first constructor argument, so its lone `Iput` is left
+/// untouched (unlike the mapped arguments in `get_args_to_fields_mapping`, this does not record
+/// `used_insns` or otherwise affect inlining).
+fn find_stored_field(
+    root: &Root,
+    cfg: &crate::model::cfg::MethodCfg,
+    cls: usize,
+    arg_idx: usize,
+) -> Option<usize> {
+    let var = cfg.arg_regs.get(arg_idx)?.svar?;
+    let use_insn = get_parent_insn_skip_move(cfg, var)?;
+    if cfg.insn(use_insn).ty != InsnType::Iput {
+        return None;
+    }
+    let InsnKind::Index(IndexValue::Field(f)) = &cfg.insn(use_insn).kind else {
+        return None;
+    };
+    root.classes[cls].fields.iter().position(|x| x.info == *f)
 }
 
 fn get_parent_insn_skip_move(

@@ -54,6 +54,18 @@ fn build_field_replace_names(
             if let Some(InsnArg::Register(reg)) = insn.args.get(*arg_idx) {
                 names.insert(fi, name_gen.use_arg(cfg, reg));
             }
+        } else if let Some(arg_idx) = field.outer_this_ctor_arg {
+            // The implicit outer-instance field (`this$0`): its lone `Iput` keeps printing the
+            // field itself (`this.this$0 = ...`), so only override the *value* when the
+            // constructor-call argument at this site is literally the caller's own `this`
+            // (e.g. `new Joiner(this, this)`), matching the reference's object-identity-based
+            // resolution; otherwise leave it unset so the normal name resolution (already
+            // correct for a genuinely different captured variable) applies.
+            if let Some(InsnArg::Register(reg)) = insn.args.get(arg_idx) {
+                if reg.is_this {
+                    names.insert(fi, THIS_ARG_NAME.to_string());
+                }
+            }
         }
     }
     names
@@ -314,6 +326,20 @@ impl<'m, 'a> InsnGen<'m, 'a> {
         self.add_arg_dot(code, arg)?;
         code.add(&self.root().field_name(field));
         Ok(())
+    }
+
+    /// For the one `Iput` initializing an implicit outer-instance field (`this$0`) inside an
+    /// inlined anonymous class body: the override name computed by `build_field_replace_names`
+    /// (`"this"`, when the constructor-call argument at the single inlining site is literally
+    /// the caller's own `this`), if this field is that case. `None` otherwise, including when
+    /// not currently generating an inlined class body (the map is simply empty then).
+    fn outer_this_init_name(&self, field: &FieldInfo) -> Option<String> {
+        let (cls, fi) = self.root().resolve_field_id(field)?;
+        let f = &self.root().classes[cls].fields[fi];
+        if f.info != *field || f.outer_this_ctor_arg.is_none() {
+            return None;
+        }
+        self.cls_gen().field_replace_name(fi)
     }
 
     /// `staticField`: a field marked `InlineType::InstanceField` (a singleton instance of an
@@ -601,7 +627,11 @@ impl<'m, 'a> InsnGen<'m, 'a> {
                 let f = self.index_field(insn)?;
                 self.instance_field(code, f, self.arg_of(insn, 1)?)?;
                 code.add(" = ");
-                self.add_arg(code, self.arg_of(insn, 0)?, false)?;
+                if let Some(name) = self.outer_this_init_name(f) {
+                    code.add(&name);
+                } else {
+                    self.add_arg(code, self.arg_of(insn, 0)?, false)?;
+                }
             }
             InsnType::Sget => self.static_field(code, self.index_field(insn)?)?,
             InsnType::Sput => {
