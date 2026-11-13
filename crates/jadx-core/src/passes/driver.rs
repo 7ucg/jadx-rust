@@ -5,8 +5,8 @@
 //! The driver owns the [`Root`] because class passes modify classes, fields and methods. The
 //! method code is provided by a [`CodeSource`].
 
-use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Mutex;
 
 use jadx_input_api::TryData;
@@ -289,11 +289,22 @@ impl<'s> ClassDriver<'s> {
     /// system's available memory, this silently does nothing (`load_methods` already falls back
     /// to loading on demand when a method is not in `preloaded`), trading the speedup for
     /// safety on very large inputs instead of risking a hang or an OOM kill.
-    pub fn preload_all_methods(&mut self, threads: usize) {
+    ///
+    /// `done_top_classes` are top-level class indices whose code was already generated (and
+    /// whose methods were already retained out of `self.methods` by the per-class cleanup in
+    /// `core_gen::generate_with_env`) before this call - the caller defers the preload past the
+    /// first class it processes to avoid paying for it on a single-class query. Their methods
+    /// are skipped here too, and never reach `self.preloaded` (added to, not replacing, whatever
+    /// is already there): they will never be visited again, so nothing would ever drain them,
+    /// which would otherwise leak one class's worth of decoded methods for the rest of the run.
+    pub fn preload_all_methods(&mut self, threads: usize, done_top_classes: &HashSet<usize>) {
         let mut targets = Vec::new();
         for (c, cls) in self.root.classes.iter().enumerate() {
+            if done_top_classes.contains(&self.root.top_parent_index(c)) {
+                continue;
+            }
             for m in 0..cls.methods.len() {
-                if cls.methods[m].code_offset.is_some() {
+                if cls.methods[m].code_offset.is_some() && !self.methods.contains_key(&(c, m)) {
                     targets.push((c, m));
                 }
             }
@@ -303,11 +314,14 @@ impl<'s> ClassDriver<'s> {
             // the preload's own bookkeeping and thread setup would outweigh the saving.
             return;
         }
-        // Budget on the methods' real, decoded size (instruction count), not a flat per-method
-        // guess: a method with unusually many instructions - plain code or an adversarial input
-        // trying to defeat a method-count-based cap - costs proportionally more, and this
-        // tracks that as it goes rather than assuming an average up front.
+        // Budget on the methods' real, decoded size (instruction count and register count -
+        // both drive the size of the SSA state `build_method_state` constructs), not a flat
+        // per-method guess: a method that is unusually large in either dimension - plain code,
+        // or an adversarial input trying to defeat a method-count-based cap - costs
+        // proportionally more, and this tracks that as it goes rather than assuming an average
+        // up front.
         const BYTES_PER_INSN_ESTIMATE: u64 = 3_000;
+        const BYTES_PER_INSN_PER_REG_ESTIMATE: u64 = 24;
         const BUDGET_NUMERATOR: u64 = 3;
         const BUDGET_DENOMINATOR: u64 = 5;
         let budget_bytes = available_memory_bytes() * BUDGET_NUMERATOR / BUDGET_DENOMINATOR;
@@ -315,7 +329,7 @@ impl<'s> ClassDriver<'s> {
         let root = &self.root;
         let src = self.src.as_ref();
         let extract_finally = self.opts.extract_finally;
-        let next = std::sync::atomic::AtomicUsize::new(0);
+        let next = AtomicUsize::new(0);
         let spent_bytes = AtomicU64::new(0);
         let results: Mutex<Vec<(MethodId, MethodState)>> =
             Mutex::new(Vec::with_capacity(targets.len()));
@@ -324,6 +338,13 @@ impl<'s> ClassDriver<'s> {
                 scope.spawn(|| {
                     let mut local = Vec::new();
                     loop {
+                        // Checked before doing any work this iteration (not just via the
+                        // per-method budget check below) so that once the budget is blown,
+                        // every thread stops picking up new targets instead of continuing to
+                        // decode (and immediately discard) the rest of them.
+                        if spent_bytes.load(Ordering::Relaxed) > budget_bytes {
+                            break;
+                        }
                         let i = next.fetch_add(1, Ordering::Relaxed);
                         if i >= targets.len() {
                             break;
@@ -333,13 +354,19 @@ impl<'s> ClassDriver<'s> {
                             continue; // load failure: let `load_methods` retry and report it
                         };
                         let method_bytes = (loaded.decoded.insns.len() as u64)
-                            .saturating_mul(BYTES_PER_INSN_ESTIMATE);
+                            .saturating_mul(BYTES_PER_INSN_ESTIMATE)
+                            .saturating_add(
+                                (loaded.decoded.insns.len() as u64)
+                                    .saturating_mul(loaded.regs_count as u64)
+                                    .saturating_mul(BYTES_PER_INSN_PER_REG_ESTIMATE),
+                            );
                         let spent =
                             spent_bytes.fetch_add(method_bytes, Ordering::Relaxed) + method_bytes;
                         if spent > budget_bytes {
-                            // Over budget: leave this one for the on-demand path instead of
-                            // building its (comparatively expensive) SSA state too.
-                            continue;
+                            // Over budget: leave this one (and, from the next loop iteration,
+                            // every other thread's remaining targets) for the on-demand path
+                            // instead of building its (comparatively expensive) SSA state too.
+                            break;
                         }
                         let state = build_method_state(root, extract_finally, c, m, loaded);
                         local.push(((c, m), state));
@@ -351,11 +378,8 @@ impl<'s> ClassDriver<'s> {
                 });
             }
         });
-        self.preloaded = results
-            .into_inner()
-            .unwrap_or_else(|e| e.into_inner())
-            .into_iter()
-            .collect();
+        self.preloaded
+            .extend(results.into_inner().unwrap_or_else(|e| e.into_inner()));
     }
 
     /// `DebugInfoAttachVisitor` + `DebugInfoApplyVisitor` (local variable names and source

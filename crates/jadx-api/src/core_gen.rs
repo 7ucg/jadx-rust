@@ -299,7 +299,8 @@ impl CoreClassGenerator {
             // on the very first one.
             st.preload_pending = false;
             let t = std::time::Instant::now();
-            st.driver.preload_all_methods(ctx.args.threads_count);
+            st.driver
+                .preload_all_methods(ctx.args.threads_count, &st.generated);
             if std::env::var("JADX_RS_TIMING").is_ok() {
                 eprintln!("TIMING preload_all_methods: {:?}", t.elapsed());
             }
