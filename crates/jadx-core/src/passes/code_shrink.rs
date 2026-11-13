@@ -233,6 +233,14 @@ fn check_inline(
     let Some(parent) = arg.parent_insn() else {
         return Ok(());
     };
+    if let ArgRef::Arg(p, i) = arg {
+        if cfg.arg_alias.contains_key(&(p, i)) {
+            // the argument object was moved to a new home by `IfCondition` splitting
+            // (`model::condition::move_arg`); the old slot is a stale duplicate kept only so
+            // other lookups can follow the alias, not an independent use site.
+            return Ok(());
+        }
+    }
     let Some(reg) = cfg.try_reg(arg) else {
         return Ok(());
     };
