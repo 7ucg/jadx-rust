@@ -18,6 +18,7 @@ import jadx.core.dex.trycatch.ExcHandlerAttr;
 import jadx.core.dex.trycatch.ExceptionHandler;
 import jadx.core.dex.trycatch.TryCatchBlockAttr;
 import jadx.core.dex.visitors.AttachTryCatchVisitor;
+import jadx.core.dex.visitors.debuginfo.DebugInfoAttachVisitor;
 import jadx.core.dex.visitors.ProcessInstructionsVisitor;
 import jadx.core.dex.visitors.blocks.BlockProcessor;
 import jadx.core.dex.visitors.blocks.BlockFinisher;
@@ -85,6 +86,11 @@ public class BlockDump {
 					boolean typed = false;
 					try {
 						mth.load();
+						// reference pipeline order (Jadx.getRegionsModePasses): DebugInfoAttachVisitor
+						// runs on raw decoded instructions, before AttachTryCatchVisitor /
+						// ProcessInstructionsVisitor, and sets AFlag.USE_LINES_HINTS which
+						// IfRegionVisitor/TernaryMod later consult for if/else branch order.
+						new DebugInfoAttachVisitor().visit(mth);
 						new AttachTryCatchVisitor().visit(mth);
 						new ProcessInstructionsVisitor().visit(mth);
 						new BlockSplitter().visit(mth);
