@@ -6,7 +6,11 @@ verified against the reference Java implementation at every stage.
 
 ## Status
 
-Work in progress. See [CHANGELOG.md](CHANGELOG.md) for what has shipped and how it was verified.
+Work in progress. The full pipeline (DEX/class input, SSA, type inference, regions, codegen,
+resources, CLI, MCP server) is implemented and continuously checked against the reference
+Java jadx; current parity on a large real-world app is in the 90%+ range for both whole-class
+and member-level source comparison. See [CHANGELOG.md](CHANGELOG.md) for what has shipped and
+how each change was verified.
 
 ## Layout
 
@@ -31,13 +35,18 @@ cargo build --release
 cargo test
 ```
 
-## Usage (developer commands, the full CLI is not implemented yet)
+## Usage
 
 ```
-jadx-rs smali       app.apk   # smali text of every class
-jadx-rs dex-info    app.apk   # table counts
-jadx-rs dex-classes app.apk   # class list
+jadx-rs -d out app.apk                       # decompile to out/sources, out/resources
+jadx-rs -d out --no-res app.apk              # sources only, skip resource decoding
+jadx-rs -d out --export-gradle app.apk       # also write an Android Studio / Gradle project
+jadx-rs -d out --output-format json app.apk  # JSON output with bytecode offset mapping
+jadx-rs --help                               # full flag list (deobfuscation, decompilation mode, …)
 ```
+
+Developer subcommands for inspecting individual pipeline stages (`smali`, `dex-info`,
+`dex-classes`, `insn-dump`, `insn-ssa`, `xref`, …) are listed in `jadx-rs --help`.
 
 ## MCP server
 
@@ -45,7 +54,8 @@ jadx-rs dex-classes app.apk   # class list
 server over stdio, or over a Unix domain socket with `--socket`. `INPUT` (apk, xapk, dex, jar,
 class) is loaded at start; otherwise call the `open_project` tool. Tools cover classes and
 packages, class and method source, smali, manifest and resources, strings, hierarchy and usages.
-Class source is currently a declaration skeleton (`source_kind: skeleton`), see the crate docs.
+`get_class_source` returns real decompiled code (`source_kind: decompiled`) when the class
+decompiles; otherwise it falls back to a declaration skeleton (`source_kind: skeleton`).
 
 Client configuration example:
 

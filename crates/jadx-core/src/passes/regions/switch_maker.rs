@@ -4,7 +4,6 @@ use crate::model::bitset::BitSet;
 use crate::model::cfg::{bflag, MethodCfg};
 use crate::model::insn::{iflag, BlockId, InsnArg, InsnId, InsnKind, InsnNode, InsnType};
 use crate::model::region::{CaseInfo, CaseKey, Container, RegionId, RegionKind};
-use crate::passes::block_utils::is_path_exists;
 use crate::passes::regions::block_ext::{
     bit_set_to_blocks, bit_set_to_one_block, blocks_to_bit_set, collect_blocks_dominated_by,
     dom_frontier, follow_empty,
@@ -12,8 +11,8 @@ use crate::passes::regions::block_ext::{
 use crate::passes::regions::maker::{RegionMaker, Res};
 use crate::passes::regions::traversal::{traverse, RegionVisitor};
 use crate::passes::regions::utils::{
-    add_to_all, cflag, cflag_add, collect_block_nodes, cs, has_exit_block, is_empty,
-    is_pre_exit_block, last_insn,
+    add_to_all, cflag, collect_block_nodes, cs, has_exit_block, is_empty, is_pre_exit_block,
+    last_insn,
 };
 
 fn npe<T>(v: Option<T>, what: &str) -> Res<T> {
@@ -573,10 +572,4 @@ pub fn build_break_container(cfg: &mut MethodCfg, switch_region: RegionId) -> Co
     let id = cfg.add_insn(n);
     cfg.regions.insn_region_ref.insert(id, switch_region);
     cfg.regions.new_insn_container(vec![id])
-}
-
-#[allow(dead_code)]
-fn unused(cfg: &mut MethodCfg, c: Container) {
-    cflag_add(cfg, c, 0);
-    let _ = is_path_exists;
 }

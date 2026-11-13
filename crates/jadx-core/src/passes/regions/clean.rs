@@ -1,7 +1,6 @@
 //! `CleanRegions`
 
 use crate::model::cfg::MethodCfg;
-use crate::model::insn::iflag;
 use crate::model::region::{Container, RegionId, RegionKind};
 use crate::passes::regions::maker::Res;
 use crate::passes::regions::traversal::{traverse_method, RegionVisitor};
@@ -52,6 +51,3 @@ pub fn clean_regions(cfg: &mut MethodCfg) -> Res<()> {
     }
     traverse_method(cfg, &mut RemoveRegionVisitor)
 }
-
-#[allow(dead_code)]
-const _UNUSED: u64 = iflag::HIDDEN;
