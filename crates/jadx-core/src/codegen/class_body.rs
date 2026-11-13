@@ -671,6 +671,15 @@ impl<'a> ClassGen<'a> {
         if f.dont_generate {
             return Ok(());
         }
+        if f.inline_instance_field && self.node().anonymous.is_some() {
+            // `InsnGen.staticField`: the singleton instance field of an inlinable anonymous
+            // class (`InlineType::InstanceField`) is never printed as a normal declaration; its
+            // initializer (a `new` of this very class) is instead written at the field's single
+            // external read (`InsnGen::static_field`). Reference equivalent: the first (and, by
+            // construction, only) read marks the field `AFlag.DONT_GENERATE` right before
+            // inlining it there.
+            return Ok(());
+        }
         let has_alias = f.alias.as_deref().is_some_and(|a| a != f.info.name);
         let has_comments =
             !f.info_comments.is_empty() && env.check_comments_level(CommentsLevel::Info);
