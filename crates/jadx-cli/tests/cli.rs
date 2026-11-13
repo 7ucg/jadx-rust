@@ -231,7 +231,7 @@ fn placeholders_are_accepted() {
         s("--deobf"),
         s("--deobf-min"),
         s("2"),
-        s("--export-gradle"),
+        s("--print-files"),
         s("--show-bad-code"),
         s("--no-imports"),
         s("-d"),
