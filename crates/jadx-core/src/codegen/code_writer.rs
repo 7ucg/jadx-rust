@@ -21,6 +21,10 @@ pub struct CodeWriter {
     /// Number of units written to the current line.
     offset: usize,
     line_map: BTreeMap<usize, u32>,
+    /// `InsnCodeOffset`: bytecode offset of the instruction a generated line starts with (set
+    /// right after `start_line`/`start_line_with_num`, before anything else is written on the
+    /// line), keyed the same way as `line_map`.
+    offset_map: BTreeMap<usize, u32>,
 }
 
 impl Default for CodeWriter {
@@ -34,6 +38,8 @@ impl Default for CodeWriter {
 pub struct CodeInfo {
     pub code: String,
     pub line_map: BTreeMap<usize, u32>,
+    /// See [`CodeWriter::attach_insn_offset`].
+    pub offset_map: BTreeMap<usize, u32>,
 }
 
 impl CodeWriter {
@@ -53,6 +59,7 @@ impl CodeWriter {
             line: 1,
             offset: 0,
             line_map: BTreeMap::new(),
+            offset_map: BTreeMap::new(),
         };
         if insert_line_numbers {
             w.inc_indent_n(3);
@@ -142,6 +149,9 @@ impl CodeWriter {
         for (l, src) in &other.line_map {
             self.line_map.insert(self.line + l, *src);
         }
+        for (l, off) in &other.offset_map {
+            self.offset_map.insert(self.line + l, *off);
+        }
         self.line += other.line;
         self.offset = other.offset;
         self.buf.push_str(&other.buf);
@@ -223,6 +233,19 @@ impl CodeWriter {
         &self.line_map
     }
 
+    /// `InsnCodeOffset.attach`: records the bytecode offset of the instruction the current line
+    /// was just started for (a negative offset, the `InsnNode` default, is not recorded).
+    pub fn attach_insn_offset(&mut self, offset: i32) {
+        if offset < 0 {
+            return;
+        }
+        self.offset_map.insert(self.line, offset as u32);
+    }
+
+    pub fn offset_map(&self) -> &BTreeMap<usize, u32> {
+        &self.offset_map
+    }
+
     /// Length in UTF-16 code units (`getLength`).
     pub fn len(&self) -> usize {
         self.len
@@ -247,6 +270,7 @@ impl CodeWriter {
         CodeInfo {
             code,
             line_map: self.line_map,
+            offset_map: self.offset_map,
         }
     }
 }
