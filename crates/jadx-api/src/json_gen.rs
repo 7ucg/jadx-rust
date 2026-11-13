@@ -174,21 +174,33 @@ fn build_methods(
         obj.insert("arguments".into(), json!(args));
 
         let loaded = env.method_cfg(cls, mi);
+        let mth_id = format!(
+            "{}.{}",
+            class_gen.class_info().full_name(),
+            m.info.short_id()
+        );
         let fallback_cfg;
         let cfg = match loaded.as_ref() {
             Ok(c) => c,
-            Err(_) => {
+            Err(e) => {
+                env.add_error(format!("Method load error in {mth_id}: {e}"));
                 fallback_cfg = no_code_cfg(env.root, cls, mi);
                 &fallback_cfg
             }
         };
+        for e in &cfg.errors {
+            env.add_error(format!("Method {mth_id}: {e}"));
+        }
+        for w in &cfg.warnings {
+            env.add_warning(format!("Method {mth_id}: {w}"));
+        }
         let mgen = MethodGen::new(class_gen, cfg, mi);
 
         let mut decl_w = plain_writer(env);
         mgen.add_definition(&mut decl_w).map_err(|e| e.msg)?;
         obj.insert("declaration".into(), json!(decl_w.finish().code));
         obj.insert("access-flags".into(), json!(m.access));
-        obj.insert("lines".into(), json!(build_lines(env, m, &mgen)?));
+        obj.insert("lines".into(), json!(build_lines(env, &mth_id, m, &mgen)?));
         obj.insert(
             "offset".into(),
             json!(format!("0x{:x}", m.code_offset.unwrap_or(0))),
@@ -201,6 +213,7 @@ fn build_methods(
 /// `JsonCodeGen.fillMthCode`
 fn build_lines(
     env: &GenEnv<'_>,
+    mth_id: &str,
     m: &MethodNode,
     mgen: &MethodGen<'_>,
 ) -> Result<Vec<Value>, String> {
@@ -209,6 +222,10 @@ fn build_lines(
     };
     let mut w = plain_writer(env);
     if let Err(e) = mgen.add_instructions(&mut w) {
+        env.add_error(format!(
+            "Method {mth_id}: Method code generation error: {}",
+            e.msg
+        ));
         return Ok(vec![
             json!({ "code": format!("/* JADX ERROR: Method generation error: {} */", e.msg) }),
         ]);
