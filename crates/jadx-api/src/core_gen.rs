@@ -21,7 +21,7 @@ use jadx_core::passes::driver::{ClassDriver, CodeSource, DriverOptions, LoadedCo
 use jadx_core::passes::pipeline::{build_ssa, fallback_decode, FrameInfo};
 use jadx_dex_input::DexFile;
 
-use crate::args::{CommentsLevel, DecompilationMode, IntegerFormat};
+use crate::args::{CommentsLevel, DecompilationMode, IntegerFormat, OutputFormat};
 use crate::code::SimpleCodeInfo;
 use crate::generator::{ClassCodeGenerator, ClassDiagnostics, GenContext};
 use crate::input_code::ClassOrigin;
@@ -218,22 +218,89 @@ impl CoreClassGenerator {
 
     /// Fallback mode: no class passes run, the methods only provide their arguments and the dump
     /// of the instructions.
-    fn generate_fallback(
+    fn generate_fallback<R>(
         &self,
         ctx: &GenContext<'_>,
         cls: usize,
         diag: &mut ClassDiagnostics,
-    ) -> Result<SimpleCodeInfo, String> {
+        f: impl FnOnce(&GenEnv<'_>, usize) -> Result<R, String>,
+    ) -> Result<R, String> {
         let loader = FallbackLoader {
             ctx,
             lines: RefCell::new(HashMap::new()),
         };
         let env = self.make_env(ctx, ctx.root, &loader);
-        let generated = code_gen::generate(&env, cls).map_err(|e| e.msg);
+        let generated = f(&env, cls);
         for e in env.errors() {
             diag.error(e);
         }
-        Ok(SimpleCodeInfo::new(generated?.code))
+        generated
+    }
+
+    /// The class code, from `f` run over the generation environment of `cls` (the class pass
+    /// driver's processed state unless the decompilation mode is fallback). Used for both the
+    /// Java and the JSON code generator so they share the exact same processed class tree.
+    fn generate_with_env<R>(
+        &self,
+        ctx: &GenContext<'_>,
+        cls: usize,
+        diag: &mut ClassDiagnostics,
+        f: impl FnOnce(&GenEnv<'_>, usize) -> Result<R, String>,
+    ) -> Result<R, String> {
+        if matches!(ctx.args.decompilation_mode, DecompilationMode::Fallback) {
+            return self.generate_fallback(ctx, cls, diag, f);
+        }
+        let mut guard = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        let key = ctx.root as *const Root as usize;
+        // a class generated before is processed again by a fresh driver
+        let stale = guard
+            .as_ref()
+            .is_none_or(|s| s.root_key != key || s.generated.contains(&cls));
+        if stale {
+            *guard = Some(DriverState {
+                root_key: key,
+                driver: Self::new_driver(ctx),
+                generated: HashSet::new(),
+            });
+        }
+        let st = guard.as_mut().expect("driver state");
+        let processed = catch_unwind(AssertUnwindSafe(|| st.driver.process_with_deps(cls)));
+        if processed.is_err() {
+            return Err("panic in class processing".to_string());
+        }
+        st.generated.insert(cls);
+        let methods = std::mem::take(&mut st.driver.methods);
+        let loader = DriverLoader {
+            ctx,
+            root: &st.driver.root,
+            driver: &st.driver,
+            methods: RefCell::new(methods),
+            lines: RefCell::new(HashMap::new()),
+        };
+        let env = self.make_env(ctx, &st.driver.root, &loader);
+        let generated = catch_unwind(AssertUnwindSafe(|| f(&env, cls)));
+        for e in env.errors() {
+            diag.error(e);
+        }
+        drop(env);
+        let mut methods = loader.methods.into_inner();
+        let root = &st.driver.root;
+        methods.retain(|(c, _), _| root.top_parent_index(*c) != cls);
+        st.driver.methods = methods;
+        match generated {
+            Ok(r) => r,
+            Err(_) => Err("panic in code generation".to_string()),
+        }
+    }
+
+    /// JSON output format (`--output-format json`): `jadx.core.codegen.json.JsonCodeGen`.
+    pub fn generate_json(
+        &self,
+        ctx: &GenContext<'_>,
+        cls: usize,
+        diag: &mut ClassDiagnostics,
+    ) -> Result<String, String> {
+        self.generate_with_env(ctx, cls, diag, crate::json_gen::process)
     }
 }
 
@@ -264,52 +331,14 @@ impl ClassCodeGenerator for CoreClassGenerator {
         cls: usize,
         diag: &mut ClassDiagnostics,
     ) -> Result<SimpleCodeInfo, String> {
-        if matches!(ctx.args.decompilation_mode, DecompilationMode::Fallback) {
-            return self.generate_fallback(ctx, cls, diag);
+        if ctx.args.output_format == OutputFormat::Json {
+            return self.generate_json(ctx, cls, diag).map(SimpleCodeInfo::new);
         }
-        let mut guard = self.state.lock().unwrap_or_else(|e| e.into_inner());
-        let key = ctx.root as *const Root as usize;
-        // a class generated before is processed again by a fresh driver
-        let stale = guard
-            .as_ref()
-            .is_none_or(|s| s.root_key != key || s.generated.contains(&cls));
-        if stale {
-            *guard = Some(DriverState {
-                root_key: key,
-                driver: Self::new_driver(ctx),
-                generated: HashSet::new(),
-            });
-        }
-        let st = guard.as_mut().expect("driver state");
-        let processed = catch_unwind(AssertUnwindSafe(|| st.driver.process_with_deps(cls)));
-        if processed.is_err() {
-            return Err("panic in class processing".to_string());
-        }
-        st.generated.insert(cls);
-        let methods = std::mem::take(&mut st.driver.methods);
-        let loader = DriverLoader {
-            ctx,
-            root: &st.driver.root,
-            driver: &st.driver,
-            methods: RefCell::new(methods),
-            lines: RefCell::new(HashMap::new()),
-        };
-        let env = self.make_env(ctx, &st.driver.root, &loader);
-        let generated = catch_unwind(AssertUnwindSafe(|| {
-            code_gen::generate(&env, cls).map_err(|e| e.msg)
-        }));
-        for e in env.errors() {
-            diag.error(e);
-        }
-        drop(env);
-        let mut methods = loader.methods.into_inner();
-        let root = &st.driver.root;
-        methods.retain(|(c, _), _| root.top_parent_index(*c) != cls);
-        st.driver.methods = methods;
-        match generated {
-            Ok(info) => Ok(SimpleCodeInfo::new(info?.code)),
-            Err(_) => Err("panic in code generation".to_string()),
-        }
+        self.generate_with_env(ctx, cls, diag, |env, cls| {
+            code_gen::generate(env, cls)
+                .map_err(|e| e.msg)
+                .map(|info| SimpleCodeInfo::new(info.code))
+        })
     }
 }
 

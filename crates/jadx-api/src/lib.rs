@@ -25,6 +25,7 @@ pub mod export;
 pub mod generator;
 pub mod input_code;
 pub mod java;
+pub mod json_gen;
 pub mod log;
 pub mod parallel;
 pub mod paths;

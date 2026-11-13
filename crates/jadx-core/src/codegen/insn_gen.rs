@@ -290,6 +290,7 @@ impl<'m, 'a> InsnGen<'m, 'a> {
             _ => {
                 if flag != Some(Flags::Inline) {
                     code.start_line();
+                    code.attach_insn_offset(insn.offset);
                 }
                 if let Some(res) = &insn.result {
                     let use_count = res.svar.map(|v| self.cfg().svars[v].use_count());

@@ -15,7 +15,7 @@ use jadx_input_api::ConstValue;
 use jadx_java_input::JavaClass as JavaInputClass;
 use jadx_package::{load_inputs, InputSet, LoadOptions};
 
-use crate::args::{JadxArgs, OutputFormat, DEFAULT_OUT_DIR, DEFAULT_RES_DIR, DEFAULT_SRC_DIR};
+use crate::args::{JadxArgs, DEFAULT_OUT_DIR, DEFAULT_RES_DIR, DEFAULT_SRC_DIR};
 use crate::code::{ICodeInfo, SimpleCodeInfo};
 use crate::error::{ErrorsCounter, JadxError, Result};
 use crate::generator::{
@@ -406,11 +406,6 @@ impl JadxDecompiler {
                     .unwrap_or_else(|_| f.clone());
                 return Err(JadxError::Args(format!("File not found {}", abs.display())));
             }
-        }
-        if self.args.output_format == OutputFormat::Json {
-            return Err(JadxError::Args(
-                "JSON output format is not implemented yet".into(),
-            ));
         }
         if self.args.threads_count == 0 {
             return Err(JadxError::Args(

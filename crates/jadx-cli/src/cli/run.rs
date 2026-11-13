@@ -6,9 +6,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
-use jadx_api::{
-    class_output_path, JadxArgs, JadxDecompiler, JadxError, Level, LogSink, OutputFormat,
-};
+use jadx_api::{class_output_path, JadxArgs, JadxDecompiler, JadxError, Level, LogSink};
 
 use super::options::{self, Cli, LogLevel, ParseError};
 
@@ -228,7 +226,6 @@ fn single_class(jadx: &JadxDecompiler, cli: &Cli, log: &dyn LogSink) -> Result<b
         }
     };
     let ext = args.output_format.file_extension();
-    debug_assert!(args.output_format == OutputFormat::Java);
     let out: PathBuf = match &cli.single_class_output {
         None => {
             let src = args.out_dir_src.clone().unwrap_or_default();
