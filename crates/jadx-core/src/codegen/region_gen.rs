@@ -447,7 +447,7 @@ impl<'m, 'a> RegionGen<'m, 'a> {
         code.add_char(' ');
         let name_gen = self.ig.mgen().name_gen();
         if let Some((name, _)) = &handler.named_arg {
-            let n = name_gen.borrow_mut().assign_named_arg(name);
+            let n = name_gen.borrow_mut().assign_named_arg_for_handler(h, name);
             code.add(&n);
         } else if let Some(cv) = self.handler_code_var(h) {
             let n = name_gen.borrow_mut().assign_arg(cfg, cv);

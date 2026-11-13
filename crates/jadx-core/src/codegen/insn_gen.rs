@@ -153,7 +153,16 @@ impl<'m, 'a> InsnGen<'m, 'a> {
             InsnArg::Literal(l) => self.add_literal_arg(code, l, state),
             InsnArg::Wrapped(w) => self.add_wrapped_arg(code, w, state),
             InsnArg::Named(n) => {
-                code.add(&n.name);
+                // The handler's catch clause (`make_catch_block`) is the single place that
+                // assigns and deduplicates this named argument's display name (`NamedArg.setName`
+                // on the Java side, mutating the one object shared with every `Move` that reads
+                // it); resolve through that same assignment here instead of printing the raw,
+                // never-deduplicated base name, which would (and did) make an unrelated variable
+                // of the same base name print identically to this one.
+                let resolved = n
+                    .handler
+                    .and_then(|h| self.mgen.name_gen().borrow().named_arg_name(h));
+                code.add(resolved.as_deref().unwrap_or(&n.name));
                 Ok(())
             }
         }

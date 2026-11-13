@@ -791,6 +791,7 @@ fn process_move_exception(
         mv.args.push(InsnArg::Named(NamedArg {
             name: name.to_string(),
             ty: ty.clone(),
+            handler: Some(handler),
         }));
         cfg.handlers[handler].named_arg = Some((name.to_string(), ty));
         replace_insn(cfg, block, 0, mv)?;

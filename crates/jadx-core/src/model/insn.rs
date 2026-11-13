@@ -357,6 +357,14 @@ pub enum InsnArg {
 pub struct NamedArg {
     pub name: String,
     pub ty: ArgType,
+    /// The exception handler this named argument stands for (`ExceptionHandler.setArg`): the
+    /// reference identifies a single Java-side `NamedArg` object shared between the handler
+    /// (printed as the catch clause's parameter) and every `Move` that reads it. Printing must
+    /// resolve through the SAME [`NameGen`](crate::codegen::name_gen::NameGen) assignment for all
+    /// of them, like the Java object's `setName` mutation does; this field is how a later use
+    /// finds the handler whose single assigned name it must reuse. `None` for a named argument
+    /// with no handler of its own (e.g. the "unused" placeholder).
+    pub handler: Option<HandlerId>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
