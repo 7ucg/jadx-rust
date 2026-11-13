@@ -44,6 +44,22 @@ pub struct GenEnv<'a> {
     cfgs: RefCell<HashMap<(usize, usize), LoadedCfg>>,
     errors: RefCell<Vec<String>>,
     warnings: RefCell<Vec<String>>,
+    /// Classes whose body is currently being inlined at a singleton field read
+    /// ([`inline_instance_field_constructor`](super::insn_gen::InsnGen::inline_instance_field_constructor)),
+    /// guarding against an indirect cycle through several singleton fields.
+    inlining: RefCell<HashSet<usize>>,
+}
+
+/// Removes its class from [`GenEnv::inlining`] when dropped, even if generation returns early.
+pub struct InliningGuard<'a, 'e> {
+    env: &'a GenEnv<'e>,
+    cls: usize,
+}
+
+impl Drop for InliningGuard<'_, '_> {
+    fn drop(&mut self) {
+        self.env.inlining.borrow_mut().remove(&self.cls);
+    }
 }
 
 impl<'a> GenEnv<'a> {
@@ -96,7 +112,20 @@ impl<'a> GenEnv<'a> {
             cfgs: RefCell::new(HashMap::new()),
             errors: RefCell::new(Vec::new()),
             warnings: RefCell::new(Vec::new()),
+            inlining: RefCell::new(HashSet::new()),
         }
+    }
+
+    /// Enters `cls` as currently being inlined, failing if it already is (a cycle through
+    /// several singleton field reads); the returned guard leaves it again when dropped.
+    pub fn enter_inlining(&self, cls: usize) -> Result<InliningGuard<'_, 'a>, String> {
+        if !self.inlining.borrow_mut().insert(cls) {
+            return Err(format!(
+                "Anonymous inner class unlimited recursion detected. Convert class to inner: {}",
+                self.root.classes[cls].info.full_name()
+            ));
+        }
+        Ok(InliningGuard { env: self, cls })
     }
 
     /// Record an error of the code generation (reported with the class).

@@ -279,7 +279,13 @@ impl<'m, 'a> InsnGen<'m, 'a> {
     fn static_field(&self, code: &mut CodeWriter, field: &FieldInfo) -> Res {
         if let Some((fc, fi)) = self.root().resolve_field_id(field) {
             let field_node = &self.root().classes[fc].fields[fi];
-            if field_node.inline_instance_field && self.root().classes[fc].anonymous.is_some() {
+            // Only act on an exact field match: `resolve_field_id` can fall back to an inherited
+            // field of the same name/type (`deep_resolve_field`), which is a different field than
+            // the one actually accessed and must not be inlined here.
+            if field_node.info == *field
+                && field_node.inline_instance_field
+                && self.root().classes[fc].anonymous.is_some()
+            {
                 if let Some(init) = field_node.init_insn {
                     let loaded = self.env().method_cfg(fc, init.mth);
                     if let Ok(field_cfg) = loaded.as_ref() {
@@ -316,6 +322,10 @@ impl<'m, 'a> InsnGen<'m, 'a> {
                 self.root().classes[cls].info.full_name()
             )));
         }
+        // The singleton field's own initializer can itself read another inlined singleton field
+        // a few levels up; without tracking every class currently being inlined (not just the
+        // immediate one, which the check above covers), such a cycle would recurse without bound.
+        let _guard = self.env().enter_inlining(cls).map_err(CodegenError::new)?;
         let root = self.root();
         let Some(anon) = &root.classes[cls].anonymous else {
             return Err(CodegenError::new("Missing anonymous class attribute"));
