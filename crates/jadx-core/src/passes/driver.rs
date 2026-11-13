@@ -298,18 +298,25 @@ impl<'s> ClassDriver<'s> {
                 }
             }
         }
-        const BYTES_PER_METHOD_ESTIMATE: u64 = 70_000;
-        const BUDGET_NUMERATOR: u64 = 3;
-        const BUDGET_DENOMINATOR: u64 = 5;
-        let estimated_bytes = (targets.len() as u64).saturating_mul(BYTES_PER_METHOD_ESTIMATE);
-        if estimated_bytes > available_memory_bytes() * BUDGET_NUMERATOR / BUDGET_DENOMINATOR {
+        if targets.len() < 2 {
+            // Not worth it for a lone method (e.g. a `--single-class`/single-method query):
+            // the preload's own bookkeeping and thread setup would outweigh the saving.
             return;
         }
-        let threads = threads.clamp(1, targets.len().max(1));
+        // Budget on the methods' real, decoded size (instruction count), not a flat per-method
+        // guess: a method with unusually many instructions - plain code or an adversarial input
+        // trying to defeat a method-count-based cap - costs proportionally more, and this
+        // tracks that as it goes rather than assuming an average up front.
+        const BYTES_PER_INSN_ESTIMATE: u64 = 3_000;
+        const BUDGET_NUMERATOR: u64 = 3;
+        const BUDGET_DENOMINATOR: u64 = 5;
+        let budget_bytes = available_memory_bytes() * BUDGET_NUMERATOR / BUDGET_DENOMINATOR;
+        let threads = threads.clamp(1, targets.len());
         let root = &self.root;
         let src = self.src.as_ref();
         let extract_finally = self.opts.extract_finally;
         let next = std::sync::atomic::AtomicUsize::new(0);
+        let spent_bytes = AtomicU64::new(0);
         let results: Mutex<Vec<(MethodId, MethodState)>> =
             Mutex::new(Vec::with_capacity(targets.len()));
         std::thread::scope(|scope| {
@@ -322,7 +329,19 @@ impl<'s> ClassDriver<'s> {
                             break;
                         }
                         let (c, m) = targets[i];
-                        let state = decode_method(root, src, extract_finally, c, m);
+                        let Ok(loaded) = load_method_code(root, src, c, m) else {
+                            continue; // load failure: let `load_methods` retry and report it
+                        };
+                        let method_bytes = (loaded.decoded.insns.len() as u64)
+                            .saturating_mul(BYTES_PER_INSN_ESTIMATE);
+                        let spent =
+                            spent_bytes.fetch_add(method_bytes, Ordering::Relaxed) + method_bytes;
+                        if spent > budget_bytes {
+                            // Over budget: leave this one for the on-demand path instead of
+                            // building its (comparatively expensive) SSA state too.
+                            continue;
+                        }
+                        let state = build_method_state(root, extract_finally, c, m, loaded);
                         local.push(((c, m), state));
                     }
                     results
@@ -918,15 +937,36 @@ fn decode_method(
     c: usize,
     m: usize,
 ) -> MethodState {
-    let loaded = match src.load_code(root, c, m) {
-        Ok(l) => l,
-        Err(e) => {
-            return MethodState {
-                cfg: None,
-                failed: Some(e),
-            }
-        }
-    };
+    match load_method_code(root, src, c, m) {
+        Ok(loaded) => build_method_state(root, extract_finally, c, m, loaded),
+        Err(e) => MethodState {
+            cfg: None,
+            failed: Some(e),
+        },
+    }
+}
+
+/// Just the bytecode-reading half of [`decode_method`]: cheap compared to
+/// [`build_method_state`], and `loaded.decoded.insns.len()` is a real (not guessed) proxy for
+/// how much the SSA build below will cost, used by
+/// [`ClassDriver::preload_all_methods`] to bound its memory use on actual size rather than a
+/// flat per-method estimate (which a method with unusually many instructions could exceed).
+fn load_method_code(
+    root: &Root,
+    src: &dyn CodeSource,
+    c: usize,
+    m: usize,
+) -> Result<LoadedCode, String> {
+    src.load_code(root, c, m)
+}
+
+fn build_method_state(
+    root: &Root,
+    extract_finally: bool,
+    c: usize,
+    m: usize,
+    loaded: LoadedCode,
+) -> MethodState {
     let mut frame = FrameInfo::new(root, c, m, loaded.regs_count);
     frame.args_start_reg = loaded.args_start_reg;
     let built = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {

@@ -159,6 +159,12 @@ struct DriverState {
     root_key: usize,
     driver: ClassDriver<'static>,
     generated: HashSet<usize>,
+    /// `preload_all_methods` has not run yet for this driver. Left `true` (and the preload
+    /// skipped) through the very first class requested of a fresh driver, so a caller that only
+    /// ever asks for one class (`--single-class`, or an MCP `get_class_source` query on its own)
+    /// does not pay for decoding the whole app's methods up front; set once a second distinct
+    /// class is requested, which is when an actual multi-class save benefits from it.
+    preload_pending: bool,
 }
 
 /// Generates the code of classes from the decompiled method bodies. The class passes run in a
@@ -277,22 +283,27 @@ impl CoreClassGenerator {
             .as_ref()
             .is_none_or(|s| s.root_key != key || s.generated.contains(&cls));
         if stale {
-            let mut driver = Self::new_driver(ctx);
-            // Safe to parallelize (no cross-method dependency, unlike the class passes run
-            // later over an accumulating, order-dependent state) - see TODO.md
-            // "Performance/Parallelitaet".
-            let t = std::time::Instant::now();
-            driver.preload_all_methods(ctx.args.threads_count);
-            if std::env::var("JADX_RS_TIMING").is_ok() {
-                eprintln!("TIMING preload_all_methods: {:?}", t.elapsed());
-            }
             *guard = Some(DriverState {
                 root_key: key,
-                driver,
+                driver: Self::new_driver(ctx),
                 generated: HashSet::new(),
+                preload_pending: true,
             });
         }
         let st = guard.as_mut().expect("driver state");
+        if st.preload_pending && !st.generated.is_empty() {
+            // Safe to parallelize (no cross-method dependency, unlike the class passes run
+            // later over an accumulating, order-dependent state) - see TODO.md
+            // "Performance/Parallelitaet". Deferred to the second distinct class requested
+            // (see `DriverState::preload_pending`'s doc comment) rather than run eagerly here
+            // on the very first one.
+            st.preload_pending = false;
+            let t = std::time::Instant::now();
+            st.driver.preload_all_methods(ctx.args.threads_count);
+            if std::env::var("JADX_RS_TIMING").is_ok() {
+                eprintln!("TIMING preload_all_methods: {:?}", t.elapsed());
+            }
+        }
         let t = std::time::Instant::now();
         let processed = catch_unwind(AssertUnwindSafe(|| st.driver.process_with_deps(cls)));
         PASS_NANOS.fetch_add(t.elapsed().as_nanos() as u64, Ordering::Relaxed);
