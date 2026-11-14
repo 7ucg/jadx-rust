@@ -56,8 +56,44 @@ pub fn run_region_stages(cfg: &mut MethodCfg, env: &MethodEnv, stage: u32) -> Re
 }
 
 /// `RegionMakerVisitor.visit`
+/// Block-count ceiling above which [`region_maker_visitor`] abandons structured recovery for a
+/// method and lets it fall back to an instruction dump (see the call site). The region recovery
+/// and the following region/variable analyses are super-linear in the block count, so beyond a
+/// few thousand blocks a single method stalls for minutes. Measured anchors: the largest method
+/// in a normal app (MT Manager.apk) has 1567 blocks and decompiles in well under a second, while
+/// WhatsApp's obfuscated giants (2577 up to 9393 blocks) each stall for minutes; 2000 sits above
+/// every real method and below the degenerate ones. Overridable with `JADX_RS_MAX_REGION_BLOCKS`.
+const MAX_REGION_BLOCKS: usize = 2000;
+
 pub fn region_maker_visitor(cfg: &mut MethodCfg, env: &MethodEnv) -> Res<()> {
     if cfg.blocks.is_empty() {
+        return Ok(());
+    }
+    if std::env::var("JADX_RS_DEBUG_BLOCKS").is_ok() && cfg.blocks.len() > 500 {
+        eprintln!(
+            "BLOCKS {} {}.{}",
+            cfg.blocks.len(),
+            env.root.classes[env.cls].info.raw_name(),
+            env.root.classes[env.cls].methods[env.mth].info.name
+        );
+    }
+    // Pathological methods (heavily obfuscated code with enormous control-flow graphs) make the
+    // region recovery and the variable/region analyses that follow it run in time super-linear
+    // in the block count, which on the largest apps can stall for many minutes on a single
+    // method. Above a block-count limit, skip structured recovery for this method and let it
+    // fall back to a commented instruction dump (the same outcome the reference reaches when its
+    // own region stack limit throws) - recorded as a method error so every later per-method pass
+    // skips it, exactly like a type-inference overflow. The limit is far above any method in real
+    // code (so normal output is unaffected) and overridable for experiments.
+    let limit = std::env::var("JADX_RS_MAX_REGION_BLOCKS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(MAX_REGION_BLOCKS);
+    if cfg.blocks.len() > limit {
+        cfg.errors.push(format!(
+            "Region recovery skipped: control-flow graph too large ({} blocks)",
+            cfg.blocks.len()
+        ));
         return Ok(());
     }
     {
