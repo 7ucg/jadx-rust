@@ -16,14 +16,48 @@ use std::path::PathBuf;
 use super::driver::MethodState;
 use crate::model::node::MethodId;
 
-/// Cap on the bytes currently held on disk (incremented by `store`, decremented by `take`)
-/// before `store` starts refusing new entries, falling back to the caller's own "keep in memory
-/// instead" path rather than filling the disk without bound. This tracks the live on-disk size,
-/// not a cumulative total, so a run that spills and reads a method back many times (the general
-/// cross-class dependency case, which round-trips the same state repeatedly) is bounded by its
-/// peak working set, not by how often it spills. Generous because the store is on a real disk:
-/// the point is to hold the bulk of a very large program's method state off the heap.
+/// Absolute cap on the bytes currently held on disk (incremented by `store`, decremented by
+/// `take`) before `store` starts refusing new entries, falling back to the caller's own "keep in
+/// memory instead" path rather than filling the disk without bound. This tracks the live on-disk
+/// size, not a cumulative total, so a run that spills and reads a method back many times (the
+/// general cross-class dependency case, which round-trips the same state repeatedly) is bounded
+/// by its peak working set, not by how often it spills. The effective cap is the smaller of this
+/// and a fraction of the spill filesystem's actual free space (see [`store`]), so a small or
+/// nearly full `/var/tmp` is never driven to exhaustion - this is only the ceiling for a disk
+/// with plenty of room, where the point is to hold the bulk of a very large program's method
+/// state off the heap.
 const DISK_CACHE_BUDGET_BYTES: u64 = 16_000_000_000;
+
+/// Keep at least this much of the spill filesystem's free space unused, and never let the cache
+/// grow past this fraction of the free space it saw when it started, so spilling never fills a
+/// user's `/var/tmp` (or wherever `cache_base` resolved to) out from under other programs.
+const DISK_FREE_RESERVE_BYTES: u64 = 1_000_000_000;
+const DISK_FREE_FRACTION_NUMERATOR: u64 = 1;
+const DISK_FREE_FRACTION_DENOMINATOR: u64 = 2;
+
+/// Bytes currently free on the filesystem that contains `path`, via `statvfs(3)`; `None` if the
+/// query fails or on a non-unix target. Used to cap the spill size at a fraction of real free
+/// space so the cache cannot exhaust a small or nearly full disk.
+#[cfg(unix)]
+fn free_disk_bytes(path: &std::path::Path) -> Option<u64> {
+    use std::os::unix::ffi::OsStrExt;
+    let mut cpath = path.as_os_str().as_bytes().to_vec();
+    cpath.push(0);
+    // SAFETY: `cpath` is a NUL-terminated C string that outlives the call, and `stat` is only
+    // read after a `0` (success) return.
+    let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
+    let rc = unsafe { libc::statvfs(cpath.as_ptr() as *const libc::c_char, &mut stat) };
+    if rc != 0 {
+        return None;
+    }
+    // `f_bavail` is the blocks available to an unprivileged process; `f_frsize` their size.
+    Some((stat.f_bavail as u64).saturating_mul(stat.f_frsize as u64))
+}
+
+#[cfg(not(unix))]
+fn free_disk_bytes(_path: &std::path::Path) -> Option<u64> {
+    None
+}
 
 /// The base directory the spill directory is created under. This cache exists to move decoded
 /// method state out of RAM, so the one thing it must not do is write to a RAM-backed filesystem:
@@ -85,6 +119,11 @@ fn is_disk_backed(path: &std::path::Path) -> bool {
 pub struct MethodDiskCache {
     dir: Option<PathBuf>,
     bytes_on_disk: u64,
+    /// Effective byte cap, set when the spill directory is first created: the smaller of
+    /// [`DISK_CACHE_BUDGET_BYTES`] and a fraction of the spill filesystem's free space at that
+    /// point (see [`MethodDiskCache::store`]). Zero until then, but `store` always creates the
+    /// directory (setting this) before it is read.
+    cap_bytes: u64,
 }
 
 impl MethodDiskCache {
@@ -111,6 +150,17 @@ impl MethodDiskCache {
                 // fallback (keep the state in memory / drop it) applies instead.
                 return None;
             }
+            // Cap the cache at the smaller of the absolute budget and half the spill
+            // filesystem's free space (less a reserve), so it never fills a small or nearly
+            // full disk. If free space cannot be determined, only the absolute budget applies.
+            let free_cap = free_disk_bytes(&base)
+                .map(|free| {
+                    free.saturating_sub(DISK_FREE_RESERVE_BYTES)
+                        .saturating_mul(DISK_FREE_FRACTION_NUMERATOR)
+                        / DISK_FREE_FRACTION_DENOMINATOR
+                })
+                .unwrap_or(u64::MAX);
+            self.cap_bytes = DISK_CACHE_BUDGET_BYTES.min(free_cap);
             self.dir = Some(base);
         }
         self.dir.as_deref()
@@ -165,19 +215,25 @@ impl MethodDiskCache {
     }
 
     /// Writes `state` to disk, returning whether it succeeded. Fails (without writing anything)
-    /// once `DISK_CACHE_BUDGET_BYTES` would be exceeded, or on a genuine I/O/serialization
-    /// error; either way the caller falls back to keeping the state in memory, never losing it.
+    /// once the effective cap (see [`MethodDiskCache::cap_bytes`]) would be exceeded, or on a
+    /// genuine I/O/serialization error; either way the caller falls back to keeping the state in
+    /// memory, never losing it.
     pub fn store(&mut self, id: MethodId, state: &MethodState) -> bool {
         let Ok(bytes) = bincode::serialize(state) else {
             return false;
         };
-        if self.bytes_on_disk.saturating_add(bytes.len() as u64) > DISK_CACHE_BUDGET_BYTES {
+        let add = bytes.len() as u64;
+        // `ensure_dir` creates the directory and sets `cap_bytes` from the spill filesystem's
+        // free space the first time, so the cap check below must come after it.
+        let path = {
+            let Some(dir) = self.ensure_dir() else {
+                return false;
+            };
+            Self::file_path(dir, id)
+        };
+        if self.bytes_on_disk.saturating_add(add) > self.cap_bytes {
             return false;
         }
-        let Some(dir) = self.ensure_dir() else {
-            return false;
-        };
-        let path = Self::file_path(dir, id);
         use std::io::Write;
         let Ok(mut file) = Self::create_private_file(&path) else {
             return false;
@@ -186,7 +242,7 @@ impl MethodDiskCache {
             let _ = fs::remove_file(&path);
             return false;
         }
-        self.bytes_on_disk += bytes.len() as u64;
+        self.bytes_on_disk += add;
         true
     }
 
