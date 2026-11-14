@@ -35,6 +35,11 @@ const DISK_FREE_RESERVE_BYTES: u64 = 1_000_000_000;
 const DISK_FREE_FRACTION_NUMERATOR: u64 = 1;
 const DISK_FREE_FRACTION_DENOMINATOR: u64 = 2;
 
+/// How many bytes `store` may write before re-querying the spill filesystem's free space and
+/// refreshing the cap (see [`MethodDiskCache::refresh_cap`]), so a disk filling up mid-run
+/// shrinks the cap without paying a `statvfs` on every single spill.
+const FREE_RECHECK_INTERVAL_BYTES: u64 = 256_000_000;
+
 /// Bytes currently free on the filesystem that contains `path`, via `statvfs(3)`; `None` if the
 /// query fails or on a non-unix target. Used to cap the spill size at a fraction of real free
 /// space so the cache cannot exhaust a small or nearly full disk.
@@ -119,11 +124,15 @@ fn is_disk_backed(path: &std::path::Path) -> bool {
 pub struct MethodDiskCache {
     dir: Option<PathBuf>,
     bytes_on_disk: u64,
-    /// Effective byte cap, set when the spill directory is first created: the smaller of
-    /// [`DISK_CACHE_BUDGET_BYTES`] and a fraction of the spill filesystem's free space at that
-    /// point (see [`MethodDiskCache::store`]). Zero until then, but `store` always creates the
-    /// directory (setting this) before it is read.
+    /// Effective byte cap, (re)computed by [`MethodDiskCache::refresh_cap`]: the smaller of
+    /// [`DISK_CACHE_BUDGET_BYTES`] and the current on-disk size plus a fraction of the spill
+    /// filesystem's *current* free space. Zero until the directory is first created, but `store`
+    /// always creates it (setting this) before reading it.
     cap_bytes: u64,
+    /// `store` re-queries free space and refreshes `cap_bytes` once cumulative writes pass this
+    /// mark, so the cap shrinks as the disk fills (from this process or others) instead of
+    /// trusting a one-time snapshot.
+    next_free_check_at: u64,
 }
 
 impl MethodDiskCache {
@@ -150,20 +159,38 @@ impl MethodDiskCache {
                 // fallback (keep the state in memory / drop it) applies instead.
                 return None;
             }
-            // Cap the cache at the smaller of the absolute budget and half the spill
-            // filesystem's free space (less a reserve), so it never fills a small or nearly
-            // full disk. If free space cannot be determined, only the absolute budget applies.
-            let free_cap = free_disk_bytes(&base)
-                .map(|free| {
-                    free.saturating_sub(DISK_FREE_RESERVE_BYTES)
-                        .saturating_mul(DISK_FREE_FRACTION_NUMERATOR)
-                        / DISK_FREE_FRACTION_DENOMINATOR
-                })
-                .unwrap_or(u64::MAX);
-            self.cap_bytes = DISK_CACHE_BUDGET_BYTES.min(free_cap);
             self.dir = Some(base);
+            self.refresh_cap();
         }
         self.dir.as_deref()
+    }
+
+    /// Recomputes [`MethodDiskCache::cap_bytes`] from the spill filesystem's *current* free
+    /// space: the smaller of [`DISK_CACHE_BUDGET_BYTES`] and the current on-disk size plus half
+    /// the free space beyond a reserve, so the cache never drives a small or filling disk to
+    /// exhaustion. Called when the directory is created and again from `store` every
+    /// [`FREE_RECHECK_INTERVAL_BYTES`] written, so a disk filling up (from this process or
+    /// another) shrinks the cap rather than being trusted from a one-time snapshot. If free
+    /// space cannot be determined (e.g. `statvfs` failed, or a non-unix target), only the
+    /// absolute budget applies - failing closed to a tiny cap would instead cripple the spill
+    /// and reintroduce the very memory collapse this cache exists to prevent, while the absolute
+    /// budget plus the full-disk write fallback in `store` already bound the worst case.
+    fn refresh_cap(&mut self) {
+        let Some(dir) = self.dir.as_deref() else {
+            return;
+        };
+        let free_cap = match free_disk_bytes(dir) {
+            Some(free) => self.bytes_on_disk.saturating_add(
+                free.saturating_sub(DISK_FREE_RESERVE_BYTES)
+                    .saturating_mul(DISK_FREE_FRACTION_NUMERATOR)
+                    / DISK_FREE_FRACTION_DENOMINATOR,
+            ),
+            None => u64::MAX,
+        };
+        self.cap_bytes = DISK_CACHE_BUDGET_BYTES.min(free_cap);
+        self.next_free_check_at = self
+            .bytes_on_disk
+            .saturating_add(FREE_RECHECK_INTERVAL_BYTES);
     }
 
     #[cfg(unix)]
@@ -231,6 +258,11 @@ impl MethodDiskCache {
             };
             Self::file_path(dir, id)
         };
+        // Periodically re-sample free space so the cap tracks a filling disk, not just the
+        // snapshot taken when the directory was created.
+        if self.bytes_on_disk >= self.next_free_check_at {
+            self.refresh_cap();
+        }
         if self.bytes_on_disk.saturating_add(add) > self.cap_bytes {
             return false;
         }
