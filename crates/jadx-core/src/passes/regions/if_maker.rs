@@ -8,7 +8,9 @@ use crate::model::cfg::{bflag, MethodCfg};
 use crate::model::condition::{CondMode, IfCondition};
 use crate::model::insn::{BlockId, InsnId, InsnKind, InsnType};
 use crate::model::region::{Container, RegionId, RegionKind};
-use crate::passes::block_utils::{is_back_edge, is_dominator, is_path_exists};
+use crate::passes::block_utils::{
+    clean_succ_reachable, is_back_edge, is_dominator, is_path_exists, path_exists_from_reachable,
+};
 use crate::passes::regions::block_ext::{
     bit_set_to_blocks, bit_set_to_one_block, dom_frontier, follow_empty, follow_empty_rev,
     get_bottom_block, get_path_cross2, get_try_and_handler_cross_block, is_duplicate_block_path,
@@ -528,10 +530,15 @@ pub fn find_out_block(
     union.or(&dom_frontier(cfg, then_block));
     union.or(&dom_frontier(cfg, else_block));
     union.clear(exit_pos);
-    // Attempt two: look for a suitable block in the union.
+    // Attempt two: look for a suitable block in the union. `then_block`/`else_block` are fixed
+    // across every candidate and every predecessor tested below, so reachability from each is
+    // computed once here and reused as O(1) lookups instead of a fresh path DFS per predecessor
+    // (which is O(V^3) on a method with a very large control-flow graph).
+    let reach_then = clean_succ_reachable(cfg, then_block);
+    let reach_else = clean_succ_reachable(cfg, else_block);
     let mut candidates = BitSet::new();
     for cand in bit_set_to_blocks(cfg, &union) {
-        if is_candidate_for_out_block(cfg, then_block, else_block, cand) {
+        if is_candidate_for_out_block(cfg, then_block, else_block, cand, &reach_then, &reach_else) {
             candidates.set(cfg.block(cand).pos);
         }
     }
@@ -547,6 +554,8 @@ fn is_candidate_for_out_block(
     then_block: BlockId,
     else_block: BlockId,
     candidate: BlockId,
+    reach_then: &BitSet,
+    reach_else: &BitSet,
 ) -> bool {
     if cfg.block(candidate).preds.len() < 2 {
         return false;
@@ -560,10 +569,10 @@ fn is_candidate_for_out_block(
         cov_then.set(cfg.block(candidate).pos);
     }
     for &pred in &cfg.block(candidate).preds {
-        if is_path_exists(cfg, then_block, pred) {
+        if path_exists_from_reachable(cfg, then_block, pred, reach_then) {
             cov_then.set(cfg.block(pred).pos);
         }
-        if is_path_exists(cfg, else_block, pred) {
+        if path_exists_from_reachable(cfg, else_block, pred, reach_else) {
             cov_else.set(cfg.block(pred).pos);
         }
     }

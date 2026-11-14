@@ -37,6 +37,61 @@ fn traverse_successors_until(
     false
 }
 
+/// The set of block positions reachable from `start` through its *clean* successors via at least
+/// one edge - exactly the set `traverse_successors_until(.., start, .., clean = true)` walks.
+/// `start` itself is excluded unless a cycle leads back to it through other blocks (matching the
+/// traversal, which skips its own `from`). Computed once so many `is_path_exists(start, x)`
+/// queries that share one `start` become O(1) bitset lookups instead of a DFS each (see
+/// [`path_exists_from_reachable`]).
+pub fn clean_succ_reachable(cfg: &MethodCfg, start: BlockId) -> BitSet {
+    let start_pos = cfg.block(start).pos;
+    let mut r = BitSet::new();
+    let mut stack: Vec<BlockId> = cfg.block(start).clean_succs().cloned().unwrap_or_default();
+    while let Some(b) = stack.pop() {
+        let pos = cfg.block(b).pos;
+        if pos == start_pos || r.get(pos) {
+            continue;
+        }
+        r.set(pos);
+        if let Some(succs) = cfg.block(b).clean_succs() {
+            for &s in succs {
+                let sp = cfg.block(s).pos;
+                if sp != start_pos && !r.get(sp) {
+                    stack.push(s);
+                }
+            }
+        }
+    }
+    r
+}
+
+/// [`is_path_exists`] answered from a precomputed [`clean_succ_reachable`] set for `start`.
+/// Equivalent to `is_path_exists(cfg, start, end)` by construction: `is_path_exists` is true iff
+/// `start == end`, or `end` is clean-successor-reachable from `start`, or some clean-successor-
+/// reachable block dominates `end` (the dominator short-circuit inside `traverse_successors_until`,
+/// `s.isDominator(end)` ⇔ `end.doms` contains `s`). `reach` must be `clean_succ_reachable(cfg, start)`.
+pub fn path_exists_from_reachable(
+    cfg: &MethodCfg,
+    start: BlockId,
+    end: BlockId,
+    reach: &BitSet,
+) -> bool {
+    if start == end {
+        return true;
+    }
+    if reach.get(cfg.block(end).pos) {
+        return true;
+    }
+    if let Some(doms) = cfg.block(end).doms.as_ref() {
+        let mut inter = doms.clone();
+        inter.and(reach);
+        if !inter.is_empty() {
+            return true;
+        }
+    }
+    false
+}
+
 /// `until.isDominator(s)`: `s` dominates `until`.
 pub fn is_dominator(cfg: &MethodCfg, block: BlockId, dominator: BlockId) -> bool {
     cfg.block(block)
