@@ -28,11 +28,36 @@ crates/
 tests/oracle/       comparison harness against the Java jadx
 ```
 
-## Build
+## Requirements
+
+- Rust 1.82 or newer (stable toolchain), installed via [rustup](https://rustup.rs). No other
+  system packages are needed: every dependency is pure Rust.
+- To run the oracle checks against the reference decompiler (optional, only needed for
+  development): a JDK (11+) and a local checkout of
+  [jadx](https://github.com/skylot/jadx) built with `./gradlew :jadx-cli:installDist`.
+
+## Setup
+
+Clone the repository and build the workspace:
 
 ```
+git clone <repository-url>
+cd jadx-rust
 cargo build --release
-cargo test
+```
+
+This produces two binaries under `target/release/`: `jadx-rs` (the CLI) and `jadx-mcp` (the MCP
+server). Run either directly from there, or install them onto your `PATH`:
+
+```
+cargo install --path crates/jadx-cli   # installs `jadx-rs`
+cargo install --path crates/jadx-mcp   # installs `jadx-mcp`
+```
+
+Run the test suite to confirm the build is healthy:
+
+```
+cargo test --workspace
 ```
 
 ## Usage
