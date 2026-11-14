@@ -334,12 +334,19 @@ impl CoreClassGenerator {
         // unvisited, erroring method's state instead of consuming it: if such a method's own
         // declaration was never actually requested from the loader this class (so `load` never
         // ran for it), its state would otherwise still be dropped here just because its class
-        // finished. Keeping it costs only a clone-sized amount of extra memory for the rare
-        // erroring methods, same tradeoff as `load`'s.
+        // finished. Goes through the same `try_keep_for_throws` budget as `load`'s, so this
+        // can't grow memory without bound either.
         methods.retain(|(c, _), state| {
-            root.top_parent_index(*c) != cls
-                || state.failed.is_some()
-                || state.cfg.as_ref().is_some_and(|cfg| !cfg.errors.is_empty())
+            if root.top_parent_index(*c) != cls {
+                return true;
+            }
+            let erroring = state.failed.is_some()
+                || state.cfg.as_ref().is_some_and(|cfg| !cfg.errors.is_empty());
+            if !erroring {
+                return false;
+            }
+            let units = state.cfg.as_ref().map(|cf| cf.units_count).unwrap_or(0);
+            st.driver.try_keep_for_throws(units)
         });
         st.driver.methods = methods;
         match generated {
@@ -420,22 +427,25 @@ impl MethodLoader for DriverLoader<'_> {
         // its state instead of consuming it outright, the way a normal, already-visited
         // method's state is. This only costs an extra clone for the rare erroring methods
         // whose own class gets saved before whatever calls them.
-        let keep_for_throws = !self.root.classes[cls].methods[mth]
+        let not_visited = !self.root.classes[cls].methods[mth]
             .throws_attr
             .as_ref()
             .is_some_and(|a| a.visited);
-        if keep_for_throws {
+        if not_visited {
             let map = self.methods.borrow();
             let Some(state) = map.get(&(cls, mth)) else {
                 return Err("method code is not available".to_string());
             };
-            if let Some(e) = &state.failed {
-                return Err(e.clone());
+            let units = state.cfg.as_ref().map(|c| c.units_count).unwrap_or(0);
+            if self.driver.try_keep_for_throws(units) {
+                if let Some(e) = &state.failed {
+                    return Err(e.clone());
+                }
+                return state
+                    .cfg
+                    .clone()
+                    .ok_or_else(|| "method code is not available".to_string());
             }
-            return state
-                .cfg
-                .clone()
-                .ok_or_else(|| "method code is not available".to_string());
         }
         let Some(state) = self.methods.borrow_mut().remove(&(cls, mth)) else {
             return Err("method code is not available".to_string());

@@ -141,6 +141,15 @@ pub struct ClassDriver<'s> {
     preloaded: HashMap<MethodId, MethodState>,
     phase: Vec<ClassPhase>,
     children: Vec<Vec<usize>>,
+    /// Running total of the size (in `MethodCfg::units_count`, the same per-instruction-unit
+    /// proxy `preload_all_methods` budgets on) of method states kept past their own class's
+    /// cleanup by `DriverLoader::load` and `generate_with_env`'s `methods.retain` exemption, so
+    /// a later class's `throws_visit` can still reach them - see those call sites' doc
+    /// comments. Checked by `try_keep_for_throws` against `KEPT_FOR_THROWS_BUDGET` so a
+    /// pathological input with many large, erroring methods cannot grow this without bound;
+    /// never decremented (these are rare - well under 1% of methods on real apps - so a
+    /// monotonic running total is simpler than reclaiming it per method and is still bounded).
+    kept_for_throws_units: AtomicU64,
 }
 
 impl<'s> ClassDriver<'s> {
@@ -168,12 +177,40 @@ impl<'s> ClassDriver<'s> {
             preloaded: HashMap::new(),
             phase: vec![ClassPhase::NotLoaded; n],
             children,
+            kept_for_throws_units: AtomicU64::new(0),
         }
     }
 
     /// `ProcessState.isProcessComplete` of a top level class.
     pub fn is_process_complete(&self, top: usize) -> bool {
         self.phase[top] == ClassPhase::Complete
+    }
+
+    /// Whether a method's state (worth `units`, in `MethodCfg::units_count`) may be kept past
+    /// its own class's cleanup for a later class's `throws_visit` to still reach - see
+    /// `kept_for_throws_units`'s doc comment. Checked (and, if allowed, accounted for) by every
+    /// call site that would otherwise keep such a state around indefinitely; once the budget is
+    /// spent, the method's state is dropped like any other once its own class is done, falling
+    /// back to the already-documented "missing inherited throws clause" gap for just that case
+    /// instead of growing memory without bound.
+    pub fn try_keep_for_throws(&self, units: usize) -> bool {
+        const KEPT_FOR_THROWS_BUDGET: u64 = 2_000_000;
+        let units = units as u64;
+        let mut spent = self.kept_for_throws_units.load(Ordering::Relaxed);
+        loop {
+            if spent.saturating_add(units) > KEPT_FOR_THROWS_BUDGET {
+                return false;
+            }
+            match self.kept_for_throws_units.compare_exchange_weak(
+                spent,
+                spent + units,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return true,
+                Err(actual) => spent = actual,
+            }
+        }
     }
 
     pub fn into_root(self) -> Root {
