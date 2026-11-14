@@ -107,7 +107,7 @@ type ClassPassFn<'a> =
     dyn Fn(&mut Root, &mut HashMap<MethodId, MethodState>, usize) -> Result<(), String> + 'a;
 
 /// State of a method during processing.
-#[derive(Default)]
+#[derive(Default, serde::Serialize, serde::Deserialize)]
 pub struct MethodState {
     pub cfg: Option<MethodCfg>,
     /// First error of a pass; the method is skipped by all later passes.
@@ -141,15 +141,20 @@ pub struct ClassDriver<'s> {
     preloaded: HashMap<MethodId, MethodState>,
     phase: Vec<ClassPhase>,
     children: Vec<Vec<usize>>,
-    /// Running total of the size (in `MethodCfg::units_count`, the same per-instruction-unit
-    /// proxy `preload_all_methods` budgets on) of method states kept past their own class's
-    /// cleanup by `DriverLoader::load` and `generate_with_env`'s `methods.retain` exemption, so
-    /// a later class's `throws_visit` can still reach them - see those call sites' doc
-    /// comments. Checked by `try_keep_for_throws` against `KEPT_FOR_THROWS_BUDGET` so a
-    /// pathological input with many large, erroring methods cannot grow this without bound;
-    /// never decremented (these are rare - well under 1% of methods on real apps - so a
-    /// monotonic running total is simpler than reclaiming it per method and is still bounded).
+    /// Running total, in estimated bytes, of erroring method states kept past their own
+    /// class's cleanup by `DriverLoader::load` and `generate_with_env`'s `methods.retain` (see
+    /// `ClassDriver::method_has_error`'s doc comment) so a later class's `throws_visit` can
+    /// still reach them - see those call sites' doc comments. Checked by `try_keep_for_throws`
+    /// against a fraction of available memory, so a pathological input cannot grow this without
+    /// bound; beyond that, `spill_to_disk` takes over. Never decremented - see
+    /// `try_keep_for_throws`'s doc comment.
     kept_for_throws_units: AtomicU64,
+    /// Overflow for a method state that `try_keep_for_throws` would otherwise have to drop once
+    /// its in-memory budget is spent - see `method_disk_cache`'s module doc comment. Lazy: an
+    /// app whose cross-class carryover never exceeds the in-memory budget never touches it.
+    /// `RefCell`, not a plain field, so `DriverLoader::load` (`core_gen.rs`), which only ever
+    /// holds `&ClassDriver`, can still spill/read through it.
+    disk_cache: std::cell::RefCell<super::method_disk_cache::MethodDiskCache>,
 }
 
 impl<'s> ClassDriver<'s> {
@@ -178,6 +183,9 @@ impl<'s> ClassDriver<'s> {
             phase: vec![ClassPhase::NotLoaded; n],
             children,
             kept_for_throws_units: AtomicU64::new(0),
+            disk_cache: std::cell::RefCell::new(
+                super::method_disk_cache::MethodDiskCache::default(),
+            ),
         }
     }
 
@@ -186,24 +194,35 @@ impl<'s> ClassDriver<'s> {
         self.phase[top] == ClassPhase::Complete
     }
 
-    /// Whether a method's state (worth `units`, in `MethodCfg::units_count`) may be kept past
-    /// its own class's cleanup for a later class's `throws_visit` to still reach - see
-    /// `kept_for_throws_units`'s doc comment. Checked (and, if allowed, accounted for) by every
-    /// call site that would otherwise keep such a state around indefinitely; once the budget is
-    /// spent, the method's state is dropped like any other once its own class is done, falling
-    /// back to the already-documented "missing inherited throws clause" gap for just that case
-    /// instead of growing memory without bound.
+    /// Whether an erroring method's state (worth `units`, in `MethodCfg::units_count`) may be
+    /// kept in memory past its own class's cleanup, for a later class's recursive `throws_visit`
+    /// lookup to still reach it (see `ClassDriver::method_has_error`'s doc comment). Checked
+    /// (and, if allowed, accounted for) by every call site that would otherwise keep such a
+    /// state around indefinitely; once the budget is spent, the caller is expected to spill the
+    /// state to disk instead (see `ClassDriver::spill_to_disk`) rather than drop it outright, so
+    /// bounding this does not cost correctness, only some I/O under heavy load.
+    ///
+    /// The budget is a fraction of currently available system memory (converted from `units` the
+    /// same way `preload_all_methods` converts its own instruction counts, since both estimate
+    /// the same thing: the size of the `MethodCfg`/SSA state built from that much bytecode),
+    /// re-read on every call (not cached) so it adapts as the run's actual memory pressure
+    /// changes. Never decremented when spent (see `kept_for_throws_units`'s doc comment), so
+    /// this is intentionally conservative later in a long run rather than track exactly how much
+    /// of the earlier "kept" total has since become unreachable garbage.
     pub fn try_keep_for_throws(&self, units: usize) -> bool {
-        const KEPT_FOR_THROWS_BUDGET: u64 = 2_000_000;
-        let units = units as u64;
+        const BYTES_PER_UNIT_ESTIMATE: u64 = 3_000;
+        const BUDGET_NUMERATOR: u64 = 1;
+        const BUDGET_DENOMINATOR: u64 = 4;
+        let budget_bytes = available_memory_bytes() * BUDGET_NUMERATOR / BUDGET_DENOMINATOR;
+        let bytes = (units as u64).saturating_mul(BYTES_PER_UNIT_ESTIMATE);
         let mut spent = self.kept_for_throws_units.load(Ordering::Relaxed);
         loop {
-            if spent.saturating_add(units) > KEPT_FOR_THROWS_BUDGET {
+            if spent.saturating_add(bytes) > budget_bytes {
                 return false;
             }
             match self.kept_for_throws_units.compare_exchange_weak(
                 spent,
-                spent + units,
+                spent + bytes,
                 Ordering::Relaxed,
                 Ordering::Relaxed,
             ) {
@@ -211,6 +230,25 @@ impl<'s> ClassDriver<'s> {
                 Err(actual) => spent = actual,
             }
         }
+    }
+
+    /// Spills a method's state to disk for a later class's `throws_visit` to read back via
+    /// [`ClassDriver::load_from_disk`] - the fallback once [`ClassDriver::try_keep_for_throws`]'s
+    /// in-memory budget is spent, instead of dropping the state (and the cross-class `throws`
+    /// information it carries) outright. Returns whether it succeeded; the caller falls back to
+    /// dropping the state on failure (a full disk, for instance), same as before this existed.
+    pub fn spill_to_disk(&self, id: MethodId, state: &MethodState) -> bool {
+        self.disk_cache.borrow_mut().store(id, state)
+    }
+
+    /// Whether `id`'s state is currently spilled to disk (see [`ClassDriver::spill_to_disk`]).
+    pub fn is_on_disk(&self, id: MethodId) -> bool {
+        self.disk_cache.borrow().contains(id)
+    }
+
+    /// Reads back and removes a method's state spilled by [`ClassDriver::spill_to_disk`].
+    pub fn load_from_disk(&self, id: MethodId) -> Option<MethodState> {
+        self.disk_cache.borrow_mut().take(id)
     }
 
     pub fn into_root(self) -> Root {
@@ -294,7 +332,12 @@ impl<'s> ClassDriver<'s> {
             }
             let state = match self.preloaded.remove(&(c, m)) {
                 Some(state) => state,
-                None => self.load_method(c, m),
+                // a cross-class dependency another class's processing spilled to disk (see
+                // `ClassDriver::spill_to_disk`'s doc comment) instead of decoding it again.
+                None => match self.load_from_disk((c, m)) {
+                    Some(state) => state,
+                    None => self.load_method(c, m),
+                },
             };
             self.methods.insert((c, m), state);
         }
@@ -341,7 +384,10 @@ impl<'s> ClassDriver<'s> {
                 continue;
             }
             for m in 0..cls.methods.len() {
-                if cls.methods[m].code_offset.is_some() && !self.methods.contains_key(&(c, m)) {
+                if cls.methods[m].code_offset.is_some()
+                    && !self.methods.contains_key(&(c, m))
+                    && !self.is_on_disk((c, m))
+                {
                     targets.push((c, m));
                 }
             }
@@ -519,6 +565,14 @@ impl<'s> ClassDriver<'s> {
             .as_ref()
             .is_some_and(|a| a.visited);
         let no_code = self.root.classes[c].methods[m].code_offset.is_none();
+        if !self.methods.contains_key(&id) {
+            // a cross-class dependency another class's processing spilled to disk instead of
+            // dropping (see `ClassDriver::spill_to_disk`'s doc comment) - bring it back so
+            // `throws_process` below can read its blocks, same as if it had never left memory.
+            if let Some(state) = self.load_from_disk(id) {
+                self.methods.insert(id, state);
+            }
+        }
         let has_blocks = self.methods.get(&id).is_some_and(|s| s.cfg.is_some());
         if !visited && (no_code || has_blocks) {
             if let Some(a) = self.root.classes[c].methods[m].throws_attr.as_mut() {

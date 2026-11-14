@@ -5,7 +5,7 @@ use std::fmt;
 
 /// Primitive kinds. The declaration order matters: it is the order of `ArgType::unknown()`
 /// "all types" and of the printed possible-type lists.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum PrimitiveType {
     Boolean,
     Char,
@@ -78,7 +78,7 @@ impl fmt::Display for PrimitiveType {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum WildcardBound {
     Extends,
     Unbound,
@@ -112,7 +112,7 @@ pub const CLASS_EXCEPTION: &str = "java.lang.Exception";
 pub const CLASS_RUNTIME_EXCEPTION: &str = "java.lang.RuntimeException";
 pub const CLASS_ENUM: &str = "java.lang.Enum";
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum ArgType {
     Primitive(PrimitiveType),
     /// Plain class type, full name with dots (`java.lang.String`).
@@ -149,7 +149,7 @@ pub fn clean_object_name(obj: &str) -> String {
     obj.to_string()
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, serde::Serialize, serde::Deserialize)]
 #[error("{0}")]
 pub struct TypeParseError(pub String);
 

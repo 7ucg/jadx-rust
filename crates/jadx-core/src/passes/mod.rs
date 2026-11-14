@@ -28,6 +28,7 @@ pub mod insn_utils;
 pub mod kotlin_internals;
 pub mod mark_finally;
 pub mod mark_methods_for_inline;
+pub mod method_disk_cache;
 pub mod method_invoke;
 pub mod method_throws;
 pub mod mod_visitor;

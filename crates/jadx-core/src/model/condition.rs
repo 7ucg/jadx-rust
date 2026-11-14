@@ -11,7 +11,7 @@ use super::insn::{
 use super::ssa::ArgRef;
 use super::types::ArgType;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CondMode {
     Compare,
     Ternary,
@@ -20,7 +20,7 @@ pub enum CondMode {
     Or,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct IfCondition {
     pub mode: CondMode,
     pub args: Vec<IfCondition>,

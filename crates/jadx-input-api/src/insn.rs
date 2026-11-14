@@ -20,7 +20,7 @@ pub struct SwitchPayload {
     pub targets: Vec<i32>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ArrayData {
     Empty,
     Bytes(Vec<u8>),

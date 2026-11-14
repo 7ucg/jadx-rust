@@ -1,6 +1,6 @@
 //! Minimal growable bit set (positions of blocks).
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct BitSet {
     words: Vec<u64>,
 }
@@ -85,7 +85,7 @@ impl BitSet {
 
 /// Emulates the iteration order of a `java.util.HashSet` of small non-negative integers
 /// (hash code = value): buckets in ascending index, insertion order inside a bucket.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct JavaIntSet {
     items: Vec<usize>,
     cap: usize,

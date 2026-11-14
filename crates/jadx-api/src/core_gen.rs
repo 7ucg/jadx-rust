@@ -330,14 +330,23 @@ impl CoreClassGenerator {
         drop(env);
         let mut methods = loader.methods.into_inner();
         let root = &st.driver.root;
-        // Secondary safety net for the same reason `DriverLoader::load` keeps (clones) an
-        // unvisited, erroring method's state instead of consuming it: if such a method's own
-        // declaration was never actually requested from the loader this class (so `load` never
-        // ran for it), its state would otherwise still be dropped here just because its class
-        // finished. Goes through the same `try_keep_for_throws` budget as `load`'s, so this
-        // can't grow memory without bound either.
-        methods.retain(|(c, _), state| {
-            if root.top_parent_index(*c) != cls {
+        // Secondary safety net for the same reason `DriverLoader::load` keeps an unvisited,
+        // erroring method's state instead of consuming it: if such a method's own declaration
+        // was never actually requested from the loader this class (so `load` never ran for it),
+        // its state would otherwise still be dropped here just because its class finished.
+        // Goes through the same budget and disk spill as `load`'s.
+        //
+        // A method of some other, not-yet-finished class is a dependency that class still
+        // needs and is kept unconditionally - NOT run through this same budget/spill check:
+        // several other call sites in `driver.rs` read `ClassDriver::methods` directly for a
+        // class already past `load_methods` (so they would not know to look on disk), and a
+        // class already marked `ClassPhase::Complete` is never run through `load_methods`
+        // again to bring a spilled entry back either. Spilling this wider, more common case
+        // too (verified incorrect: 0 diffs with only the narrow case spilled, but dozens with
+        // this one also spilled, on the same oracle input) needs those call sites audited and
+        // made disk-aware first - left for a future session, see TODO.md.
+        methods.retain(|&(c, m), state| {
+            if root.top_parent_index(c) != cls {
                 return true;
             }
             let erroring = state.failed.is_some()
@@ -346,7 +355,10 @@ impl CoreClassGenerator {
                 return false;
             }
             let units = state.cfg.as_ref().map(|cf| cf.units_count).unwrap_or(0);
-            st.driver.try_keep_for_throws(units)
+            if st.driver.try_keep_for_throws(units) {
+                return true;
+            }
+            !st.driver.spill_to_disk((c, m), state)
         });
         st.driver.methods = methods;
         match generated {
@@ -423,28 +435,27 @@ impl MethodLoader for DriverLoader<'_> {
         // compute its own `throws` clause - a *later* class that calls it may still reach it
         // through the recursive `throws_visit` path (same as the reference's
         // `MethodThrowsVisitor.visit(cMth)`, which relies on `getBasicBlocks()` staying
-        // non-null), and that needs this method's blocks to still be there. So keep (clone)
-        // its state instead of consuming it outright, the way a normal, already-visited
-        // method's state is. This only costs an extra clone for the rare erroring methods
-        // whose own class gets saved before whatever calls them.
+        // non-null), and that needs this method's blocks to still be there. So keep its state
+        // reachable instead of consuming it outright, the way a normal, already-visited
+        // method's state is: a clone in memory up to the shared budget, spilled to disk (see
+        // `ClassDriver::spill_to_disk`'s doc comment) once that is spent, rather than dropped.
         let not_visited = !self.root.classes[cls].methods[mth]
             .throws_attr
             .as_ref()
             .is_some_and(|a| a.visited);
         if not_visited {
-            let map = self.methods.borrow();
-            let Some(state) = map.get(&(cls, mth)) else {
-                return Err("method code is not available".to_string());
-            };
-            let units = state.cfg.as_ref().map(|c| c.units_count).unwrap_or(0);
-            if self.driver.try_keep_for_throws(units) {
-                if let Some(e) = &state.failed {
-                    return Err(e.clone());
+            if let Some(state) = self.methods.borrow().get(&(cls, mth)) {
+                let units = state.cfg.as_ref().map(|c| c.units_count).unwrap_or(0);
+                if self.driver.try_keep_for_throws(units) {
+                    if let Some(e) = &state.failed {
+                        return Err(e.clone());
+                    }
+                    return state
+                        .cfg
+                        .clone()
+                        .ok_or_else(|| "method code is not available".to_string());
                 }
-                return state
-                    .cfg
-                    .clone()
-                    .ok_or_else(|| "method code is not available".to_string());
+                self.driver.spill_to_disk((cls, mth), state);
             }
         }
         let Some(state) = self.methods.borrow_mut().remove(&(cls, mth)) else {

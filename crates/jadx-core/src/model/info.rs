@@ -23,7 +23,7 @@ pub fn type_signature(ty: &ArgType) -> String {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 struct ClassInfoInner {
     ty: ArgType,
     name: String,
@@ -34,10 +34,10 @@ struct ClassInfoInner {
 }
 
 /// Class descriptor with package/short name split and inner-class detection.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ClassInfo(Arc<ClassInfoInner>);
 
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, serde::Serialize, serde::Deserialize)]
 #[error("{0}")]
 pub struct InfoError(pub String);
 
@@ -221,7 +221,7 @@ impl fmt::Display for ClassInfo {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct FieldInfo {
     pub decl_class: ClassInfo,
     pub name: String,
@@ -248,7 +248,7 @@ impl fmt::Display for FieldInfo {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct MethodInfo {
     pub decl_class: ClassInfo,
     pub name: String,

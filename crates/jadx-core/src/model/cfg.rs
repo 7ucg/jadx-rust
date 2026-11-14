@@ -9,7 +9,7 @@ pub type LoopId = usize;
 pub type TryId = usize;
 
 /// `TryCatchBlockAttr`
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TryBlock {
     pub id: usize,
     pub handlers: Vec<HandlerId>,
@@ -21,7 +21,7 @@ pub struct TryBlock {
 }
 
 /// `LoopInfo`
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct LoopInfo {
     pub start: BlockId,
     pub end: BlockId,
@@ -86,7 +86,7 @@ pub mod bflag {
     ];
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ExceptionHandler {
     pub catch_types: Vec<ClassInfo>,
     pub handler_offset: i32,
@@ -158,7 +158,7 @@ impl ExceptionHandler {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct BlockNode {
     pub cid: BlockId,
     pub pos: usize,
@@ -248,7 +248,7 @@ impl BlockNode {
 }
 
 /// Per-method code state: instructions, exception handlers and the block graph.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MethodCfg {
     /// Block arena indexed by `cid`; blocks are never removed from the arena.
     pub arena: Vec<BlockNode>,

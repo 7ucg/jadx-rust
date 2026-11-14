@@ -13,7 +13,7 @@ pub type RegionId = usize;
 pub type InsnContId = usize;
 
 /// `IContainer`
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Container {
     /// A basic block (`BlockNode`).
     Block(BlockId),
@@ -23,7 +23,7 @@ pub enum Container {
 }
 
 /// Key of a `switch` case.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CaseKey {
     Int(i32),
     Str(String),
@@ -41,7 +41,7 @@ impl CaseKey {
 }
 
 /// `SwitchRegion.CaseInfo`
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CaseInfo {
     pub keys: Vec<CaseKey>,
     pub container: Container,
@@ -54,7 +54,7 @@ impl CaseInfo {
 }
 
 /// `LoopType`
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum LoopType {
     /// `for (init; cond; incr)`
     For { init: InsnId, incr: InsnId },
@@ -66,7 +66,7 @@ pub enum LoopType {
     },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum RegionKind {
     /// `Region`: a plain sequence of containers.
     Plain { blocks: Vec<Container> },
@@ -108,7 +108,7 @@ pub enum RegionKind {
     },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Region {
     pub parent: Option<RegionId>,
     /// Flags (`bflag` bits: `DONT_GENERATE`, `FALL_THROUGH`, `ELSE_IF_CHAIN`...).
@@ -121,14 +121,14 @@ pub struct Region {
 }
 
 /// `InsnContainer`
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct InsnContainer {
     pub insns: Vec<InsnId>,
     pub flags: u64,
 }
 
 /// `EdgeInsnAttr`
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct EdgeInsn {
     pub start: BlockId,
     pub end: BlockId,
@@ -136,7 +136,7 @@ pub struct EdgeInsn {
 }
 
 /// All region related state of a method.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct Regions {
     pub arena: Vec<Region>,
     pub insn_conts: Vec<InsnContainer>,

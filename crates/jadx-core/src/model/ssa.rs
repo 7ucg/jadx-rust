@@ -12,7 +12,7 @@ use super::types::ArgType;
 pub type SsaId = usize;
 
 /// Location of a register argument.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum ArgRef {
     /// Result register of an instruction.
     Result(InsnId),
@@ -40,7 +40,7 @@ impl ArgRef {
 pub type CodeVarId = usize;
 
 /// `CodeVar`: a source level variable made of one or more SSA variables.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct CodeVar {
     pub name: Option<String>,
     /// Set before type inference only for immutable types.
@@ -61,7 +61,7 @@ impl CodeVar {
 }
 
 /// `SSAVar`
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SsaVar {
     pub reg_num: u32,
     pub version: u32,
@@ -78,14 +78,14 @@ pub struct SsaVar {
 }
 
 /// `BoundEnum`
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum BoundKind {
     Assign,
     Use,
 }
 
 /// `ITypeBound`
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum TypeBound {
     /// `TypeBoundConst`
     Const {

@@ -5,7 +5,7 @@ use std::fmt;
 use super::info::{FieldInfo, MethodInfo};
 use super::types::{ArgType, PrimitiveType};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum InsnType {
     Const,
     ConstStr,
@@ -118,7 +118,7 @@ impl fmt::Display for InsnType {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum IfOp {
     Eq,
     Ne,
@@ -161,7 +161,7 @@ impl IfOp {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum ArithOp {
     Add,
     Sub,
@@ -212,7 +212,7 @@ impl ArithOp {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum InvokeType {
     Static,
     Direct,
@@ -240,7 +240,7 @@ impl InvokeType {
 }
 
 /// Register argument. `init_type` is the type given at decode time (may be unknown).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RegisterArg {
     pub reg_num: u32,
     pub init_type: ArgType,
@@ -305,7 +305,7 @@ impl RegisterArg {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct LiteralArg {
     pub literal: i64,
     pub ty: ArgType,
@@ -342,7 +342,7 @@ fn fix_literal_type(value: i64, ty: ArgType) -> ArgType {
     ArgType::narrow_numbers_no_bool()
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum InsnArg {
     Register(RegisterArg),
     Literal(LiteralArg),
@@ -353,7 +353,7 @@ pub enum InsnArg {
 }
 
 /// `NamedArg`
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct NamedArg {
     pub name: String,
     pub ty: ArgType,
@@ -367,7 +367,7 @@ pub struct NamedArg {
     pub handler: Option<HandlerId>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct WrapArg {
     pub insn: InsnId,
     pub ty: ArgType,
@@ -400,7 +400,7 @@ impl InsnArg {
 }
 
 /// Data of a `fill-array-data` payload.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct FillArrayData {
     pub size: u32,
     pub element_size: u16,
@@ -409,7 +409,7 @@ pub struct FillArrayData {
 }
 
 /// Case table of a switch, targets are absolute offsets once attached.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SwitchData {
     pub keys: Vec<i32>,
     pub targets: Vec<i32>,
@@ -417,14 +417,14 @@ pub struct SwitchData {
     pub key_fields: Vec<Option<FieldInfo>>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum IndexValue {
     Type(ArgType),
     Field(FieldInfo),
 }
 
 /// Instruction specific data (the Java subclasses of `InsnNode`).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum InsnKind {
     None,
     Goto {
@@ -480,7 +480,7 @@ pub enum InsnKind {
 }
 
 /// `ConstructorInsn.CallType`
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum CallType {
     /// Just a new instance.
     Constructor,
@@ -552,13 +552,13 @@ pub mod iflag {
     ];
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct JumpInfo {
     pub src: i32,
     pub dest: i32,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct InsnNode {
     pub ty: InsnType,
     /// Offset in code units, `-1` when not set.
@@ -586,7 +586,7 @@ pub struct InsnNode {
 }
 
 /// `GenericInfoAttr`
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct GenericInfo {
     pub types: Vec<ArgType>,
     pub explicit: bool,
