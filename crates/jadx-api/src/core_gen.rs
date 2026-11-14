@@ -436,6 +436,16 @@ impl MethodLoader for DriverLoader<'_> {
         if self.root.classes[cls].methods[mth].code_offset.is_none() {
             return Ok(no_code_cfg(self.root, cls, mth));
         }
+        // Defense in depth for the dependency spill (see `ClassDriver::spill_to_disk`): the
+        // driver materializes a class's spilled dependencies before code generation, but should
+        // any method this generation reads still be on disk rather than in the taken `methods`
+        // map, bring it back here instead of failing to a bytecode dump. Re-inserted into the
+        // map (not just read) so the per-class cleanup below re-spills it like any other.
+        if !self.methods.borrow().contains_key(&(cls, mth)) {
+            if let Some(state) = self.driver.load_from_disk((cls, mth)) {
+                self.methods.borrow_mut().insert((cls, mth), state);
+            }
+        }
         // A method whose `MethodThrowsVisitor`-equivalent top-level pass was skipped for it
         // (see `ClassDriver::method_has_error`'s doc comment) has not had a chance yet to
         // compute its own `throws` clause - a *later* class that calls it may still reach it
