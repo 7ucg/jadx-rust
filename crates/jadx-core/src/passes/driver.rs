@@ -666,6 +666,15 @@ impl<'s> ClassDriver<'s> {
         if self.root.classes[id.0].methods[id.1].inline.is_some() {
             return true;
         }
+        if own.is_none() && !self.methods.contains_key(&id) {
+            // `id` may be a method of another, already `ClassPhase::Complete` class that spilled
+            // it to disk (see `ClassDriver::spill_to_disk`'s doc comment): that class will not
+            // be run through `load_methods` again (`process_class` is a no-op once complete), so
+            // without this it would look permanently "not loaded" to every caller below.
+            if let Some(state) = self.load_from_disk(id) {
+                self.methods.insert(id, state);
+            }
+        }
         let cfg = own.or_else(|| self.methods.get(&id).and_then(|s| s.cfg.as_ref()));
         let respect = self.opts.respect_bytecode_acc_modifiers;
         match crate::passes::mark_methods_for_inline::process(&self.root, id, cfg, respect) {
