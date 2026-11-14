@@ -251,6 +251,63 @@ impl<'s> ClassDriver<'s> {
         self.disk_cache.borrow_mut().take(id)
     }
 
+    /// Whether a still-needed cross-class dependency method - one `core_gen`'s `methods.retain`
+    /// would otherwise keep resident unconditionally (`top_parent_index(c) != cls`) - should
+    /// instead be spilled to disk now to relieve memory pressure.
+    ///
+    /// Correctness does not depend on the answer: [`ClassDriver::process_with_deps`] and
+    /// [`ClassDriver::process_class`] materialize a class's spilled dependencies back into
+    /// `methods` (via [`ClassDriver::materialize_subtree_from_disk`]) before its passes and code
+    /// generation resolve and read them, so spilling only ever trades RAM for disk I/O, never
+    /// output. It is therefore safe to spill as aggressively as memory pressure calls for.
+    ///
+    /// Returns true only under real memory pressure (available system memory below a floor) or
+    /// when `JADX_RS_FORCE_SPILL` forces it (the spill-path stress test). An app whose working
+    /// set fits comfortably in memory - the common case, e.g. the oracle input - never crosses
+    /// the floor, so nothing is ever spilled and the behavior is byte-for-byte the previous one.
+    pub fn should_spill_dependency(&self) -> bool {
+        if std::env::var("JADX_RS_FORCE_SPILL").is_ok() {
+            return true;
+        }
+        // 23 GB RAM machines collapse into swap thrashing on the largest apps once essentially
+        // the whole decoded program is held resident at once; start spilling well before that,
+        // while there is still headroom, rather than when the system is already thrashing.
+        const SPILL_WHEN_AVAILABLE_BELOW: u64 = 6_000_000_000;
+        available_memory_bytes() < SPILL_WHEN_AVAILABLE_BELOW
+    }
+
+    /// Brings every method of `top`'s class subtree (the top-level class and its inner classes)
+    /// that is currently spilled to disk back into `self.methods`, so a later read of it - a
+    /// dependency's constructor in `enum_visitor`, an inlined callee in `process_variables`, a
+    /// method's blocks during code generation - finds it present again, exactly as if it had
+    /// never left memory. The counterpart to `core_gen`'s `methods.retain` spilling a
+    /// still-needed dependency once memory is tight (see [`ClassDriver::should_spill_dependency`]):
+    /// that frees the RAM between uses, this restores it just before the next use. A no-op when
+    /// nothing of the subtree is on disk (the common, no-pressure case).
+    fn materialize_subtree_from_disk(&mut self, top: usize) {
+        if !self.disk_cache.borrow().in_use() {
+            return;
+        }
+        let mut subtree = Vec::new();
+        self.collect_subtree(top, &mut subtree);
+        for c in subtree {
+            for m in 0..self.root.classes[c].methods.len() {
+                if !self.methods.contains_key(&(c, m)) && self.is_on_disk((c, m)) {
+                    if let Some(state) = self.load_from_disk((c, m)) {
+                        self.methods.insert((c, m), state);
+                    }
+                }
+            }
+        }
+    }
+
+    fn collect_subtree(&self, c: usize, out: &mut Vec<usize>) {
+        out.push(c);
+        for &inner in &self.children[c] {
+            self.collect_subtree(inner, out);
+        }
+    }
+
     pub fn into_root(self) -> Root {
         self.root
     }
@@ -270,6 +327,21 @@ impl<'s> ClassDriver<'s> {
         if self.root.classes[top].dont_generate {
             self.process_class(top);
             return;
+        }
+        // Restore anything of this class or its dependencies that was spilled to disk under
+        // earlier memory pressure before it is read again. `top` itself (its own methods are
+        // read by the code generation that follows this call) and every dependency may be
+        // `ClassPhase::Complete` already, in which case the `process_class` calls below skip it
+        // entirely and would not bring it back; do it here for the whole set up front. Skipped
+        // wholesale (no list clones, no walks) when nothing has ever been spilled.
+        if self.disk_cache.borrow().in_use() {
+            self.materialize_subtree_from_disk(top);
+            for dep in self.root.classes[top].dependencies.clone() {
+                self.materialize_subtree_from_disk(dep);
+            }
+            for dep in self.root.classes[top].codegen_deps.clone() {
+                self.materialize_subtree_from_disk(dep);
+            }
         }
         for dep in self.root.classes[top].dependencies.clone() {
             self.process_class(dep);
@@ -293,6 +365,16 @@ impl<'s> ClassDriver<'s> {
         self.phase[top] = ClassPhase::Started;
         if std::env::var("LOG_ORDER").is_ok() {
             eprintln!("PROC {}", self.root.classes[top].info.raw_name());
+        }
+        // This class's passes resolve and read the state of the methods it calls, all of which
+        // live in its dependencies; restore any that was spilled to disk first (see
+        // `materialize_subtree_from_disk`). `process_with_deps` does this too for the top-level
+        // generation target, but a dependency reached only here (processed fresh as another
+        // class's dependency) needs its own dependencies brought back as well.
+        if self.disk_cache.borrow().in_use() {
+            for dep in self.root.classes[top].dependencies.clone() {
+                self.materialize_subtree_from_disk(dep);
+            }
         }
         let mut visits = Vec::new();
         self.collect_visits(top, &mut visits);

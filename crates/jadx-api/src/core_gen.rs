@@ -337,16 +337,22 @@ impl CoreClassGenerator {
         // Goes through the same budget and disk spill as `load`'s.
         //
         // A method of some other, not-yet-finished class is a dependency that class still
-        // needs and is kept unconditionally - NOT run through this same budget/spill check:
-        // several other call sites in `driver.rs` read `ClassDriver::methods` directly for a
-        // class already past `load_methods` (so they would not know to look on disk), and a
-        // class already marked `ClassPhase::Complete` is never run through `load_methods`
-        // again to bring a spilled entry back either. Spilling this wider, more common case
-        // too (verified incorrect: 0 diffs with only the narrow case spilled, but dozens with
-        // this one also spilled, on the same oracle input) needs those call sites audited and
-        // made disk-aware first - left for a future session, see TODO.md.
+        // needs. It is kept resident while memory is plentiful; under real memory pressure it is
+        // spilled to disk instead, and `ClassDriver::process_with_deps`/`process_class`
+        // materialize it back into `methods` before any dependent class's passes or code
+        // generation read it (see `ClassDriver::should_spill_dependency` and
+        // `materialize_subtree_from_disk`). Spilling is therefore transparent to the output - it
+        // only trades RAM for disk I/O - which is what lets the largest apps finish instead of
+        // collapsing into swap while the whole decoded program is held resident at once.
+        // Decided once for the whole cleanup, not per method: the memory-pressure probe reads
+        // `/proc/meminfo`, and `retain` visits every resident dependency method (a set that
+        // grows across the run), so probing inside the closure would be quadratic.
+        let spill_deps = st.driver.should_spill_dependency();
         methods.retain(|&(c, m), state| {
             if root.top_parent_index(c) != cls {
+                if spill_deps && st.driver.spill_to_disk((c, m), state) {
+                    return false;
+                }
                 return true;
             }
             let erroring = state.failed.is_some()
