@@ -235,8 +235,19 @@ fn run_type_stages(
 ) -> Result<(), String> {
     let run = std::panic::AssertUnwindSafe(|| -> Result<(), String> {
         crate::typeinf::run_type_inference(cfg, root, cls, mth)?;
+        // `DepthTraversal.visit(IDexTreeVisitor, MethodNode)`: once a pass records a `JadxError`
+        // on the method (here, a non-empty `cfg.errors`), every later per-method pass is
+        // skipped for it, not just the one that failed - so a type-inference overflow here
+        // must also skip FixTypesVisitor and FinishTypeInference, leaving the method without a
+        // `throws` clause or per-variable warning comments, same as the reference.
+        if !cfg.errors.is_empty() {
+            return Ok(());
+        }
         if stage >= 8 {
             crate::typeinf::fix_types::run_fix_types(cfg, root, cls, mth)?;
+            if !cfg.errors.is_empty() {
+                return Ok(());
+            }
         }
         if stage >= 9 {
             crate::typeinf::finish::finish_type_inference(cfg)?;

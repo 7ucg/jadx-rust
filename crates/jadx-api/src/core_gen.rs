@@ -330,7 +330,17 @@ impl CoreClassGenerator {
         drop(env);
         let mut methods = loader.methods.into_inner();
         let root = &st.driver.root;
-        methods.retain(|(c, _), _| root.top_parent_index(*c) != cls);
+        // Secondary safety net for the same reason `DriverLoader::load` keeps (clones) an
+        // unvisited, erroring method's state instead of consuming it: if such a method's own
+        // declaration was never actually requested from the loader this class (so `load` never
+        // ran for it), its state would otherwise still be dropped here just because its class
+        // finished. Keeping it costs only a clone-sized amount of extra memory for the rare
+        // erroring methods, same tradeoff as `load`'s.
+        methods.retain(|(c, _), state| {
+            root.top_parent_index(*c) != cls
+                || state.failed.is_some()
+                || state.cfg.as_ref().is_some_and(|cfg| !cfg.errors.is_empty())
+        });
         st.driver.methods = methods;
         match generated {
             Ok(r) => r,
@@ -400,6 +410,32 @@ impl MethodLoader for DriverLoader<'_> {
     fn load(&self, cls: usize, mth: usize) -> Result<MethodCfg, String> {
         if self.root.classes[cls].methods[mth].code_offset.is_none() {
             return Ok(no_code_cfg(self.root, cls, mth));
+        }
+        // A method whose `MethodThrowsVisitor`-equivalent top-level pass was skipped for it
+        // (see `ClassDriver::method_has_error`'s doc comment) has not had a chance yet to
+        // compute its own `throws` clause - a *later* class that calls it may still reach it
+        // through the recursive `throws_visit` path (same as the reference's
+        // `MethodThrowsVisitor.visit(cMth)`, which relies on `getBasicBlocks()` staying
+        // non-null), and that needs this method's blocks to still be there. So keep (clone)
+        // its state instead of consuming it outright, the way a normal, already-visited
+        // method's state is. This only costs an extra clone for the rare erroring methods
+        // whose own class gets saved before whatever calls them.
+        let keep_for_throws = !self.root.classes[cls].methods[mth]
+            .throws_attr
+            .as_ref()
+            .is_some_and(|a| a.visited);
+        if keep_for_throws {
+            let map = self.methods.borrow();
+            let Some(state) = map.get(&(cls, mth)) else {
+                return Err("method code is not available".to_string());
+            };
+            if let Some(e) = &state.failed {
+                return Err(e.clone());
+            }
+            return state
+                .cfg
+                .clone()
+                .ok_or_else(|| "method code is not available".to_string());
         }
         let Some(state) = self.methods.borrow_mut().remove(&(cls, mth)) else {
             return Err("method code is not available".to_string());

@@ -413,6 +413,21 @@ impl<'s> ClassDriver<'s> {
         }
     }
 
+    /// `DepthTraversal.visit(IDexTreeVisitor, MethodNode)`'s `mth.contains(AType.JADX_ERROR)`
+    /// check: true once a method carries a `JadxError` (here, a hard pass failure or a
+    /// non-empty `cfg.errors` - a pass recorded a failure but still returned `Ok`, e.g. the
+    /// type inference update-count overflow). From that point every later per-method pass is
+    /// skipped for the method, not just the one that failed, leaving its state exactly as it
+    /// was at the point of failure (no `throws` clause, no later warning comments) before it
+    /// falls back to a bytecode dump at codegen time. Used at every per-method pass site that
+    /// does not already go through [`ClassDriver::method_pass_one`].
+    fn method_has_error(&self, id: MethodId) -> bool {
+        let Some(st) = self.methods.get(&id) else {
+            return false;
+        };
+        st.failed.is_some() || st.cfg.as_ref().is_some_and(|c| !c.errors.is_empty())
+    }
+
     /// Run `f` for one method if it is loaded and did not fail.
     fn method_pass_one(&mut self, c: usize, m: usize, f: &MethodPassFn) {
         let Some(st) = self.methods.get_mut(&(c, m)) else {
@@ -424,6 +439,10 @@ impl<'s> ClassDriver<'s> {
         let Some(mut cfg) = st.cfg.take() else {
             return;
         };
+        if !cfg.errors.is_empty() {
+            self.methods.get_mut(&(c, m)).expect("method state").cfg = Some(cfg);
+            return;
+        }
         let env = MethodEnv {
             root: &self.root,
             cls: c,
@@ -586,6 +605,10 @@ impl<'s> ClassDriver<'s> {
             let Some(mut cfg) = st.cfg.take() else {
                 continue;
             };
+            if !cfg.errors.is_empty() {
+                self.methods.get_mut(&(c, m)).expect("method state").cfg = Some(cfg);
+                continue;
+            }
             let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 self.inline_in_method((c, m), &mut cfg)
             }));
@@ -810,11 +833,7 @@ impl<'s> ClassDriver<'s> {
         if on(pass_stage::METHOD_THROWS) {
             for v in visits {
                 if let Visit::Method(c, m) = *v {
-                    if self
-                        .methods
-                        .get(&(c, m))
-                        .is_some_and(|s| s.failed.is_some())
-                    {
+                    if self.method_has_error((c, m)) {
                         continue;
                     }
                     self.throws_visit((c, m));
@@ -857,6 +876,9 @@ impl<'s> ClassDriver<'s> {
                         crate::passes::fix_access_modifiers::fix_class_visibility(&mut self.root, c)
                     }
                     Visit::Method(c, m) => {
+                        if self.method_has_error((c, m)) {
+                            continue;
+                        }
                         crate::passes::fix_access_modifiers::fix_method_visibility(
                             &mut self.root,
                             (c, m),
@@ -892,11 +914,7 @@ impl<'s> ClassDriver<'s> {
         if on(pass_stage::MARK_METHODS_FOR_INLINE) && self.opts.inline_methods {
             for v in visits {
                 if let Visit::Method(c, m) = *v {
-                    if self
-                        .methods
-                        .get(&(c, m))
-                        .is_some_and(|s| s.failed.is_some())
-                    {
+                    if self.method_has_error((c, m)) {
                         continue;
                     }
                     self.mark_process((c, m), None);
