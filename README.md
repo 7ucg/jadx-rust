@@ -54,6 +54,17 @@ cargo install --path crates/jadx-cli   # installs `jadx-rs`
 cargo install --path crates/jadx-mcp   # installs `jadx-mcp`
 ```
 
+**After changing the code, reinstall before running the `PATH` command.** `cargo build` only
+updates `target/release/`; it does *not* refresh a copy previously placed in `~/.cargo/bin` by
+`cargo install`. If you run the bare `jadx-rs` (from `PATH`) you would otherwise keep running the
+old binary. Either reinstall, or run the freshly built binary directly:
+
+```
+cargo install --path crates/jadx-cli --force   # update the PATH copy (jadx-rs)
+# — or —
+./target/release/jadx-rs -d out app.apk        # run the fresh build directly, no install
+```
+
 Run the test suite to confirm the build is healthy:
 
 ```
@@ -72,6 +83,25 @@ jadx-rs --help                               # full flag list (deobfuscation, de
 
 Developer subcommands for inspecting individual pipeline stages (`smali`, `dex-info`,
 `dex-classes`, `insn-dump`, `insn-ssa`, `xref`, …) are listed in `jadx-rs --help`.
+
+## Large or obfuscated apps
+
+Very large inputs (e.g. a ~146k-class WhatsApp APK) decompile to completion without special
+flags. Two mechanisms keep them from exhausting memory or stalling, both tunable through
+environment variables:
+
+- **Memory.** When free system memory runs low, decoded method state that is only needed as a
+  cross-class dependency is spilled to a temporary on-disk cache and brought back on demand, so
+  the whole program is not held in RAM at once. The cache auto-selects a disk-backed directory
+  (it avoids a RAM-backed `tmpfs` such as `/tmp`); override its location with
+  `JADX_RS_METHOD_CACHE_DIR=/path/on/a/real/disk` if needed. An app that fits in memory never
+  spills.
+- **Pathological methods.** A method whose control-flow graph is extremely large (heavily
+  obfuscated code) is far more expensive to structure than normal code. Above
+  `JADX_RS_MAX_REGION_BLOCKS` basic blocks (default 2000) a method falls back to a commented
+  instruction dump instead of structured Java, so one degenerate method cannot stall the run.
+  Raise it (e.g. `JADX_RS_MAX_REGION_BLOCKS=20000`) to force structured recovery for such methods
+  at the cost of much longer processing time.
 
 ## MCP server
 
