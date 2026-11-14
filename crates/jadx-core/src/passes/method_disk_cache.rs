@@ -160,34 +160,42 @@ impl MethodDiskCache {
                 return None;
             }
             self.dir = Some(base);
-            self.refresh_cap();
+            self.refresh_cap(true);
         }
         self.dir.as_deref()
     }
 
     /// Recomputes [`MethodDiskCache::cap_bytes`] from the spill filesystem's *current* free
-    /// space: the smaller of [`DISK_CACHE_BUDGET_BYTES`] and the current on-disk size plus half
-    /// the free space beyond a reserve, so the cache never drives a small or filling disk to
-    /// exhaustion. Called when the directory is created and again from `store` every
-    /// [`FREE_RECHECK_INTERVAL_BYTES`] written, so a disk filling up (from this process or
-    /// another) shrinks the cap rather than being trusted from a one-time snapshot. If free
-    /// space cannot be determined (e.g. `statvfs` failed, or a non-unix target), only the
-    /// absolute budget applies - failing closed to a tiny cap would instead cripple the spill
-    /// and reintroduce the very memory collapse this cache exists to prevent, while the absolute
-    /// budget plus the full-disk write fallback in `store` already bound the worst case.
-    fn refresh_cap(&mut self) {
+    /// space: the smaller of [`DISK_CACHE_BUDGET_BYTES`] and half of the total space available to
+    /// this cache (what it already holds plus what is still free) beyond a reserve. That total is
+    /// stable as the cache spills (bytes move from free to on-disk, their sum unchanged), so the
+    /// cap does not creep upward the way a `bytes_on_disk + free/2` form would - it only moves
+    /// when the real free space does. Called once when the directory is created and again from
+    /// `store` every [`FREE_RECHECK_INTERVAL_BYTES`] written; after creation the refresh may only
+    /// *lower* the cap, never re-grant headroom, so a disk that filled (from this process or
+    /// another) keeps the tighter bound even if space is later freed. If free space cannot be
+    /// determined (`statvfs` failed, or a non-unix target), only the absolute budget applies -
+    /// failing closed to a tiny cap would cripple the spill and reintroduce the very memory
+    /// collapse this cache exists to prevent, while the absolute budget plus the full-disk write
+    /// fallback in `store` already bound the worst case.
+    fn refresh_cap(&mut self, initial: bool) {
         let Some(dir) = self.dir.as_deref() else {
             return;
         };
-        let free_cap = match free_disk_bytes(dir) {
-            Some(free) => self.bytes_on_disk.saturating_add(
-                free.saturating_sub(DISK_FREE_RESERVE_BYTES)
+        let new_cap = match free_disk_bytes(dir) {
+            Some(free) => DISK_CACHE_BUDGET_BYTES.min(
+                free.saturating_add(self.bytes_on_disk)
+                    .saturating_sub(DISK_FREE_RESERVE_BYTES)
                     .saturating_mul(DISK_FREE_FRACTION_NUMERATOR)
                     / DISK_FREE_FRACTION_DENOMINATOR,
             ),
-            None => u64::MAX,
+            None => DISK_CACHE_BUDGET_BYTES,
         };
-        self.cap_bytes = DISK_CACHE_BUDGET_BYTES.min(free_cap);
+        self.cap_bytes = if initial {
+            new_cap
+        } else {
+            self.cap_bytes.min(new_cap)
+        };
         self.next_free_check_at = self
             .bytes_on_disk
             .saturating_add(FREE_RECHECK_INTERVAL_BYTES);
@@ -261,7 +269,7 @@ impl MethodDiskCache {
         // Periodically re-sample free space so the cap tracks a filling disk, not just the
         // snapshot taken when the directory was created.
         if self.bytes_on_disk >= self.next_free_check_at {
-            self.refresh_cap();
+            self.refresh_cap(false);
         }
         if self.bytes_on_disk.saturating_add(add) > self.cap_bytes {
             return false;
